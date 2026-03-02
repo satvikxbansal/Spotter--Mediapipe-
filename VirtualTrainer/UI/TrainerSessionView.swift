@@ -15,17 +15,27 @@ import Vision
 struct TrainerSessionView: View {
 
     let workout: WorkoutPlan
+    var coachPersonality: CoachPersonality = .good
 
     @StateObject private var cameraManager = CameraManager()
     @StateObject private var poseEstimator = PoseEstimator()
+    @StateObject private var motivationEngine = MotivationEngine()
 
     @State private var glowPulse = false
+    @State private var repCount: Int = 0
+    @State private var previousRepCount: Int = 0
+    @State private var currentPhase: RepPhase = .idle
+    @State private var coachCues: [CoachCue] = []
+    @State private var debugAngle: Double?
+    @State private var motivationScale: CGFloat = 0.3
     @State private var visibilityResult = BodyVisibilityChecker.Result(
         isReady: false,
         visibility: 0,
         message: "Step into the frame so the camera can see you",
         missingJoints: []
     )
+
+    private let repCounter = SquatRepCounter()
 
     private let borderWidth: CGFloat = 3
     private let dropShadow = Shadow(
@@ -41,11 +51,13 @@ struct TrainerSessionView: View {
             skeletonLayer
             glowBorder
             hudOverlay
+            motivationOverlay
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .statusBarHidden()
         .onAppear {
+            motivationEngine.personality = coachPersonality
             cameraManager.onFrame = { [weak poseEstimator] pixelBuffer in
                 poseEstimator?.processFrame(pixelBuffer)
             }
@@ -60,11 +72,24 @@ struct TrainerSessionView: View {
             cameraManager.stop()
         }
         .onChange(of: poseEstimator.bodyJoints) {
+            let joints = poseEstimator.bodyJoints
             let exercise = workout.exercises.first?.exerciseType ?? .squat
+
             visibilityResult = BodyVisibilityChecker.evaluate(
-                joints: poseEstimator.bodyJoints,
+                joints: joints,
                 for: exercise
             )
+
+            let output = repCounter.processReps(joints: joints)
+            repCount = output.repCount
+            currentPhase = output.phase
+            coachCues = output.cues
+            debugAngle = repCounter.lastKneeAngle
+
+            if repCount > previousRepCount {
+                previousRepCount = repCount
+                motivationEngine.evaluateEffort(currentRepCount: repCount)
+            }
         }
     }
 
@@ -121,11 +146,23 @@ struct TrainerSessionView: View {
 
             Spacer()
 
-            bottomBar
-                .padding(.bottom, 40)
-                .padding(.horizontal, Theme.Spacing.lg)
+            VStack(spacing: Theme.Spacing.sm) {
+                if let cue = coachCues.first {
+                    coachCueBanner(cue)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
+                if let angle = debugAngle {
+                    debugAngleBadge(angle)
+                }
+
+                bottomBar
+            }
+            .padding(.bottom, 40)
+            .padding(.horizontal, Theme.Spacing.lg)
         }
         .animation(Theme.Motion.smooth, value: visibilityResult.isReady)
+        .animation(Theme.Motion.smooth, value: coachCues.first?.id)
     }
 
     // MARK: - Workout Title
@@ -159,16 +196,111 @@ struct TrainerSessionView: View {
     // MARK: - Rep Counter
 
     private var repCounterBadge: some View {
-        Text("0")
-            .font(.system(size: 96, weight: .heavy, design: .rounded))
-            .monospacedDigit()
-            .foregroundStyle(Theme.Colors.textPrimary)
+        VStack(alignment: .trailing, spacing: 4) {
+            Text("\(repCount)")
+                .font(.system(size: 96, weight: .heavy, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .shadow(
+                    color: dropShadow.color,
+                    radius: dropShadow.radius,
+                    x: dropShadow.x,
+                    y: dropShadow.y
+                )
+                .contentTransition(.numericText(value: Double(repCount)))
+                .animation(.snappy(duration: 0.3), value: repCount)
+
+            phaseLabel
+        }
+    }
+
+    private var phaseLabel: some View {
+        Text(currentPhase.rawValue.uppercased())
+            .font(.system(size: 11, weight: .heavy))
+            .tracking(1.5)
+            .foregroundStyle(phaseColor)
             .shadow(
                 color: dropShadow.color,
                 radius: dropShadow.radius,
                 x: dropShadow.x,
                 y: dropShadow.y
             )
+    }
+
+    private var phaseColor: Color {
+        switch currentPhase {
+        case .idle: Theme.Colors.textSecondary
+        case .down: Theme.Colors.accent
+        case .up:   Theme.Colors.positive
+        }
+    }
+
+    // MARK: - Motivation Overlay
+
+    private var motivationTint: Color {
+        coachPersonality == .drill ? Theme.Colors.danger : Theme.Colors.accent
+    }
+
+    private var motivationOverlay: some View {
+        Group {
+            if let message = motivationEngine.activeMessage {
+                Text(message)
+                    .font(.system(size: 32, weight: .black, design: .rounded))
+                    .tracking(-0.5)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(motivationTint)
+                    .shadow(color: motivationTint.opacity(0.9), radius: 20)
+                    .shadow(color: motivationTint.opacity(0.5), radius: 40)
+                    .shadow(color: motivationTint.opacity(0.25), radius: 60)
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .scaleEffect(motivationScale)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(Theme.Motion.bounce, value: motivationEngine.activeMessage == nil)
+        .onChange(of: motivationEngine.activeMessage) { _, newValue in
+            if newValue != nil {
+                motivationScale = 0.3
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.5)) {
+                    motivationScale = 1.0
+                }
+            }
+        }
+    }
+
+    // MARK: - Coach Cue Banner
+
+    private func coachCueBanner(_ cue: CoachCue) -> some View {
+        Text(cue.message)
+            .font(.system(size: 14, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                Capsule()
+                    .fill(cue.severity >= .warning
+                          ? Theme.Colors.accent.opacity(0.85)
+                          : Color.white.opacity(0.15))
+            )
+    }
+
+    // MARK: - Debug Angle
+
+    private func debugAngleBadge(_ angle: Double) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "angle")
+                .font(.system(size: 10, weight: .bold))
+            Text("Knee: \(Int(angle))°")
+                .font(.system(size: 12, weight: .heavy, design: .monospaced))
+        }
+        .foregroundStyle(Theme.Colors.textSecondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(Color.black.opacity(0.5))
+        )
     }
 
     // MARK: - Bottom Status Bar

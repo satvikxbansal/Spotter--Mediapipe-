@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Vision
 
 // ────────────────────────────────────────────────────────────────────
@@ -45,7 +46,6 @@ enum ExerciseType: String, Codable, CaseIterable, Identifiable {
         case .squat:
             [.leftHip, .rightHip,
              .leftKnee, .rightKnee,
-             .leftAnkle, .rightAnkle,
              .leftShoulder, .rightShoulder]
 
         case .pushup:
@@ -65,7 +65,7 @@ enum ExerciseType: String, Codable, CaseIterable, Identifiable {
     /// Shown inside the visibility banner.
     var visibilityHint: String {
         switch self {
-        case .squat:     "Full body — hips, knees, and ankles"
+        case .squat:     "Lower body — shoulders, hips, and knees"
         case .pushup:    "Upper body — shoulders, elbows, and wrists"
         case .bicepCurl: "Arms — shoulders, elbows, and wrists"
         }
@@ -174,6 +174,47 @@ extension WorkoutPlan {
             ],
             estimatedMinutes: 18
         )
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// MARK: - Coach Personality
+// ────────────────────────────────────────────────────────────────────
+
+/// Two flavours of motivational coaching.
+/// Persisted via `@AppStorage` using the raw string value.
+enum CoachPersonality: String, CaseIterable, Identifiable {
+    case good
+    case drill
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .good:  "Good Coach"
+        case .drill: "Drill Sergeant"
+        }
+    }
+
+    var tagline: String {
+        switch self {
+        case .good:  "Encouraging and supportive"
+        case .drill: "Ruthless and unfiltered"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .good:  "figure.mind.and.body"
+        case .drill: "figure.boxing"
+        }
+    }
+
+    var accentColor: SwiftUI.Color {
+        switch self {
+        case .good:  Theme.Colors.positive
+        case .drill: Theme.Colors.danger
+        }
     }
 }
 
