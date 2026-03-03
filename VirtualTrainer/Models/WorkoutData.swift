@@ -3,6 +3,104 @@ import SwiftUI
 import Vision
 
 // ────────────────────────────────────────────────────────────────────
+// MARK: - User Profile (pre-auth placeholder)
+// ────────────────────────────────────────────────────────────────────
+
+enum UserProfile {
+    static let firstName = "Satvik"
+}
+
+// ────────────────────────────────────────────────────────────────────
+// MARK: - Body Category
+// ────────────────────────────────────────────────────────────────────
+
+enum BodyCategory: String, CaseIterable, Identifiable {
+    case upperBody
+    case lowerBody
+    case fullBody
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .upperBody: "Upper Body"
+        case .lowerBody: "Lower Body"
+        case .fullBody:  "Full Body"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .upperBody: "figure.arms.open"
+        case .lowerBody: "figure.strengthtraining.traditional"
+        case .fullBody:  "figure.run"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .upperBody: "Chest, arms & shoulders"
+        case .lowerBody: "Quads, glutes & calves"
+        case .fullBody:  "Hit everything at once"
+        }
+    }
+
+    var exercises: [ExerciseOption] {
+        switch self {
+        case .upperBody:
+            [
+                ExerciseOption(type: .pushup, available: true),
+                ExerciseOption(type: .bicepCurl, available: true),
+                ExerciseOption(name: "Shoulder Press", available: false),
+                ExerciseOption(name: "Lateral Raises", available: false),
+                ExerciseOption(name: "Tricep Dips", available: false),
+            ]
+        case .lowerBody:
+            [
+                ExerciseOption(type: .squat, available: true),
+                ExerciseOption(name: "Lunges", available: false),
+                ExerciseOption(name: "Calf Raises", available: false),
+                ExerciseOption(name: "Glute Bridges", available: false),
+                ExerciseOption(name: "Wall Sits", available: false),
+            ]
+        case .fullBody:
+            [
+                ExerciseOption(type: .squat, available: true),
+                ExerciseOption(type: .pushup, available: true),
+                ExerciseOption(type: .bicepCurl, available: true),
+                ExerciseOption(name: "Burpees", available: false),
+                ExerciseOption(name: "Mountain Climbers", available: false),
+            ]
+        }
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// MARK: - Exercise Option (for bottom-sheet selection)
+// ────────────────────────────────────────────────────────────────────
+
+struct ExerciseOption: Identifiable {
+    let id: String
+    let name: String
+    let type: ExerciseType?
+    let available: Bool
+
+    init(type: ExerciseType, available: Bool) {
+        self.id = type.rawValue
+        self.name = type.displayName
+        self.type = type
+        self.available = available
+    }
+
+    init(name: String, available: Bool) {
+        self.id = name.lowercased().replacingOccurrences(of: " ", with: "_")
+        self.name = name
+        self.type = nil
+        self.available = available
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────
 // MARK: - Exercise Type
 // ────────────────────────────────────────────────────────────────────
 
@@ -189,24 +287,31 @@ enum CoachPersonality: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var coachName: String {
+        switch self {
+        case .good:  "Coach Bennett"
+        case .drill: "Coach Fletcher"
+        }
+    }
+
     var displayName: String {
         switch self {
-        case .good:  "Good Coach"
-        case .drill: "Drill Sergeant"
+        case .good:  "The Good Coach"
+        case .drill: "The Drill Sergeant"
         }
     }
 
     var tagline: String {
         switch self {
-        case .good:  "Encouraging and supportive"
-        case .drill: "Ruthless and unfiltered"
+        case .good:  "Believes in you more than you believe in yourself"
+        case .drill: "Not quite my tempo. Were you rushing or dragging?"
         }
     }
 
-    var icon: String {
+    var imageName: String {
         switch self {
-        case .good:  "figure.mind.and.body"
-        case .drill: "figure.boxing"
+        case .good:  "CoachBennet"
+        case .drill: "CoachFletcher"
         }
     }
 

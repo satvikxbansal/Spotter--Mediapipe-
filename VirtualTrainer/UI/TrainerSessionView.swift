@@ -20,6 +20,7 @@ struct TrainerSessionView: View {
     @StateObject private var cameraManager = CameraManager()
     @StateObject private var poseEstimator = PoseEstimator()
     @StateObject private var motivationEngine = MotivationEngine()
+    @ObservedObject private var voiceCoach = VoiceCoachManager.shared
 
     @State private var glowPulse = false
     @State private var repCount: Int = 0
@@ -52,6 +53,10 @@ struct TrainerSessionView: View {
             glowBorder
             hudOverlay
             motivationOverlay
+            VStack {
+                voiceErrorBanner
+                Spacer()
+            }
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
@@ -66,6 +71,13 @@ struct TrainerSessionView: View {
                 .easeInOut(duration: 1.6).repeatForever(autoreverses: true)
             ) {
                 glowPulse = true
+            }
+
+            Task {
+                await voiceCoach.prefetchRepCounts(
+                    upTo: 20,
+                    personality: coachPersonality
+                )
             }
         }
         .onDisappear {
@@ -89,6 +101,8 @@ struct TrainerSessionView: View {
             if repCount > previousRepCount {
                 previousRepCount = repCount
                 motivationEngine.evaluateEffort(currentRepCount: repCount)
+
+                Task { await voiceCoach.playRep(count: repCount) }
             }
         }
     }
@@ -236,6 +250,24 @@ struct TrainerSessionView: View {
     }
 
     // MARK: - Motivation Overlay
+
+    // MARK: - Voice Error Debug Banner (remove before production)
+
+    private var voiceErrorBanner: some View {
+        Group {
+            if let error = voiceCoach.voiceError {
+                Text(error)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.Colors.danger.opacity(0.85))
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(Theme.Motion.smooth, value: voiceCoach.voiceError)
+    }
 
     private var motivationTint: Color {
         coachPersonality == .drill ? Theme.Colors.danger : Theme.Colors.accent

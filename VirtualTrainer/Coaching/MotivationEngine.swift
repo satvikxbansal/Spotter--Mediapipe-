@@ -170,6 +170,14 @@ final class MotivationEngine: ObservableObject {
         activeMessage = message
         HapticsEngine.shared.warningPulse()
 
+        let currentPersonality = personality
+        Task {
+            await VoiceCoachManager.shared.playMotivation(
+                text: message,
+                personality: currentPersonality
+            )
+        }
+
         let work = DispatchWorkItem { [weak self] in
             DispatchQueue.main.async {
                 self?.activeMessage = nil
