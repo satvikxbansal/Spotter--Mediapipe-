@@ -40,7 +40,19 @@ struct TrainerSessionView: View {
         missingJoints: []
     )
 
-    private let repCounter = SquatRepCounter()
+    private let formEngine = FormFeedbackEngine()
+
+    private var exerciseType: ExerciseType {
+        workout.exercises.first?.exerciseType ?? .squat
+    }
+
+    private var exerciseDefinition: ExerciseDefinition {
+        exerciseType.definition ?? ExerciseLibrary.squats
+    }
+
+    @State private var repCounter: UniversalRepCounter?
+    @State private var angleOverlays: [TrainerOverlayView.AngleOverlayData] = []
+    @State private var violatedJoints: Set<JointName> = []
 
     private let borderWidth: CGFloat = 3
     private let dropShadow = Shadow(
@@ -67,6 +79,7 @@ struct TrainerSessionView: View {
         .preferredColorScheme(.dark)
         .statusBarHidden()
         .onAppear {
+            repCounter = UniversalRepCounter(exerciseType: exerciseType)
             motivationEngine.personality = coachPersonality
             readyCoordinator.setPersonality(coachPersonality)
 
@@ -94,6 +107,8 @@ struct TrainerSessionView: View {
             handGesture.reset()
             readyCoordinator.reset()
             exertionAnalyzer.reset()
+            repCounter?.reset()
+            formEngine.reset()
         }
         .onChange(of: poseEstimator.bodyJoints) {
             let joints = poseEstimator.bodyJoints
@@ -111,17 +126,45 @@ struct TrainerSessionView: View {
                 readyCoordinator.bodyLost()
             }
 
-            // Only process reps when exercise is active
-            guard readyCoordinator.state == .exerciseActive else { return }
+            guard readyCoordinator.state == .exerciseActive,
+                  let counter = repCounter else {
+                angleOverlays = []
+                violatedJoints = []
+                return
+            }
 
-            let output = repCounter.processReps(
-                joints: joints,
-                worldJoints: poseEstimator.worldJoints
+            let output = counter.processJoints(
+                joints,
+                worldJoints: poseEstimator.worldJoints,
+                personality: coachPersonality
             )
             repCount = output.repCount
             currentPhase = output.phase
-            coachCues = output.cues
-            debugAngle = repCounter.lastKneeAngle
+            debugAngle = counter.lastPrimaryAngle
+
+            let formFeedbacks = formEngine.evaluate(
+                joints: joints,
+                angles: counter.lastAngles,
+                phase: currentPhase,
+                definition: exerciseDefinition,
+                personality: coachPersonality
+            )
+
+            if !formFeedbacks.isEmpty {
+                coachCues = formFeedbacks.map { $0.asCoachCue }
+            } else {
+                coachCues = output.cues
+            }
+
+            angleOverlays = buildAngleOverlays(
+                angles: counter.lastAngles,
+                definition: exerciseDefinition
+            )
+
+            violatedJoints = buildViolatedJoints(
+                feedbacks: formFeedbacks,
+                definition: exerciseDefinition
+            )
 
             if repCount > previousRepCount {
                 previousRepCount = repCount
@@ -161,7 +204,9 @@ struct TrainerSessionView: View {
     private var skeletonLayer: some View {
         TrainerOverlayView(
             bodyJoints: poseEstimator.bodyJoints,
-            allHandLandmarks: handGesture.allHandLandmarks
+            allHandLandmarks: handGesture.allHandLandmarks,
+            angleOverlays: angleOverlays,
+            violatedJoints: violatedJoints
         )
         .ignoresSafeArea()
     }
@@ -193,12 +238,29 @@ struct TrainerSessionView: View {
                         .ignoresSafeArea()
 
                     VStack(spacing: Theme.Spacing.md) {
-                        // Gesture indicator
+                        if readyCoordinator.state == .positioning,
+                           exerciseDefinition.cameraPosition == .side {
+                            cameraPositionGuide
+                        }
+
+                        if readyCoordinator.state == .positioning {
+                            Text(exerciseDefinition.setupInstruction)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Theme.Colors.accent)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, Theme.Spacing.xl)
+                                .padding(.vertical, Theme.Spacing.sm)
+                                .background(
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                        .fill(Color.black.opacity(0.5))
+                                )
+                                .padding(.horizontal, Theme.Spacing.lg)
+                        }
+
                         if readyCoordinator.state == .askingReady {
                             gestureIndicator
                         }
 
-                        // Main state message
                         Text(readyCoordinator.state.displayMessage)
                             .font(.system(size: readyCoordinator.state.isCountdown ? 72 : 28, weight: .heavy, design: .rounded))
                             .foregroundStyle(Theme.Colors.textPrimary)
@@ -281,6 +343,54 @@ struct TrainerSessionView: View {
         }
     }
 
+    // MARK: - Camera Position Guide
+
+    private var cameraPositionGuide: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: "rotate.3d.fill")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(Theme.Colors.accent)
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
+                Text("SIDE VIEW REQUIRED")
+                    .font(.system(size: 11, weight: .heavy))
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.Colors.accent)
+
+                Text("Turn sideways to the camera")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .fill(Theme.Colors.accent.opacity(0.12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .stroke(Theme.Colors.accent.opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
+
+    private var activeSideViewBanner: some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            Image(systemName: "rotate.3d.fill")
+                .font(.system(size: 10, weight: .bold))
+            Text("Side view")
+                .font(.system(size: 11, weight: .heavy))
+                .tracking(0.5)
+        }
+        .foregroundStyle(Theme.Colors.accent)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            Capsule()
+                .fill(Theme.Colors.accent.opacity(0.15))
+        )
+    }
+
     // MARK: - HUD Overlay
 
     private var hudOverlay: some View {
@@ -346,6 +456,10 @@ struct TrainerSessionView: View {
                     x: dropShadow.x,
                     y: dropShadow.y
                 )
+
+            if exerciseDefinition.cameraPosition == .side {
+                activeSideViewBanner
+            }
         }
     }
 
@@ -460,13 +574,77 @@ struct TrainerSessionView: View {
             )
     }
 
+    // MARK: - Overlay Data Builders
+
+    private func buildAngleOverlays(
+        angles: [String: Double],
+        definition: ExerciseDefinition
+    ) -> [TrainerOverlayView.AngleOverlayData] {
+        var result: [TrainerOverlayView.AngleOverlayData] = []
+        for angleDef in definition.angles {
+            guard let degrees = angles[angleDef.key] else { continue }
+
+            if let triple = AngleCalculator.resolveJointTriple(for: angleDef, side: "right") {
+                result.append(.init(
+                    label: angleDef.label,
+                    degrees: degrees,
+                    vertexJoint: triple.mid,
+                    startJoint: triple.start,
+                    endJoint: triple.end
+                ))
+            } else if let triple = AngleCalculator.resolveJointTriple(for: angleDef, side: "left") {
+                result.append(.init(
+                    label: angleDef.label,
+                    degrees: degrees,
+                    vertexJoint: triple.mid,
+                    startJoint: triple.start,
+                    endJoint: triple.end
+                ))
+            }
+        }
+        return result
+    }
+
+    private func buildViolatedJoints(
+        feedbacks: [FormFeedbackEngine.Feedback],
+        definition: ExerciseDefinition
+    ) -> Set<JointName> {
+        guard !feedbacks.isEmpty else { return [] }
+
+        var joints = Set<JointName>()
+        let violatedRuleIds = feedbacks
+            .filter { $0.type == .exerciseRule }
+            .compactMap { $0.ruleId }
+
+        for ruleId in violatedRuleIds {
+            guard let rule = definition.formRules.first(where: { $0.id == ruleId }),
+                  let angleDef = definition.angles.first(where: { $0.key == rule.angleKey })
+            else { continue }
+
+            for side in ["right", "left"] {
+                if let triple = AngleCalculator.resolveJointTriple(for: angleDef, side: side) {
+                    joints.insert(triple.start)
+                    joints.insert(triple.mid)
+                    joints.insert(triple.end)
+                }
+            }
+        }
+        return joints
+    }
+
     // MARK: - Debug Angle
+
+    private var primaryAngleLabel: String {
+        exerciseDefinition.angles
+            .first { $0.key == exerciseDefinition.primaryAngleKey }?
+            .label ?? "Angle"
+    }
 
     private func debugAngleBadge(_ angle: Double) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "angle")
                 .font(.system(size: 10, weight: .bold))
-            Text("Knee: \(Int(angle))°")
+            Text("\(primaryAngleLabel): \(Int(angle))°")
                 .font(.system(size: 12, weight: .heavy, design: .monospaced))
         }
         .foregroundStyle(Theme.Colors.textSecondary)

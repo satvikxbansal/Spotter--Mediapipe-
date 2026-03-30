@@ -192,10 +192,25 @@ enum AngleCalculator {
         return measureAngle(joints: joints, start: startJoint, mid: midJoint, end: endJoint)
     }
 
+    /// Resolves the three `JointName`s (start, mid, end) for an
+    /// `AngleDefinition` given a side preference. Returns `nil` if
+    /// any joint cannot be resolved.
+    static func resolveJointTriple(
+        for def: AngleDefinition,
+        side: String = "right"
+    ) -> (start: JointName, mid: JointName, end: JointName)? {
+        guard
+            let s = resolveJointName(def.startJoint, side: side),
+            let m = resolveJointName(def.midJoint, side: side),
+            let e = resolveJointName(def.endJoint, side: side)
+        else { return nil }
+        return (s, m, e)
+    }
+
     /// Maps abstract joint names used in `AngleDefinition` to
     /// `JointName` values. Supports both sided (e.g. "shoulder" →
     /// `.leftShoulder`) and center joints (e.g. "nose" → `.nose`).
-    private static func resolveJointName(
+    static func resolveJointName(
         _ name: String,
         side: String
     ) -> JointName? {
