@@ -47,7 +47,7 @@ struct RepCounterOutput {
 /// Contract for any exercise-specific rep counting engine.
 ///
 /// Each implementation owns its own state machine, threshold
-/// constants, and form-check rules. The Vision pipeline feeds it
+/// constants, and form-check rules. The pose pipeline feeds it
 /// a dictionary of named joint angles every frame; the
 /// implementation returns a `RepCounterOutput`.
 ///

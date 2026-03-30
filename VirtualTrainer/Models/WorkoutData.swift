@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import Vision
 
 // ────────────────────────────────────────────────────────────────────
 // MARK: - User Profile (pre-auth placeholder)
@@ -18,6 +17,7 @@ enum BodyCategory: String, CaseIterable, Identifiable {
     case upperBody
     case lowerBody
     case fullBody
+    case yoga
 
     var id: String { rawValue }
 
@@ -26,6 +26,7 @@ enum BodyCategory: String, CaseIterable, Identifiable {
         case .upperBody: "Upper Body"
         case .lowerBody: "Lower Body"
         case .fullBody:  "Full Body"
+        case .yoga:      "Yoga"
         }
     }
 
@@ -34,6 +35,7 @@ enum BodyCategory: String, CaseIterable, Identifiable {
         case .upperBody: "figure.arms.open"
         case .lowerBody: "figure.strengthtraining.traditional"
         case .fullBody:  "figure.run"
+        case .yoga:      "figure.yoga"
         }
     }
 
@@ -42,6 +44,7 @@ enum BodyCategory: String, CaseIterable, Identifiable {
         case .upperBody: "Chest, arms & shoulders"
         case .lowerBody: "Quads, glutes & calves"
         case .fullBody:  "Hit everything at once"
+        case .yoga:      "Flexibility & balance"
         }
     }
 
@@ -49,27 +52,36 @@ enum BodyCategory: String, CaseIterable, Identifiable {
         switch self {
         case .upperBody:
             [
-                ExerciseOption(type: .pushup, available: true),
                 ExerciseOption(type: .bicepCurl, available: true),
-                ExerciseOption(name: "Shoulder Press", available: false),
-                ExerciseOption(name: "Lateral Raises", available: false),
-                ExerciseOption(name: "Tricep Dips", available: false),
+                ExerciseOption(type: .pushup, available: true),
+                ExerciseOption(type: .lateralRaise, available: true),
+                ExerciseOption(type: .frontRaise, available: true),
+                ExerciseOption(type: .overheadPress, available: true),
+                ExerciseOption(type: .cobraWings, available: true),
+                ExerciseOption(type: .overarmReach, available: true),
             ]
         case .lowerBody:
             [
                 ExerciseOption(type: .squat, available: true),
-                ExerciseOption(name: "Lunges", available: false),
-                ExerciseOption(name: "Calf Raises", available: false),
-                ExerciseOption(name: "Glute Bridges", available: false),
-                ExerciseOption(name: "Wall Sits", available: false),
+                ExerciseOption(type: .sumoSquat, available: true),
+                ExerciseOption(type: .lunge, available: true),
+                ExerciseOption(type: .sideLunge, available: true),
+                ExerciseOption(type: .gluteBridge, available: true),
+                ExerciseOption(type: .hipAbduction, available: true),
+                ExerciseOption(type: .legRaise, available: true),
             ]
         case .fullBody:
             [
-                ExerciseOption(type: .squat, available: true),
-                ExerciseOption(type: .pushup, available: true),
-                ExerciseOption(type: .bicepCurl, available: true),
-                ExerciseOption(name: "Burpees", available: false),
-                ExerciseOption(name: "Mountain Climbers", available: false),
+                ExerciseOption(type: .jumpingJack, available: true),
+                ExerciseOption(type: .kneeRaise, available: true),
+                ExerciseOption(type: .sitUp, available: true),
+                ExerciseOption(type: .vUp, available: true),
+                ExerciseOption(type: .plank, available: true),
+            ]
+        case .yoga:
+            [
+                ExerciseOption(type: .downwardDog, available: true),
+                ExerciseOption(type: .warrior, available: true),
             ]
         }
     }
@@ -104,69 +116,75 @@ struct ExerciseOption: Identifiable {
 // MARK: - Exercise Type
 // ────────────────────────────────────────────────────────────────────
 
-/// Every exercise the app can track with the Vision body-pose pipeline.
+/// Every exercise the app can track with the pose estimation pipeline.
 /// Adding a new movement means adding a case here and a matching
 /// `RepCounter` implementation.
 enum ExerciseType: String, Codable, CaseIterable, Identifiable {
+    // Lower Body
     case squat
-    case pushup
+    case sumoSquat
+    case lunge
+    case sideLunge
+    case gluteBridge
+    case hipAbduction
+    case legRaise
+
+    // Upper Body
     case bicepCurl
+    case pushup
+    case lateralRaise
+    case frontRaise
+    case overheadPress
+    case cobraWings
+    case overarmReach
+
+    // Full Body
+    case jumpingJack
+    case kneeRaise
+    case sitUp
+    case vUp
+    case plank
+
+    // Yoga
+    case downwardDog
+    case warrior
 
     var id: String { rawValue }
 
+    /// Looks up the full definition from the ExerciseLibrary.
+    var definition: ExerciseDefinition? {
+        ExerciseLibrary.definition(for: rawValue)
+    }
+
     var displayName: String {
-        switch self {
-        case .squat:     "Squats"
-        case .pushup:    "Push-Ups"
-        case .bicepCurl: "Bicep Curls"
-        }
+        definition?.displayName ?? rawValue.capitalized
     }
 
     /// The primary joint angle key that the rep counter cares about.
-    /// Maps to keys in the `[String: Double]` angles dictionary
-    /// that the Vision pipeline produces each frame.
     var primaryAngleKey: String {
-        switch self {
-        case .squat:     "kneeAngle"
-        case .pushup:    "elbowAngle"
-        case .bicepCurl: "elbowAngle"
-        }
+        definition?.primaryAngleKey ?? "kneeAngle"
     }
 
     /// Body joints the camera **must** see for this exercise to be
-    /// tracked reliably. The visibility checker uses this to decide
-    /// whether to show the "step back" banner.
-    ///
-    /// Add new exercises here — the rest of the pipeline picks it up
-    /// automatically.
-    var requiredJoints: [VNHumanBodyPoseObservation.JointName] {
-        switch self {
-        case .squat:
-            [.leftHip, .rightHip,
-             .leftKnee, .rightKnee,
-             .leftShoulder, .rightShoulder]
-
-        case .pushup:
-            [.leftShoulder, .rightShoulder,
-             .leftElbow, .rightElbow,
-             .leftWrist, .rightWrist,
-             .leftHip, .rightHip]
-
-        case .bicepCurl:
-            [.leftShoulder, .rightShoulder,
-             .leftElbow, .rightElbow,
-             .leftWrist, .rightWrist]
-        }
+    /// tracked reliably.
+    var requiredJoints: [JointName] {
+        definition?.requiredJoints ?? [.leftShoulder, .rightShoulder,
+                                        .leftHip, .rightHip]
     }
 
     /// Human-readable summary of what the camera needs to see.
-    /// Shown inside the visibility banner.
     var visibilityHint: String {
-        switch self {
-        case .squat:     "Lower body — shoulders, hips, and knees"
-        case .pushup:    "Upper body — shoulders, elbows, and wrists"
-        case .bicepCurl: "Arms — shoulders, elbows, and wrists"
-        }
+        definition?.visibilityHint ?? "Full body visible"
+    }
+
+    /// Whether this is an isometric hold (plank, yoga) vs rep-based.
+    var isIsometric: Bool {
+        definition?.movementType == .isometric
+    }
+
+    /// Camera orientation for this exercise.
+    var cameraPosition: CameraPosition {
+        definition?.cameraPosition ?? .front
     }
 }
 

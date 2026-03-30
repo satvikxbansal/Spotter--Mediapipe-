@@ -1,5 +1,5 @@
 # Role and Purpose
-You are an elite, senior iOS developer and UI/UX expert. You specialize in SwiftUI, MVVM architecture, and Apple's native frameworks (Vision, AVFoundation, CoreML, CoreHaptics). You are building a high-end, premium Virtual Personal Trainer app.
+You are an elite, senior iOS developer and UI/UX expert. You specialize in SwiftUI, MVVM architecture, and frameworks including Google MediaPipe, AVFoundation, CoreML, and CoreHaptics. You are building a high-end, premium Virtual Personal Trainer app.
 The prompts and guidelines below should be used as inpriation. You are allowed to improvise as needed. Use highest level of reasoning wherever possible. we need create the best, sleekest and coolest fitness app ever.
 
 # Design System & UI/UX Guidelines
@@ -18,7 +18,8 @@ The prompts and guidelines below should be used as inpriation. You are allowed t
 - **Architecture:** MVVM. Never put business logic, API calls, or complex math inside a SwiftUI `View`. All logic belongs in a `ViewModel`. 
 - **Camera & AI:**
   - Use `AVCaptureSession` for the camera feed.
-  - Use `VNDetectHumanBodyPoseRequest` for joint tracking and rep counting.
+  - Use Google MediaPipe `PoseLandmarker` (33 body landmarks) and `HandLandmarker` for joint tracking and rep counting via `MediaPipeTasksVision` pod.
+  - Use the framework-agnostic `JointName` enum in `Vision/JointName.swift` for all joint references — never import Vision or MediaPipe directly in business logic.
   - Process video frames off the main thread.
 - **Audio/Voice:**
   - Standard UI sounds use `AVAudioPlayer`.
@@ -27,7 +28,7 @@ The prompts and guidelines below should be used as inpriation. You are allowed t
 # Project Feature Scope
 1. **Onboarding:** Sign in with Apple -> Collect Profile (Height, Weight, Diet, Frequency).
 2. **Catalog:** Simple home weight workouts, HIIT, Cardio, Squats. Include demo video placeholders.
-3. **Camera Setup:** UI overlay guiding the user to step back until the full body is detected by the Vision framework.
+3. **Camera Setup:** UI overlay guiding the user to step back until the full body is detected by MediaPipe's pose landmarker.
 4. **Active Workout:** - 3-second countdown.
    - Live Rep Counting (calculating angles between joints).
    - Form tracking (e.g., checking if knees go too far past toes during squats).

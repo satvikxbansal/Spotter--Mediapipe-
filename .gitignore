@@ -1,0 +1,9 @@
+.vercel
+
+# CocoaPods
+Pods/
+*.xcworkspace
+!VirtualTrainer.xcodeproj/project.xcworkspace/
+
+# MediaPipe model bundles (large binary files, download via script)
+VirtualTrainer/Models/*.task

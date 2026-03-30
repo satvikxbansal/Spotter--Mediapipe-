@@ -1,5 +1,4 @@
 import SwiftUI
-import Vision
 
 // ────────────────────────────────────────────────────────────────────
 // MARK: - TrainerSessionView
@@ -12,6 +11,7 @@ import Vision
 ///   2. Skeleton overlay (joints + bones from PoseEstimator)
 ///   3. Glowing active-session border
 ///   4. Rep counter + status chrome
+///   5. Ready-check overlay (positioning → thumbs up → countdown)
 struct TrainerSessionView: View {
 
     let workout: WorkoutPlan
@@ -19,6 +19,10 @@ struct TrainerSessionView: View {
 
     @StateObject private var cameraManager = CameraManager()
     @StateObject private var poseEstimator = PoseEstimator()
+    @StateObject private var handGesture = HandGestureDetector()
+    @StateObject private var faceLandmarker = FaceLandmarkerService()
+    @StateObject private var exertionAnalyzer = ExertionAnalyzer()
+    @StateObject private var readyCoordinator = WorkoutReadyCoordinator()
     @StateObject private var motivationEngine = MotivationEngine()
     @ObservedObject private var voiceCoach = VoiceCoachManager.shared
 
@@ -52,6 +56,7 @@ struct TrainerSessionView: View {
             skeletonLayer
             glowBorder
             hudOverlay
+            readyCheckOverlay
             motivationOverlay
             VStack {
                 voiceErrorBanner
@@ -63,8 +68,12 @@ struct TrainerSessionView: View {
         .statusBarHidden()
         .onAppear {
             motivationEngine.personality = coachPersonality
-            cameraManager.onFrame = { [weak poseEstimator] pixelBuffer in
-                poseEstimator?.processFrame(pixelBuffer)
+            readyCoordinator.setPersonality(coachPersonality)
+
+            cameraManager.onFrame = { [weak poseEstimator, weak handGesture, weak faceLandmarker] sampleBuffer in
+                poseEstimator?.processFrame(sampleBuffer)
+                handGesture?.processFrame(sampleBuffer)
+                faceLandmarker?.processFrame(sampleBuffer)
             }
             cameraManager.start()
             withAnimation(
@@ -82,6 +91,9 @@ struct TrainerSessionView: View {
         }
         .onDisappear {
             cameraManager.stop()
+            handGesture.reset()
+            readyCoordinator.reset()
+            exertionAnalyzer.reset()
         }
         .onChange(of: poseEstimator.bodyJoints) {
             let joints = poseEstimator.bodyJoints
@@ -92,7 +104,20 @@ struct TrainerSessionView: View {
                 for: exercise
             )
 
-            let output = repCounter.processReps(joints: joints)
+            // Feed visibility into ready coordinator
+            if visibilityResult.isReady {
+                readyCoordinator.bodyIsVisible()
+            } else {
+                readyCoordinator.bodyLost()
+            }
+
+            // Only process reps when exercise is active
+            guard readyCoordinator.state == .exerciseActive else { return }
+
+            let output = repCounter.processReps(
+                joints: joints,
+                worldJoints: poseEstimator.worldJoints
+            )
             repCount = output.repCount
             currentPhase = output.phase
             coachCues = output.cues
@@ -100,10 +125,27 @@ struct TrainerSessionView: View {
 
             if repCount > previousRepCount {
                 previousRepCount = repCount
-                motivationEngine.evaluateEffort(currentRepCount: repCount)
+                motivationEngine.evaluateEffort(
+                    currentRepCount: repCount,
+                    faceEffortScore: exertionAnalyzer.effortScore
+                )
 
                 Task { await voiceCoach.playRep(count: repCount) }
             }
+        }
+        .onChange(of: handGesture.currentGesture) {
+            switch handGesture.currentGesture {
+            case .thumbsUp:
+                readyCoordinator.thumbsUpDetected()
+            case .thumbsDown:
+                readyCoordinator.thumbsDownDetected()
+            default:
+                break
+            }
+        }
+        .onChange(of: faceLandmarker.blendshapes) {
+            guard readyCoordinator.state == .exerciseActive else { return }
+            exertionAnalyzer.update(blendshapes: faceLandmarker.blendshapes)
         }
     }
 
@@ -117,8 +159,11 @@ struct TrainerSessionView: View {
     // MARK: - Skeleton Overlay
 
     private var skeletonLayer: some View {
-        TrainerOverlayView(bodyJoints: poseEstimator.bodyJoints)
-            .ignoresSafeArea()
+        TrainerOverlayView(
+            bodyJoints: poseEstimator.bodyJoints,
+            allHandLandmarks: handGesture.allHandLandmarks
+        )
+        .ignoresSafeArea()
     }
 
     // MARK: - Active-Session Glow Border
@@ -137,6 +182,105 @@ struct TrainerSessionView: View {
             .allowsHitTesting(false)
     }
 
+    // MARK: - Ready-Check Overlay
+
+    private var readyCheckOverlay: some View {
+        Group {
+            if readyCoordinator.state != .exerciseActive {
+                ZStack {
+                    // Semi-transparent backdrop
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+
+                    VStack(spacing: Theme.Spacing.md) {
+                        // Gesture indicator
+                        if readyCoordinator.state == .askingReady {
+                            gestureIndicator
+                        }
+
+                        // Main state message
+                        Text(readyCoordinator.state.displayMessage)
+                            .font(.system(size: readyCoordinator.state.isCountdown ? 72 : 28, weight: .heavy, design: .rounded))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .shadow(color: .black.opacity(0.5), radius: 8)
+                            .contentTransition(.numericText())
+                            .animation(.snappy(duration: 0.3), value: readyCoordinator.state)
+
+                        // Subtitle
+                        if let subtitle = readyCoordinator.state.subtitle {
+                            Text(subtitle)
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, Theme.Spacing.xl)
+                        }
+
+                        // Coach message
+                        if !readyCoordinator.coachMessage.isEmpty {
+                            Text(readyCoordinator.coachMessage)
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(.white)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 12)
+                                .background(
+                                    Capsule()
+                                        .fill(coachPersonality.accentColor.opacity(0.85))
+                                )
+                                .padding(.horizontal, Theme.Spacing.lg)
+                                .transition(.scale.combined(with: .opacity))
+                        }
+
+                        // Visibility progress
+                        if readyCoordinator.state == .positioning {
+                            visibilityProgress
+                        }
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(Theme.Motion.smooth, value: readyCoordinator.state)
+    }
+
+    private var gestureIndicator: some View {
+        HStack(spacing: Theme.Spacing.lg) {
+            VStack(spacing: Theme.Spacing.xs) {
+                Image(systemName: "hand.thumbsup.fill")
+                    .font(.system(size: 32))
+                    .foregroundStyle(Theme.Colors.positive)
+                Text("Start")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            }
+
+            VStack(spacing: Theme.Spacing.xs) {
+                Image(systemName: "hand.thumbsdown.fill")
+                    .font(.system(size: 32))
+                    .foregroundStyle(Theme.Colors.danger)
+                Text("Not yet")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            }
+        }
+    }
+
+    private var visibilityProgress: some View {
+        VStack(spacing: Theme.Spacing.xs) {
+            ProgressView(value: visibilityResult.visibility)
+                .progressViewStyle(.linear)
+                .tint(Theme.Colors.accent)
+                .frame(width: 200)
+
+            if let message = visibilityResult.message {
+                Text(message)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+    }
+
     // MARK: - HUD Overlay
 
     private var hudOverlay: some View {
@@ -149,7 +293,9 @@ struct TrainerSessionView: View {
             .padding(.top, 60)
             .padding(.horizontal, Theme.Spacing.lg)
 
-            if let message = visibilityResult.message, !visibilityResult.isReady {
+            if readyCoordinator.state == .exerciseActive,
+               let message = visibilityResult.message,
+               !visibilityResult.isReady {
                 BodyVisibilityBannerView(
                     message: message,
                     visibility: visibilityResult.visibility
@@ -166,8 +312,15 @@ struct TrainerSessionView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                if let angle = debugAngle {
-                    debugAngleBadge(angle)
+                if readyCoordinator.state == .exerciseActive {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        if let angle = debugAngle {
+                            debugAngleBadge(angle)
+                        }
+                        if faceLandmarker.faceDetected {
+                            effortBadge
+                        }
+                    }
                 }
 
                 bottomBar
@@ -183,21 +336,10 @@ struct TrainerSessionView: View {
 
     private var workoutTitleLabel: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-            Text(workout.title)
-                .font(.system(size: 20, weight: .heavy))
-                .tracking(-0.3)
-                .foregroundStyle(Theme.Colors.textPrimary)
-                .shadow(
-                    color: dropShadow.color,
-                    radius: dropShadow.radius,
-                    x: dropShadow.x,
-                    y: dropShadow.y
-                )
-
-            Text("\(workout.exercises.count) sets · \(workout.estimatedMinutes) min")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.4)
-                .foregroundStyle(Theme.Colors.textSecondary)
+            Text(workout.title.uppercased())
+                .font(.system(size: 14, weight: .heavy))
+                .tracking(1.5)
+                .foregroundStyle(Theme.Colors.accent)
                 .shadow(
                     color: dropShadow.color,
                     radius: dropShadow.radius,
@@ -249,9 +391,7 @@ struct TrainerSessionView: View {
         }
     }
 
-    // MARK: - Motivation Overlay
-
-    // MARK: - Voice Error Debug Banner (remove before production)
+    // MARK: - Voice Error Debug Banner
 
     private var voiceErrorBanner: some View {
         Group {
@@ -269,13 +409,16 @@ struct TrainerSessionView: View {
         .animation(Theme.Motion.smooth, value: voiceCoach.voiceError)
     }
 
+    // MARK: - Motivation Overlay
+
     private var motivationTint: Color {
         coachPersonality == .drill ? Theme.Colors.danger : Theme.Colors.accent
     }
 
     private var motivationOverlay: some View {
         Group {
-            if let message = motivationEngine.activeMessage {
+            if let message = motivationEngine.activeMessage,
+               readyCoordinator.state == .exerciseActive {
                 Text(message)
                     .font(.system(size: 32, weight: .black, design: .rounded))
                     .tracking(-0.5)
@@ -335,12 +478,68 @@ struct TrainerSessionView: View {
         )
     }
 
+    // MARK: - Effort Badge
+
+    private var effortBadge: some View {
+        let effort = exertionAnalyzer.effortScore
+        let color: Color = effort > 0.7
+            ? Theme.Colors.danger
+            : effort > 0.4 ? Theme.Colors.accent : Theme.Colors.positive
+
+        return HStack(spacing: 6) {
+            Image(systemName: "face.smiling")
+                .font(.system(size: 10, weight: .bold))
+            Text("Effort: \(Int(effort * 100))%")
+                .font(.system(size: 12, weight: .heavy, design: .monospaced))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(Color.black.opacity(0.5))
+        )
+    }
+
+    // MARK: - Gesture Debug Label
+
+    private var gestureDebugLabel: some View {
+        Group {
+            let gesture = handGesture.currentGesture
+            let text: String = switch gesture {
+            case .thumbsUp:    "👍 Thumbs Up"
+            case .thumbsDown:  "👎 Thumbs Down"
+            case .openPalm:    "🖐️ Open Palm"
+            case .fist:        "✊ Fist"
+            case .victory:     "✌️ Victory"
+            case .pointingUp:  "☝️ Pointing Up"
+            case .none:        handGesture.handDetected ? "🤚 Hand Detected" : "No Hand"
+            }
+
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(gesture != .none ? Theme.Colors.positive : Theme.Colors.textSecondary.opacity(0.4))
+                    .frame(width: 6, height: 6)
+                Text(text)
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(gesture != .none ? Theme.Colors.positive : Theme.Colors.textSecondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(Color.black.opacity(0.6))
+            )
+        }
+    }
+
     // MARK: - Bottom Status Bar
 
     private var bottomBar: some View {
         HStack {
             statusIndicator
             Spacer()
+            gestureDebugLabel
         }
     }
 
@@ -376,6 +575,17 @@ private struct Shadow {
     let radius: CGFloat
     let x: CGFloat
     let y: CGFloat
+}
+
+// ────────────────────────────────────────────────────────────────────
+// MARK: - WorkoutReadyState Helpers
+// ────────────────────────────────────────────────────────────────────
+
+extension WorkoutReadyState {
+    var isCountdown: Bool {
+        if case .countdown = self { return true }
+        return false
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────

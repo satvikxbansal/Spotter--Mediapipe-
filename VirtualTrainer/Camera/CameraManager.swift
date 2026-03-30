@@ -6,8 +6,8 @@ import SwiftUI
 // MARK: - CameraManager
 // ────────────────────────────────────────────────────────────────────
 
-/// Owns the `AVCaptureSession` lifecycle **and** delivers pixel
-/// buffers to a frame handler for Vision processing.
+/// Owns the `AVCaptureSession` lifecycle **and** delivers sample
+/// buffers to a frame handler for MediaPipe pose processing.
 ///
 /// Views observe `isRunning` reactively; all capture-session work
 /// happens on a dedicated serial queue so the main thread stays free.
@@ -19,9 +19,10 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var permissionGranted = false
 
     /// Set this closure before calling `start()`. It receives every
-    /// video frame's pixel buffer on a dedicated processing queue —
-    /// never the main thread.
-    var onFrame: ((CVPixelBuffer) -> Void)?
+    /// video frame's sample buffer on a dedicated processing queue —
+    /// never the main thread. MediaPipe accepts CMSampleBuffer
+    /// directly via MPImage.
+    var onFrame: ((CMSampleBuffer) -> Void)?
 
     private let sessionQueue = DispatchQueue(label: "com.virtualtrainer.camera.session")
     private let videoOutputQueue = DispatchQueue(
@@ -82,7 +83,7 @@ final class CameraManager: NSObject, ObservableObject {
         }
         session.addInput(input)
 
-        // Video data output — delivers pixel buffers for Vision processing.
+        // Video data output — delivers sample buffers for MediaPipe processing.
         videoOutput.alwaysDiscardsLateVideoFrames = true
         videoOutput.videoSettings = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
@@ -96,8 +97,8 @@ final class CameraManager: NSObject, ObservableObject {
         session.addOutput(videoOutput)
 
         if let connection = videoOutput.connection(with: .video) {
-            if connection.isVideoOrientationSupported {
-                connection.videoOrientation = .portrait
+            if connection.isVideoRotationAngleSupported(90) {
+                connection.videoRotationAngle = 90
             }
             if connection.isVideoMirroringSupported {
                 connection.isVideoMirrored = true
@@ -122,7 +123,6 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        onFrame?(pixelBuffer)
+        onFrame?(sampleBuffer)
     }
 }

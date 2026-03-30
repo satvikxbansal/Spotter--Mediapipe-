@@ -15,11 +15,10 @@ struct HomeDashboardView: View {
 
     @State private var selectedCategory: BodyCategory?
     @State private var showExerciseSheet = false
-    @State private var selectedExercises: Set<String> = []
+    @State private var selectedExercise: String?
     @State private var showCoachSheet = false
     @State private var selectedPersonality: CoachPersonality = .good
     @State private var navigateToSession = false
-    @State private var comingSoonToast: String?
 
     // MARK: - Dashboard Animation
 
@@ -150,8 +149,7 @@ struct HomeDashboardView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .sheet(isPresented: $showExerciseSheet) {
             exerciseSelectionSheet
-                .fixedSize(horizontal: false, vertical: true)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([exerciseSheetDetent])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.ultraThinMaterial)
         }
@@ -161,7 +159,6 @@ struct HomeDashboardView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.ultraThinMaterial)
         }
-        .overlay(alignment: .bottom) { comingSoonBanner }
     }
 
     // MARK: - Dashboard Header
@@ -218,7 +215,7 @@ struct HomeDashboardView: View {
                 Button {
                     HapticsEngine.shared.buttonTap()
                     selectedCategory = category
-                    preSelectAvailableExercises(for: category)
+                    selectedExercise = nil
                     showExerciseSheet = true
                 } label: {
                     BodyCategoryCard(category: category)
@@ -241,7 +238,6 @@ struct HomeDashboardView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             if let category = selectedCategory {
                 let available = category.exercises.filter(\.available)
-                let comingSoon = Array(category.exercises.filter { !$0.available }.prefix(2))
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                     Text(category.displayName.uppercased())
@@ -249,7 +245,7 @@ struct HomeDashboardView: View {
                         .tracking(1.8)
                         .foregroundStyle(Theme.Colors.accent)
 
-                    Text("Select your exercises")
+                    Text("Pick an exercise")
                         .font(.system(size: 22, weight: .heavy))
                         .foregroundStyle(Theme.Colors.textPrimary)
                 }
@@ -258,28 +254,12 @@ struct HomeDashboardView: View {
                     ForEach(available) { exercise in
                         AvailableExerciseRow(
                             exercise: exercise,
-                            isSelected: selectedExercises.contains(exercise.id),
-                            onTap: { toggleExercise(exercise) }
-                        )
-                    }
-                }
-
-                if !comingSoon.isEmpty {
-                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        Text("COMING SOON")
-                            .font(.system(size: 11, weight: .heavy))
-                            .tracking(1.8)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                            .padding(.top, Theme.Spacing.xxs)
-
-                        VStack(spacing: Theme.Spacing.xs) {
-                            ForEach(comingSoon) { exercise in
-                                ComingSoonExerciseRow(
-                                    exercise: exercise,
-                                    onTap: { showComingSoon(exercise.name) }
-                                )
+                            isSelected: selectedExercise == exercise.id,
+                            onTap: {
+                                selectedExercise = exercise.id
+                                HapticsEngine.shared.buttonTap()
                             }
-                        }
+                        )
                     }
                 }
 
@@ -295,6 +275,8 @@ struct HomeDashboardView: View {
                     Text("Lock in & pick your coach")
                 }
                 .buttonStyle(PrimaryCTAStyle())
+                .disabled(selectedExercise == nil)
+                .opacity(selectedExercise == nil ? 0.5 : 1.0)
                 .padding(.bottom, Theme.Spacing.xs)
             }
         }
@@ -339,6 +321,12 @@ struct HomeDashboardView: View {
             Button {
                 HapticsEngine.shared.buttonTap()
                 showCoachSheet = false
+                Task {
+                    await VoiceCoachManager.shared.playMotivation(
+                        text: "Welcome, lets get started",
+                        personality: selectedPersonality
+                    )
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                     navigateToSession = true
                 }
@@ -352,82 +340,34 @@ struct HomeDashboardView: View {
         .padding(.top, Theme.Spacing.xl)
     }
 
-    // MARK: - Shared Components
-
-    private var comingSoonBanner: some View {
-        Group {
-            if let name = comingSoonToast {
-                Text("\(name) — coming soon")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.Colors.textPrimary)
-                    .padding(.horizontal, Theme.Spacing.lg)
-                    .padding(.vertical, Theme.Spacing.sm)
-                    .background(
-                        Capsule()
-                            .fill(Theme.Colors.surface)
-                            .overlay(
-                                Capsule()
-                                    .stroke(Theme.Colors.accent.opacity(0.3), lineWidth: 1)
-                            )
-                    )
-                    .padding(.bottom, Theme.Spacing.xxl)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(Theme.Motion.snappy, value: comingSoonToast)
-    }
-
     // MARK: - Logic
 
-    private func preSelectAvailableExercises(for category: BodyCategory) {
-        selectedExercises = Set(
-            category.exercises
-                .filter(\.available)
-                .map(\.id)
-        )
-    }
-
-    private func toggleExercise(_ exercise: ExerciseOption) {
-        if selectedExercises.contains(exercise.id) {
-            selectedExercises.remove(exercise.id)
-        } else {
-            selectedExercises.insert(exercise.id)
-        }
-        HapticsEngine.shared.buttonTap()
-    }
-
-    private func showComingSoon(_ name: String) {
-        comingSoonToast = name
-        HapticsEngine.shared.buttonTap()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-            if comingSoonToast == name {
-                comingSoonToast = nil
-            }
-        }
+    /// Computes the ideal sheet height based on exercise count.
+    private var exerciseSheetDetent: PresentationDetent {
+        let count = selectedCategory?.exercises.filter(\.available).count ?? 0
+        // Header (~100) + rows (56 each) + button (~70) + padding (~60)
+        let height = CGFloat(100 + count * 56 + 70 + 60)
+        return .height(height)
     }
 
     private func buildWorkoutPlan() -> WorkoutPlan {
-        guard let category = selectedCategory else {
+        guard let category = selectedCategory,
+              let exerciseId = selectedExercise,
+              let exercise = category.exercises.first(where: { $0.id == exerciseId }),
+              let type = exercise.type
+        else {
             return WorkoutPlan.MockData.legDay
         }
 
-        let selected = category.exercises.filter { selectedExercises.contains($0.id) && $0.available }
-        let sets = selected.flatMap { exercise -> [WorkoutSet] in
-            guard let type = exercise.type else { return [] }
-            return [
+        return WorkoutPlan(
+            title: exercise.name,
+            subtitle: category.displayName,
+            exercises: [
                 WorkoutSet(exerciseType: type, targetReps: 12),
                 WorkoutSet(exerciseType: type, targetReps: 12),
                 WorkoutSet(exerciseType: type, targetReps: 10),
-            ]
-        }
-
-        return WorkoutPlan(
-            title: category.displayName,
-            subtitle: category.subtitle,
-            exercises: sets.isEmpty
-                ? [WorkoutSet(exerciseType: .squat, targetReps: 12)]
-                : sets,
-            estimatedMinutes: max(sets.count * 3, 10)
+            ],
+            estimatedMinutes: 10
         )
     }
 
@@ -504,28 +444,25 @@ private struct AvailableExerciseRow: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: Theme.Spacing.md) {
+                // Radio button
                 ZStack {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isSelected ? Theme.Colors.accent : Color.clear)
-                        .frame(width: 24, height: 24)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(
-                                    isSelected ? Theme.Colors.accent : Theme.Colors.textSecondary,
-                                    lineWidth: 1.5
-                                )
+                    Circle()
+                        .stroke(
+                            isSelected ? Theme.Colors.accent : Theme.Colors.textSecondary,
+                            lineWidth: 2
                         )
+                        .frame(width: 22, height: 22)
 
                     if isSelected {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 12, weight: .heavy))
-                            .foregroundStyle(Theme.Colors.background)
+                        Circle()
+                            .fill(Theme.Colors.accent)
+                            .frame(width: 12, height: 12)
                     }
                 }
 
                 Text(exercise.name)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .font(.system(size: 16, weight: isSelected ? .heavy : .semibold))
+                    .foregroundStyle(isSelected ? Theme.Colors.accent : Theme.Colors.textPrimary)
 
                 Spacer()
             }
@@ -533,42 +470,16 @@ private struct AvailableExerciseRow: View {
             .padding(.horizontal, Theme.Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .fill(Theme.Colors.surface)
+                    .fill(isSelected ? Theme.Colors.accent.opacity(0.08) : Theme.Colors.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .stroke(isSelected ? Theme.Colors.accent.opacity(0.3) : Color.clear, lineWidth: 1)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .animation(Theme.Motion.snappy, value: isSelected)
-    }
-}
-
-// ────────────────────────────────────────────────────────────────────
-// MARK: - Coming Soon Exercise Row (no checkbox)
-// ────────────────────────────────────────────────────────────────────
-
-private struct ComingSoonExerciseRow: View {
-
-    let exercise: ExerciseOption
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: Theme.Spacing.md) {
-                Text(exercise.name)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Theme.Colors.textTertiary)
-
-                Spacer()
-            }
-            .padding(.vertical, Theme.Spacing.sm)
-            .padding(.horizontal, Theme.Spacing.md)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .fill(Theme.Colors.surface.opacity(0.4))
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -635,7 +546,7 @@ private struct CoachPersonalityCard: View {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// MARK: - Card Press Style (haptics + scale)
+// MARK: - Card Press Style
 // ────────────────────────────────────────────────────────────────────
 
 private struct CardPressStyle: ButtonStyle {
@@ -644,11 +555,6 @@ private struct CardPressStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.975 : 1.0)
             .opacity(configuration.isPressed ? 0.85 : 1.0)
             .animation(Theme.Motion.snappy, value: configuration.isPressed)
-            .onChange(of: configuration.isPressed) { _, pressed in
-                if pressed {
-                    HapticsEngine.shared.buttonTap()
-                }
-            }
     }
 }
 

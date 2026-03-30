@@ -1,5 +1,5 @@
 import Foundation
-import Vision
+import simd
 
 // ────────────────────────────────────────────────────────────────────
 // MARK: - SquatRepCounter
@@ -20,75 +20,33 @@ import Vision
 ///                                                     ↑ rep counted
 /// ```
 ///
-/// ## State Transitions
-///
-/// ```
-///  ┌─────────┐  knee < downThreshold   ┌──────┐  knee > upThreshold   ┌──────┐
-///  │  IDLE   │ ──────────────────────▶ │ DOWN │ ─────────────────────▶│  UP  │
-///  └─────────┘                         └──────┘                       └──────┘
-///       ▲                                                                │
-///       │                    rep counted + form check                    │
-///       └────────────────────────────────────────────────────────────────┘
-/// ```
-///
 /// ## Joint-Angle Math
 ///
-/// The knee angle is the interior angle at the knee formed by the
-/// vectors hip→knee and ankle→knee.  Calculated via `atan2` so it
-/// maps cleanly to 0°–180° without quadrant ambiguity.
+/// Prefers 3D world landmarks (camera-independent, measured in meters)
+/// when available. Falls back to 2D normalised coordinates when the
+/// world landmark triple is incomplete.
 final class SquatRepCounter: RepCounter {
 
     let exerciseType: ExerciseType = .squat
 
     // MARK: - Angle Thresholds (degrees)
 
-    /// Knee angle above which the user is considered "standing."
-    /// Full leg extension is ~175°; 160° gives margin for soft lockout.
-    private let upThreshold: Double = 160.0
-
-    /// Knee angle below which the user is considered "in the hole."
-    /// 110° catches most people before true parallel, giving the
-    /// state machine time to latch `down` before the turnaround.
-    private let downThreshold: Double = 110.0
-
-    /// The depth we actually want the user to hit for a quality rep.
-    /// If the deepest angle during the `down` phase never drops below
-    /// this, we fire a "go deeper" cue.
-    private let depthTarget: Double = 100.0
+    private let upThreshold: Double = 150.0
+    private let downThreshold: Double = 120.0
+    private let depthTarget: Double = 110.0
 
     // MARK: - State
 
     private(set) var repCount: Int = 0
     private(set) var currentPhase: RepPhase = .idle
+    private(set) var lastKneeAngle: Double?
 
-    /// Tracks the lowest (deepest) knee angle seen during the current
-    /// `down` phase. Reset when the phase transitions out of `down`.
     private var deepestAngleInDown: Double = .greatestFiniteMagnitude
-
-    /// Timestamp of the last "go deeper" cue, used to enforce the
-    /// cooldown so we don't nag every frame.
     private var lastDepthCueTime: Date?
     private let depthCueCooldown: TimeInterval = 8.0
 
-    // MARK: - Angle Calculation
+    // MARK: - Angle Calculation (2D fallback)
 
-    /// Interior angle at `midPoint` formed by the vectors
-    /// `firstPoint→midPoint` and `lastPoint→midPoint`.
-    ///
-    /// Uses `atan2` for quadrant-safe results, then converts to
-    /// degrees clamped to 0°–180°.
-    ///
-    /// ```
-    ///  firstPoint (hip)
-    ///       \
-    ///        \ θ ← this angle
-    ///         \
-    ///    midPoint (knee)
-    ///         /
-    ///        /
-    ///       /
-    ///  lastPoint (ankle)
-    /// ```
     func calculateAngle(
         firstPoint: CGPoint,
         midPoint: CGPoint,
@@ -103,56 +61,100 @@ final class SquatRepCounter: RepCounter {
         let angle2 = atan2(v2.dy, v2.dx)
 
         var degrees = abs(angle1 - angle2) * (180.0 / .pi)
-
-        // Normalise into 0…180 — the interior angle can't exceed 180.
         if degrees > 180 { degrees = 360 - degrees }
 
         return degrees
     }
 
-    // MARK: - Vision Joint Entry Point
+    // MARK: - Joint Entry Point
 
-    /// Accepts the raw joint dictionary from `PoseEstimator` and
-    /// drives the state machine.
-    ///
-    /// Prefers the right leg (hip-knee-ankle) but falls back to
-    /// the left if any right-side joint is missing.
+    /// Accepts the raw joint dictionaries from `PoseEstimator` and
+    /// drives the state machine. Prefers 3D world landmarks for
+    /// camera-independent accuracy.
     func processReps(
-        joints: [VNHumanBodyPoseObservation.JointName: CGPoint]
+        joints: [JointName: CGPoint],
+        worldJoints: [JointName: SIMD3<Float>] = [:]
     ) -> RepCounterOutput {
 
-        // Try right leg first, fall back to left.
-        let hip:   CGPoint?
-        let knee:  CGPoint?
-        let ankle: CGPoint?
-
-        if let rh = joints[.rightHip],
-           let rk = joints[.rightKnee],
-           let ra = joints[.rightAnkle] {
-            hip   = rh
-            knee  = rk
-            ankle = ra
-        } else if let lh = joints[.leftHip],
-                  let lk = joints[.leftKnee],
-                  let la = joints[.leftAnkle] {
-            hip   = lh
-            knee  = lk
-            ankle = la
-        } else {
-            return RepCounterOutput(
-                repCount: repCount,
-                phase: currentPhase,
-                cues: []
-            )
+        // Prefer 3D world landmarks when all three joints are available
+        if let angle = resolve3DKneeAngle(worldJoints) {
+            lastKneeAngle = angle
+            return process(angles: ["kneeAngle": angle])
         }
 
-        let kneeAngle = calculateAngle(
-            firstPoint: hip!,
-            midPoint: knee!,
-            lastPoint: ankle!
-        )
+        if let angle = resolve3DHipAngle(worldJoints) {
+            lastKneeAngle = angle
+            return process(angles: ["kneeAngle": angle])
+        }
 
-        return process(angles: ["kneeAngle": kneeAngle])
+        // 2D fallback: knee angle (hip -> knee -> ankle)
+        if let (h, k, a) = resolveKneeTriple(joints) {
+            let kneeAngle = calculateAngle(firstPoint: h, midPoint: k, lastPoint: a)
+            lastKneeAngle = kneeAngle
+            return process(angles: ["kneeAngle": kneeAngle])
+        }
+
+        // 2D fallback: hip angle (shoulder -> hip -> knee)
+        if let (s, h, k) = resolveHipTriple(joints) {
+            let hipAngle = calculateAngle(firstPoint: s, midPoint: h, lastPoint: k)
+            lastKneeAngle = hipAngle
+            return process(angles: ["kneeAngle": hipAngle])
+        }
+
+        lastKneeAngle = nil
+        return RepCounterOutput(
+            repCount: repCount,
+            phase: currentPhase,
+            cues: []
+        )
+    }
+
+    // MARK: - 3D Joint Resolution
+
+    private func resolve3DKneeAngle(_ joints: [JointName: SIMD3<Float>]) -> Double? {
+        if let h = joints[.rightHip], let k = joints[.rightKnee], let a = joints[.rightAnkle] {
+            return AngleCalculator.angle3D(start: h, mid: k, end: a)
+        }
+        if let h = joints[.leftHip], let k = joints[.leftKnee], let a = joints[.leftAnkle] {
+            return AngleCalculator.angle3D(start: h, mid: k, end: a)
+        }
+        return nil
+    }
+
+    private func resolve3DHipAngle(_ joints: [JointName: SIMD3<Float>]) -> Double? {
+        if let s = joints[.rightShoulder], let h = joints[.rightHip], let k = joints[.rightKnee] {
+            return AngleCalculator.angle3D(start: s, mid: h, end: k)
+        }
+        if let s = joints[.leftShoulder], let h = joints[.leftHip], let k = joints[.leftKnee] {
+            return AngleCalculator.angle3D(start: s, mid: h, end: k)
+        }
+        return nil
+    }
+
+    // MARK: - 2D Joint Resolution
+
+    private func resolveKneeTriple(
+        _ joints: [JointName: CGPoint]
+    ) -> (hip: CGPoint, knee: CGPoint, ankle: CGPoint)? {
+        if let h = joints[.rightHip], let k = joints[.rightKnee], let a = joints[.rightAnkle] {
+            return (h, k, a)
+        }
+        if let h = joints[.leftHip], let k = joints[.leftKnee], let a = joints[.leftAnkle] {
+            return (h, k, a)
+        }
+        return nil
+    }
+
+    private func resolveHipTriple(
+        _ joints: [JointName: CGPoint]
+    ) -> (shoulder: CGPoint, hip: CGPoint, knee: CGPoint)? {
+        if let s = joints[.rightShoulder], let h = joints[.rightHip], let k = joints[.rightKnee] {
+            return (s, h, k)
+        }
+        if let s = joints[.leftShoulder], let h = joints[.leftHip], let k = joints[.leftKnee] {
+            return (s, h, k)
+        }
+        return nil
     }
 
     // MARK: - Generic Angle-Dictionary Entry Point
@@ -171,14 +173,12 @@ final class SquatRepCounter: RepCounter {
 
         switch currentPhase {
 
-        // ── IDLE ────────────────────────────────────────────────
         case .idle:
             if kneeAngle < downThreshold {
                 currentPhase = .down
                 deepestAngleInDown = kneeAngle
             }
 
-        // ── DOWN ────────────────────────────────────────────────
         case .down:
             deepestAngleInDown = min(deepestAngleInDown, kneeAngle)
 
@@ -205,14 +205,12 @@ final class SquatRepCounter: RepCounter {
                 currentPhase = .idle
             }
 
-        // ── UP ──────────────────────────────────────────────────
         case .up:
             if kneeAngle > upThreshold {
                 currentPhase = .idle
             }
         }
 
-        // Fire haptic on the exact frame the rep is counted.
         if repCount > previousRepCount {
             HapticsEngine.shared.repTick()
         }
@@ -231,5 +229,6 @@ final class SquatRepCounter: RepCounter {
         currentPhase = .idle
         deepestAngleInDown = .greatestFiniteMagnitude
         lastDepthCueTime = nil
+        lastKneeAngle = nil
     }
 }

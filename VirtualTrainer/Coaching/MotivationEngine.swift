@@ -98,6 +98,9 @@ final class MotivationEngine: ObservableObject {
 
     // MARK: - Public API
 
+    /// Accumulated face effort from the exertion analyzer.
+    private var lastFaceEffort: Double = 0
+
     @discardableResult
     func evaluateEffort(
         currentRepCount: Int,
@@ -105,6 +108,7 @@ final class MotivationEngine: ObservableObject {
     ) -> String? {
         let now = Date()
         repTimestamps.append(now)
+        lastFaceEffort = faceEffortScore
 
         guard let message = checkTempo(at: now) else { return nil }
 
@@ -137,7 +141,14 @@ final class MotivationEngine: ObservableObject {
             .timeIntervalSince(repTimestamps[count - 2])
         let decayRatio = (latestGap - baseline) / baseline
 
-        guard decayRatio > tempoDecayThreshold else { return nil }
+        // High facial exertion lowers the threshold — the user is
+        // visibly struggling, so motivate sooner even if tempo hasn't
+        // dropped as much.
+        let adjustedThreshold = lastFaceEffort > 0.6
+            ? tempoDecayThreshold * 0.6
+            : tempoDecayThreshold
+
+        guard decayRatio > adjustedThreshold else { return nil }
 
         if let last = lastMotivationTime,
            now.timeIntervalSince(last) < cooldownInterval {

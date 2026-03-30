@@ -1,0 +1,165 @@
+{
+  "activityEntities" : [
+    "dataSourceTrainingStarted",
+    [
+      {
+        "createdDate" : "2026-03-06T12:14:21Z",
+        "event" : "dataSourceTrainingStarted",
+        "id" : "A42A6091-D085-443B-9CE7-0CB13350351C",
+        "subtitle" : "WorkoutClassifier 1",
+        "title" : "Used By"
+      },
+      {
+        "createdDate" : "2026-03-06T12:28:59Z",
+        "event" : "dataSourceTrainingStarted",
+        "id" : "00095865-D4B4-4FD9-8D61-1C3102B5457C",
+        "subtitle" : "WorkoutClassifier 1",
+        "title" : "Used By"
+      },
+      {
+        "createdDate" : "2026-03-06T12:44:53Z",
+        "event" : "dataSourceTrainingStarted",
+        "id" : "997466A6-6B73-4E1C-A964-F4195AC43729",
+        "subtitle" : "WorkoutClassifier 1",
+        "title" : "Used By"
+      },
+      {
+        "createdDate" : "2026-03-06T12:59:57Z",
+        "event" : "dataSourceTrainingStarted",
+        "id" : "816C2CAC-C6A6-41A9-B15D-BC623A068439",
+        "subtitle" : "WorkoutClassifier 1",
+        "title" : "Used By"
+      },
+      {
+        "createdDate" : "2026-03-06T13:17:25Z",
+        "event" : "dataSourceTrainingStarted",
+        "id" : "683B4125-67DD-4E5B-9718-369546CE1C19",
+        "subtitle" : "WorkoutClassifier 1",
+        "title" : "Used By"
+      }
+    ],
+    "dataSourceMetrics",
+    [
+      {
+        "createdDate" : "2026-03-06T12:14:21Z",
+        "event" : "dataSourceMetrics",
+        "id" : "550729BD-E829-4415-AC7C-5539D9EA33B2",
+        "subtitle" : "22 Classes, 1,127 Items",
+        "title" : "Data Summary"
+      },
+      {
+        "createdDate" : "2026-03-06T12:28:59Z",
+        "event" : "dataSourceMetrics",
+        "id" : "E55263BB-CDBA-4E0F-9DC0-9257F2C85DBB",
+        "subtitle" : "22 Classes, 1,127 Items",
+        "title" : "Data Summary"
+      },
+      {
+        "createdDate" : "2026-03-06T12:44:53Z",
+        "event" : "dataSourceMetrics",
+        "id" : "B68C925C-8F77-481F-B538-4EBB36918E11",
+        "subtitle" : "22 Classes, 1,127 Items",
+        "title" : "Data Summary"
+      },
+      {
+        "createdDate" : "2026-03-06T12:59:57Z",
+        "event" : "dataSourceMetrics",
+        "id" : "E55D549F-71AD-40D6-B4A2-1B89DD5FC48D",
+        "subtitle" : "22 Classes, 1,127 Items",
+        "title" : "Data Summary"
+      },
+      {
+        "createdDate" : "2026-03-06T13:17:25Z",
+        "event" : "dataSourceMetrics",
+        "id" : "D424C379-8773-4442-8414-C917F575B246",
+        "subtitle" : "22 Classes, 1,110 Items",
+        "title" : "Data Summary"
+      }
+    ],
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-03-06T12:00:24Z",
+        "event" : "dataSourceCreated",
+        "id" : "2EDA5611-171B-4145-A581-DA9CE5380026",
+        "subtitle" : "WorkoutClassifierData",
+        "title" : "Data Source Created"
+      }
+    ]
+  ],
+  "createdDate" : "2026-03-06T12:00:24Z",
+  "dataPathRelativeToProjectURL" : "../../Downloads/WorkoutClassifierData/",
+  "dataResult" : {
+    "classesCount" : 22,
+    "createdDate" : "2026-03-06T12:00:24Z",
+    "dataAnalysis" : {
+      "classifierAnalysis" : {
+        "labelStats" : {
+          "barbell biceps curl" : 180,
+          "bench press" : 61,
+          "chest fly machine" : 28,
+          "deadlift" : 32,
+          "decline bench press" : 12,
+          "hammer curl" : 19,
+          "hip thrust" : 18,
+          "incline bench press" : 33,
+          "lat pulldown" : 51,
+          "lateral raise" : 37,
+          "leg extension" : 25,
+          "leg raises" : 21,
+          "plank" : 7,
+          "pull Up" : 26,
+          "push-up" : 168,
+          "romanian deadlift" : 14,
+          "russian twist" : 13,
+          "shoulder press" : 138,
+          "squat" : 136,
+          "t bar row" : 21,
+          "tricep Pushdown" : 50,
+          "tricep dips" : 20
+        }
+      },
+      "issues" : [
+        {
+          "description" : "22 classes found, including barbell biceps curl, push-up, shoulder press.",
+          "severity" : "debug"
+        },
+        {
+          "description" : "1110 action video clips found, automatically creating validation set.",
+          "severity" : "good"
+        },
+        {
+          "description" : "Smallest class is \"plank\" with 7 action video clips.",
+          "severity" : "debug"
+        },
+        {
+          "description" : "Largest class is \"barbell biceps curl\" with 180 action video clips.",
+          "severity" : "debug"
+        }
+      ],
+      "objectDetectorAnalysis" : {
+        "details" : {
+
+        }
+      },
+      "summary" : {
+        "canUseValidation" : 1,
+        "classCount" : 22,
+        "sampleCount" : 1110
+      }
+    },
+    "dataSourceID" : "83016F3B-3B37-4839-8561-808EBFE08CC2",
+    "dataURL" : "file:///Users/satvik.bansal/Downloads/WorkoutClassifierData/",
+    "itemsCount" : 1110
+  },
+  "dataURL" : "file:///Users/satvik.bansal/Downloads/WorkoutClassifierData/",
+  "experimentIDs" : [
+    "EF954C5A-E725-4132-A436-18AABDE354BA"
+  ],
+  "id" : "83016F3B-3B37-4839-8561-808EBFE08CC2",
+  "modifiedDate" : "2026-03-25T13:03:49Z",
+  "pathType" : 0,
+  "preferredFilename" : "WorkoutClassifierData",
+  "title" : "WorkoutClassifierData",
+  "version" : "1.0"
+}

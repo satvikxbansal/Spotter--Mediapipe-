@@ -6,8 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		E225019135E3CA83388DC560 /* Pods_VirtualTrainer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CE7600774D7F3697C35C466E /* Pods_VirtualTrainer.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
+		A9B44F9E323DB30D7169B8F0 /* Pods-VirtualTrainer.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-VirtualTrainer.release.xcconfig"; path = "Target Support Files/Pods-VirtualTrainer/Pods-VirtualTrainer.release.xcconfig"; sourceTree = "<group>"; };
+		CE7600774D7F3697C35C466E /* Pods_VirtualTrainer.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_VirtualTrainer.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		D6082D702F53050000E61E1F /* VirtualTrainer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VirtualTrainer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EABDD9B45CC399C2B17D5BA1 /* Pods-VirtualTrainer.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-VirtualTrainer.debug.xcconfig"; path = "Target Support Files/Pods-VirtualTrainer/Pods-VirtualTrainer.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -23,17 +30,37 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E225019135E3CA83388DC560 /* Pods_VirtualTrainer.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		1F238F81027B869CC41FD53D /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				EABDD9B45CC399C2B17D5BA1 /* Pods-VirtualTrainer.debug.xcconfig */,
+				A9B44F9E323DB30D7169B8F0 /* Pods-VirtualTrainer.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		239418FE3759DB1971B94221 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				CE7600774D7F3697C35C466E /* Pods_VirtualTrainer.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		D6082D672F53050000E61E1F = {
 			isa = PBXGroup;
 			children = (
 				D6082D722F53050000E61E1F /* VirtualTrainer */,
 				D6082D712F53050000E61E1F /* Products */,
+				1F238F81027B869CC41FD53D /* Pods */,
+				239418FE3759DB1971B94221 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -52,6 +79,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = D6082D7B2F53050200E61E1F /* Build configuration list for PBXNativeTarget "VirtualTrainer" */;
 			buildPhases = (
+				F7A883401DB67F0F10677480 /* [CP] Check Pods Manifest.lock */,
 				D6082D6C2F53050000E61E1F /* Sources */,
 				D6082D6D2F53050000E61E1F /* Frameworks */,
 				D6082D6E2F53050000E61E1F /* Resources */,
@@ -64,8 +92,6 @@
 				D6082D722F53050000E61E1F /* VirtualTrainer */,
 			);
 			name = VirtualTrainer;
-			packageProductDependencies = (
-			);
 			productName = VirtualTrainer;
 			productReference = D6082D702F53050000E61E1F /* VirtualTrainer.app */;
 			productType = "com.apple.product-type.application";
@@ -113,6 +139,31 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		F7A883401DB67F0F10677480 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-VirtualTrainer-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		D6082D6C2F53050000E61E1F /* Sources */ = {
@@ -162,7 +213,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -225,7 +276,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -246,13 +297,17 @@
 		};
 		D6082D7C2F53050200E61E1F /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = EABDD9B45CC399C2B17D5BA1 /* Pods-VirtualTrainer.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = VirtualTrainer/VirtualTrainer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3XM63F6FQR;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "VirtualTrainer needs camera access to track your body posture and count exercise reps.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -277,13 +332,17 @@
 		};
 		D6082D7D2F53050200E61E1F /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A9B44F9E323DB30D7169B8F0 /* Pods-VirtualTrainer.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = VirtualTrainer/VirtualTrainer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3XM63F6FQR;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "VirtualTrainer needs camera access to track your body posture and count exercise reps.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

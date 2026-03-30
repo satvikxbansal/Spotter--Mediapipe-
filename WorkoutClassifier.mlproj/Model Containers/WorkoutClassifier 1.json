@@ -1,0 +1,128 @@
+{
+  "activityEntities" : [
+    "experimentCreated",
+    [
+      {
+        "createdDate" : "2026-03-25T13:03:36Z",
+        "event" : "experimentCreated",
+        "id" : "58F25E1B-BF7D-40F6-AE3A-99DF673EAD50",
+        "subtitle" : "WorkoutClassifier 1",
+        "title" : "Model Source Created"
+      }
+    ]
+  ],
+  "contentDataResult" : {
+
+  },
+  "createdDate" : "2026-03-25T13:03:36Z",
+  "evaluationContainerEntity" : {
+    "createdDate" : "2026-03-25T13:03:36Z",
+    "evaluationEntities" : [
+
+    ],
+    "id" : "c85a07e8-227e-4bf5-acc1-432527c976f3",
+    "modifiedDate" : "2026-03-25T13:03:36Z",
+    "previewType" : "actionClassifier",
+    "testingEvaluationEntity" : {
+      "analysedDataType" : "none",
+      "createdDate" : "2026-03-25T13:03:36Z",
+      "dataResult" : {
+
+      },
+      "id" : "be0fe8f7-b5fa-458a-8564-8df4dba6e2c2"
+    },
+    "trainingEvaluationEntity" : {
+      "analysedDataType" : "none",
+      "createdDate" : "2026-03-25T13:03:36Z",
+      "dataResult" : {
+
+      },
+      "id" : "b674eaf1-b2cd-4435-8db7-74a962747e0d"
+    },
+    "validationEvaluationEntity" : {
+      "analysedDataType" : "none",
+      "createdDate" : "2026-03-25T13:03:36Z",
+      "dataResult" : {
+
+      },
+      "id" : "cc5780db-1d3e-4b5d-8755-563a41fefa3d"
+    }
+  },
+  "evaluationEntity" : {
+    "analysedDataType" : "none",
+    "dataResult" : {
+
+    },
+    "id" : "d91b8707-01a4-4d0f-b252-9903225255af"
+  },
+  "evaluationState" : "uninitialized",
+  "id" : "AABDB02C-FA6E-46DB-B643-F7570C75DB6A",
+  "modelEntity" : {
+    "createdDate" : "2026-03-25T13:03:36Z",
+    "experimentID" : "AABDB02C-FA6E-46DB-B643-F7570C75DB6A",
+    "id" : "CC30537F-1958-4F36-8EB8-CD1BEC530905",
+    "modifiedDate" : "2026-03-25T13:03:36Z",
+    "title" : "",
+    "version" : "1.0"
+  },
+  "modifiedDate" : "2026-03-25T13:03:36Z",
+  "preferredFilename" : "WorkoutClassifier 1",
+  "settingEntity" : {
+    "algorithmType" : "maxEnt",
+    "augmentations" : [
+
+    ],
+    "featureNames" : [
+
+    ],
+    "handActionClassifierAugmentations" : [
+
+    ],
+    "handPoseClassifierAugmentations" : [
+
+    ],
+    "harActionDuration" : 2,
+    "harIsCustomActionDuration" : false,
+    "harTargetFrameRate" : 30,
+    "harVideoAugmentations" : 0,
+    "seedType" : "default",
+    "styleTransferAlgorithmType" : "image",
+    "taskType" : "actionClassifier",
+    "transferLearningEmbeddingType" : "dynamic"
+  },
+  "snapshotRole" : {
+    "withoutSnapshots" : 0
+  },
+  "state" : "uninitialized",
+  "title" : "WorkoutClassifier 1",
+  "trainingEntity" : {
+    "analysedDataType" : "choose",
+    "checkpointMetrics" : {
+
+    },
+    "dataResult" : {
+
+    },
+    "featureExtractionCheckpointMayBeAvailable" : false,
+    "progress" : [
+
+    ],
+    "snapshottableCheckpoints" : {
+
+    }
+  },
+  "validationEntity" : {
+    "analysedDataType" : "auto",
+    "dataResult" : {
+
+    },
+    "splitOptions" : {
+      "strategy" : {
+        "automatic" : {
+
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
