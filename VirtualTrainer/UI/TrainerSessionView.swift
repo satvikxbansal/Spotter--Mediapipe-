@@ -33,6 +33,8 @@ struct TrainerSessionView: View {
     @State private var coachCues: [CoachCue] = []
     @State private var debugAngle: Double?
     @State private var motivationScale: CGFloat = 0.3
+    @State private var holdDuration: TimeInterval = 0
+    @State private var isHolding: Bool = false
     @State private var visibilityResult = BodyVisibilityChecker.Result(
         isReady: false,
         visibility: 0,
@@ -141,13 +143,17 @@ struct TrainerSessionView: View {
             repCount = output.repCount
             currentPhase = output.phase
             debugAngle = counter.lastPrimaryAngle
+            holdDuration = output.holdDuration
+            isHolding = output.isHolding
 
             let formFeedbacks = formEngine.evaluate(
                 joints: joints,
                 angles: counter.lastAngles,
                 phase: currentPhase,
                 definition: exerciseDefinition,
-                personality: coachPersonality
+                personality: coachPersonality,
+                bilateralAngles: counter.lastBilateralAngles,
+                worldJoints: poseEstimator.worldJoints
             )
 
             if !formFeedbacks.isEmpty {
@@ -463,9 +469,22 @@ struct TrainerSessionView: View {
         }
     }
 
-    // MARK: - Rep Counter
+    // MARK: - Rep Counter / Hold Timer
 
+    private var isIsometric: Bool {
+        exerciseDefinition.movementType == .isometric
+    }
+
+    @ViewBuilder
     private var repCounterBadge: some View {
+        if isIsometric {
+            isometricHoldBadge
+        } else {
+            repetitionCounterBadge
+        }
+    }
+
+    private var repetitionCounterBadge: some View {
         VStack(alignment: .trailing, spacing: 4) {
             Text("\(repCount)")
                 .font(.system(size: 96, weight: .heavy, design: .rounded))
@@ -481,6 +500,77 @@ struct TrainerSessionView: View {
                 .animation(.snappy(duration: 0.3), value: repCount)
 
             phaseLabel
+        }
+    }
+
+    // MARK: Isometric Hold Timer + Progress Ring
+
+    private var holdTimerText: String {
+        let totalSeconds = Int(holdDuration)
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        if minutes > 0 {
+            return String(format: "%d:%02d", minutes, seconds)
+        }
+        return "\(seconds)"
+    }
+
+    private var holdTargetSeconds: Double {
+        guard let target = workout.exercises.first else { return 60 }
+        return Double(target.targetReps)
+    }
+
+    private var holdProgress: Double {
+        guard holdTargetSeconds > 0 else { return 0 }
+        return min(holdDuration / holdTargetSeconds, 1.0)
+    }
+
+    private var isometricHoldBadge: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            ZStack {
+                // Background track
+                Circle()
+                    .stroke(
+                        Theme.Colors.textSecondary.opacity(0.2),
+                        style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                    )
+
+                // Progress arc
+                Circle()
+                    .trim(from: 0, to: holdProgress)
+                    .stroke(
+                        isHolding ? Theme.Colors.accent : Theme.Colors.textSecondary.opacity(0.5),
+                        style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .animation(.linear(duration: 0.25), value: holdProgress)
+
+                // Timer digits
+                Text(holdTimerText)
+                    .font(.system(size: 36, weight: .heavy, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .contentTransition(.numericText(value: holdDuration))
+                    .animation(.snappy(duration: 0.3), value: Int(holdDuration))
+            }
+            .frame(width: 100, height: 100)
+            .shadow(
+                color: isHolding ? Theme.Colors.accent.opacity(0.4) : .clear,
+                radius: 12
+            )
+
+            // Phase label
+            Text(isHolding ? "HOLDING" : (holdDuration > 0 ? "PAUSED" : "GET SET"))
+                .font(.system(size: 11, weight: .heavy))
+                .tracking(1.5)
+                .foregroundStyle(isHolding ? Theme.Colors.accent : Theme.Colors.textSecondary)
+                .shadow(
+                    color: dropShadow.color,
+                    radius: dropShadow.radius,
+                    x: dropShadow.x,
+                    y: dropShadow.y
+                )
+                .animation(.easeInOut(duration: 0.2), value: isHolding)
         }
     }
 

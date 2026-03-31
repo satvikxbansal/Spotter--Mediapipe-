@@ -33,6 +33,16 @@ final class UniversalRepCounter: RepCounter {
 
     private(set) var lastPrimaryAngle: Double?
     private(set) var lastAngles: [String: Double] = [:]
+    private(set) var lastBilateralAngles: [String: AngleCalculator.BilateralAngle] = [:]
+
+    // EMA smoothing for angle stability (reduces jitter from 3D world landmarks)
+    private var emaAngles: [String: Double] = [:]
+    private let emaAlpha: Double = 0.4
+
+    // Hysteresis: require consecutive frames in new phase before transitioning
+    private var consecutiveDownFrames: Int = 0
+    private var consecutiveUpFrames: Int = 0
+    private let hysteresisFrameCount: Int = 2
 
     // MARK: - Init
 
@@ -64,15 +74,21 @@ final class UniversalRepCounter: RepCounter {
         let angles: [String: Double]
         if worldJoints.isEmpty {
             angles = AngleCalculator.computeAngles(joints: joints, for: definition)
+            lastBilateralAngles = AngleCalculator.computeBilateralAngles(
+                joints: joints, for: definition
+            )
         } else {
             angles = AngleCalculator.computeAngles3D(
                 joints2D: joints,
                 joints3D: worldJoints,
                 for: definition
             )
+            lastBilateralAngles = AngleCalculator.computeBilateralAngles3D(
+                joints2D: joints,
+                joints3D: worldJoints,
+                for: definition
+            )
         }
-        lastAngles = angles
-
         let output = process(angles: angles)
 
         return output
@@ -81,7 +97,10 @@ final class UniversalRepCounter: RepCounter {
     // MARK: - Process (Angle Dictionary)
 
     func process(angles: [String: Double]) -> RepCounterOutput {
-        guard let primaryAngle = angles[definition.primaryAngleKey] else {
+        let smoothed = applyEMA(angles)
+        lastAngles = smoothed
+
+        guard let primaryAngle = smoothed[definition.primaryAngleKey] else {
             return RepCounterOutput(
                 repCount: repCount,
                 phase: currentPhase,
@@ -92,10 +111,25 @@ final class UniversalRepCounter: RepCounter {
         lastPrimaryAngle = primaryAngle
 
         if definition.movementType == .isometric {
-            return processIsometric(primaryAngle: primaryAngle, angles: angles)
+            return processIsometric(primaryAngle: primaryAngle, angles: smoothed)
         } else {
-            return processRepetition(primaryAngle: primaryAngle, angles: angles)
+            return processRepetition(primaryAngle: primaryAngle, angles: smoothed)
         }
+    }
+
+    private func applyEMA(_ angles: [String: Double]) -> [String: Double] {
+        var smoothed: [String: Double] = [:]
+        for (key, raw) in angles {
+            if let prev = emaAngles[key] {
+                let filtered = emaAlpha * raw + (1.0 - emaAlpha) * prev
+                emaAngles[key] = filtered
+                smoothed[key] = filtered
+            } else {
+                emaAngles[key] = raw
+                smoothed[key] = raw
+            }
+        }
+        return smoothed
     }
 
     // MARK: - Repetition State Machine
@@ -108,23 +142,35 @@ final class UniversalRepCounter: RepCounter {
 
         case .idle:
             if shouldEnterDown(primaryAngle) {
-                currentPhase = .down
-                extremeAngleDuringDown = primaryAngle
+                consecutiveDownFrames += 1
+                if consecutiveDownFrames >= hysteresisFrameCount {
+                    currentPhase = .down
+                    extremeAngleDuringDown = primaryAngle
+                    consecutiveDownFrames = 0
+                }
+            } else {
+                consecutiveDownFrames = 0
             }
 
         case .down:
             updateExtremeAngle(primaryAngle)
 
             if shouldEnterUp(primaryAngle) {
-                currentPhase = .up
-                repCount += 1
+                consecutiveUpFrames += 1
+                if consecutiveUpFrames >= hysteresisFrameCount {
+                    currentPhase = .up
+                    repCount += 1
 
-                if let qualityCue = checkQuality() {
-                    cues.append(qualityCue)
+                    if let qualityCue = checkQuality() {
+                        cues.append(qualityCue)
+                    }
+
+                    extremeAngleDuringDown = nil
+                    consecutiveUpFrames = 0
+                    currentPhase = .idle
                 }
-
-                extremeAngleDuringDown = nil
-                currentPhase = .idle
+            } else {
+                consecutiveUpFrames = 0
             }
 
         case .up:
@@ -167,10 +213,19 @@ final class UniversalRepCounter: RepCounter {
             currentPhase = .idle
         }
 
+        let liveHold: TimeInterval
+        if let start = holdStartTime {
+            liveHold = holdDuration + Date().timeIntervalSince(start)
+        } else {
+            liveHold = holdDuration
+        }
+
         return RepCounterOutput(
-            repCount: Int(holdDuration),
+            repCount: Int(liveHold),
             phase: currentPhase,
-            cues: []
+            cues: [],
+            holdDuration: liveHold,
+            isHolding: currentPhase == .down
         )
     }
 
@@ -246,5 +301,9 @@ final class UniversalRepCounter: RepCounter {
         lastQualityCueTime = nil
         lastPrimaryAngle = nil
         lastAngles = [:]
+        lastBilateralAngles = [:]
+        emaAngles = [:]
+        consecutiveDownFrames = 0
+        consecutiveUpFrames = 0
     }
 }

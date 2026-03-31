@@ -1,4 +1,5 @@
 import Foundation
+import simd
 
 // ────────────────────────────────────────────────────────────────────
 // MARK: - FormFeedbackEngine
@@ -12,6 +13,8 @@ final class FormFeedbackEngine {
     // MARK: - Configuration
 
     private let globalCooldown: TimeInterval = 3.0
+    private let asymmetryThreshold: Double = 15.0
+    private let asymmetryCooldown: TimeInterval = 8.0
     private var ruleCooldowns: [String: Date] = [:]
     private var lastFeedbackTime: Date?
 
@@ -46,7 +49,9 @@ final class FormFeedbackEngine {
         angles: [String: Double],
         phase: RepPhase,
         definition: ExerciseDefinition,
-        personality: CoachPersonality
+        personality: CoachPersonality,
+        bilateralAngles: [String: AngleCalculator.BilateralAngle] = [:],
+        worldJoints: [JointName: SIMD3<Float>] = [:]
     ) -> [Feedback] {
         var feedbacks: [Feedback] = []
 
@@ -68,6 +73,27 @@ final class FormFeedbackEngine {
             personality: personality
         )
         feedbacks.append(contentsOf: formFeedbacks)
+
+        if feedbacks.isEmpty, !definition.positionalChecks.isEmpty {
+            let positionalFeedbacks = checkPositionalRules(
+                joints2D: joints,
+                joints3D: worldJoints,
+                phase: phase,
+                definition: definition,
+                personality: personality
+            )
+            feedbacks.append(contentsOf: positionalFeedbacks)
+        }
+
+        if feedbacks.isEmpty, !bilateralAngles.isEmpty {
+            let asymmetryFeedbacks = checkBilateralAsymmetry(
+                bilateralAngles: bilateralAngles,
+                phase: phase,
+                definition: definition,
+                personality: personality
+            )
+            feedbacks.append(contentsOf: asymmetryFeedbacks)
+        }
 
         return feedbacks
     }
@@ -197,6 +223,124 @@ final class FormFeedbackEngine {
             ruleCooldowns[rule.id] = now
             lastFeedbackTime = now
 
+            break
+        }
+
+        return feedbacks
+    }
+
+    // MARK: - Positional Rules Check
+
+    private func checkPositionalRules(
+        joints2D: [JointName: CGPoint],
+        joints3D: [JointName: SIMD3<Float>],
+        phase: RepPhase,
+        definition: ExerciseDefinition,
+        personality: CoachPersonality
+    ) -> [Feedback] {
+        let now = Date()
+        var feedbacks: [Feedback] = []
+
+        let results = AngleCalculator.evaluatePositionalChecks(
+            definition.positionalChecks,
+            joints2D: joints2D,
+            joints3D: joints3D
+        )
+
+        for check in definition.positionalChecks {
+            if !check.activeDuringPhases.isEmpty {
+                let phaseStr = phase.rawValue
+                guard check.activeDuringPhases.contains(phaseStr) else { continue }
+            }
+
+            if let lastFired = ruleCooldowns[check.id] {
+                guard now.timeIntervalSince(lastFired) > check.cooldownSeconds else { continue }
+            }
+            if let lastGlobal = lastFeedbackTime {
+                guard now.timeIntervalSince(lastGlobal) > globalCooldown else { continue }
+            }
+
+            guard let result = results[check.id], result.violated else { continue }
+
+            let message: String
+            switch personality {
+            case .good:  message = check.feedbackGood
+            case .drill: message = check.feedbackDrill
+            }
+
+            let severity: CoachCue.Severity
+            switch check.severity {
+            case "critical": severity = .critical
+            case "warning":  severity = .warning
+            default:         severity = .info
+            }
+
+            feedbacks.append(Feedback(
+                type: .exerciseRule,
+                message: message,
+                severity: severity,
+                ruleId: check.id
+            ))
+
+            ruleCooldowns[check.id] = now
+            lastFeedbackTime = now
+            break
+        }
+
+        return feedbacks
+    }
+
+    // MARK: - Bilateral Asymmetry Check
+
+    private func checkBilateralAsymmetry(
+        bilateralAngles: [String: AngleCalculator.BilateralAngle],
+        phase: RepPhase,
+        definition: ExerciseDefinition,
+        personality: CoachPersonality
+    ) -> [Feedback] {
+        let now = Date()
+        var feedbacks: [Feedback] = []
+
+        for angleDef in definition.angles {
+            guard angleDef.side == .both || angleDef.side == .bestAvailable else { continue }
+
+            guard let bilateral = bilateralAngles[angleDef.key],
+                  let delta = bilateral.delta,
+                  delta > asymmetryThreshold else { continue }
+
+            let ruleId = "asymmetry_\(angleDef.key)"
+
+            if let lastFired = ruleCooldowns[ruleId] {
+                guard now.timeIntervalSince(lastFired) > asymmetryCooldown else { continue }
+            }
+            if let lastGlobal = lastFeedbackTime {
+                guard now.timeIntervalSince(lastGlobal) > globalCooldown else { continue }
+            }
+
+            let side: String
+            if let l = bilateral.left, let r = bilateral.right {
+                side = l < r ? "left" : "right"
+            } else {
+                side = "one"
+            }
+
+            let message: String
+            switch personality {
+            case .good:
+                message = "Your \(side) \(angleDef.label.lowercased()) is off by \(Int(delta))° — try to keep both sides even!"
+            case .drill:
+                message = "\(Int(delta))° imbalance on your \(side) \(angleDef.label.lowercased())! Even it out NOW!"
+            }
+
+            feedbacks.append(Feedback(
+                type: .exerciseRule,
+                message: message,
+                severity: .warning,
+                ruleId: ruleId
+            ))
+
+            ruleCooldowns[ruleId] = now
+            lastFeedbackTime = now
             break
         }
 

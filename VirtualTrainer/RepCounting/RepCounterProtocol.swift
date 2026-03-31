@@ -38,6 +38,27 @@ struct RepCounterOutput {
     /// Form-check warnings generated during this frame.
     /// Empty array = form is clean.
     let cues: [CoachCue]
+
+    /// Accumulated seconds the user has held the isometric pose.
+    /// Always 0 for repetition-based exercises.
+    let holdDuration: TimeInterval
+
+    /// Whether the user is currently in the held position.
+    let isHolding: Bool
+
+    init(
+        repCount: Int,
+        phase: RepPhase,
+        cues: [CoachCue],
+        holdDuration: TimeInterval = 0,
+        isHolding: Bool = false
+    ) {
+        self.repCount = repCount
+        self.phase = phase
+        self.cues = cues
+        self.holdDuration = holdDuration
+        self.isHolding = isHolding
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────

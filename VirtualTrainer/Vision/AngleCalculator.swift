@@ -242,6 +242,13 @@ enum AngleCalculator {
         case "hip":      return side == "left" ? .leftHip : .rightHip
         case "knee":     return side == "left" ? .leftKnee : .rightKnee
         case "ankle":    return side == "left" ? .leftAnkle : .rightAnkle
+        case "heel":     return side == "left" ? .leftHeel : .rightHeel
+        case "footIndex": return side == "left" ? .leftFootIndex : .rightFootIndex
+
+        case "heel_left":      return .leftHeel
+        case "heel_right":     return .rightHeel
+        case "footIndex_left": return .leftFootIndex
+        case "footIndex_right": return .rightFootIndex
 
         case "nose":     return .nose
         case "neck":     return .neck
@@ -250,6 +257,54 @@ enum AngleCalculator {
         default:
             return nil
         }
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // MARK: - Bilateral Angle Pairs
+    // ────────────────────────────────────────────────────────────────
+
+    struct BilateralAngle {
+        let left: Double?
+        let right: Double?
+
+        var delta: Double? {
+            guard let l = left, let r = right else { return nil }
+            return abs(l - r)
+        }
+    }
+
+    /// For each `.both` or `.bestAvailable` angle definition, returns
+    /// separate left/right measurements (instead of the averaged value).
+    static func computeBilateralAngles(
+        joints: [JointName: CGPoint],
+        for definition: ExerciseDefinition
+    ) -> [String: BilateralAngle] {
+        var result: [String: BilateralAngle] = [:]
+        for angleDef in definition.angles {
+            guard angleDef.side == .both || angleDef.side == .bestAvailable else { continue }
+            let left = resolveAndMeasure(angleDef, joints: joints, side: "left")
+            let right = resolveAndMeasure(angleDef, joints: joints, side: "right")
+            result[angleDef.key] = BilateralAngle(left: left, right: right)
+        }
+        return result
+    }
+
+    /// 3D variant that prefers world landmarks, falling back to 2D.
+    static func computeBilateralAngles3D(
+        joints2D: [JointName: CGPoint],
+        joints3D: [JointName: SIMD3<Float>],
+        for definition: ExerciseDefinition
+    ) -> [String: BilateralAngle] {
+        var result: [String: BilateralAngle] = [:]
+        for angleDef in definition.angles {
+            guard angleDef.side == .both || angleDef.side == .bestAvailable else { continue }
+            let left3D = resolveAndMeasure3D(angleDef, joints: joints3D, side: "left")
+            let right3D = resolveAndMeasure3D(angleDef, joints: joints3D, side: "right")
+            let left = left3D ?? resolveAndMeasure(angleDef, joints: joints2D, side: "left")
+            let right = right3D ?? resolveAndMeasure(angleDef, joints: joints2D, side: "right")
+            result[angleDef.key] = BilateralAngle(left: left, right: right)
+        }
+        return result
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -350,5 +405,152 @@ enum AngleCalculator {
         else { return nil }
 
         return measureAngle3D(joints: joints, start: startJoint, mid: midJoint, end: endJoint)
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // MARK: - Positional Checks
+    // ────────────────────────────────────────────────────────────────
+
+    /// Result of a positional / spatial check on body landmarks.
+    struct PositionalCheckResult {
+        let key: String
+        let violated: Bool
+        let value: Double
+    }
+
+    /// Runs all positional checks defined for an exercise.
+    /// Returns keyed results that the `FormFeedbackEngine` can consume.
+    static func evaluatePositionalChecks(
+        _ checks: [PositionalCheck],
+        joints2D: [JointName: CGPoint],
+        joints3D: [JointName: SIMD3<Float>]
+    ) -> [String: PositionalCheckResult] {
+        var results: [String: PositionalCheckResult] = [:]
+        for check in checks {
+            if let result = evaluateSingleCheck(check, joints2D: joints2D, joints3D: joints3D) {
+                results[check.id] = result
+            }
+        }
+        return results
+    }
+
+    private static func evaluateSingleCheck(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint],
+        joints3D: [JointName: SIMD3<Float>]
+    ) -> PositionalCheckResult? {
+        switch check.checkType {
+        case .kneeValgus:
+            return evaluateKneeValgus(check, joints2D: joints2D)
+
+        case .heelRise:
+            return evaluateHeelRise(check, joints2D: joints2D)
+
+        case .jointAboveJoint:
+            return evaluateJointAboveJoint(check, joints2D: joints2D)
+
+        case .jointAlignedX:
+            return evaluateJointAlignedX(check, joints2D: joints2D)
+
+        case .shoulderLevel:
+            return evaluateShoulderLevel(check, joints2D: joints2D)
+        }
+    }
+
+    /// Knee valgus: detects if the knee collapses inward past the ankle
+    /// in the frontal plane. Measures abs(knee.x - ankle.x) relative to
+    /// abs(hip.x - ankle.x). A ratio above threshold means valgus.
+    private static func evaluateKneeValgus(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        guard let lHip = joints2D[.leftHip], let rHip = joints2D[.rightHip],
+              let lKnee = joints2D[.leftKnee], let rKnee = joints2D[.rightKnee],
+              let lAnkle = joints2D[.leftAnkle], let rAnkle = joints2D[.rightAnkle]
+        else { return nil }
+
+        let hipWidth = abs(lHip.x - rHip.x)
+        guard hipWidth > 0.01 else { return nil }
+
+        let leftInward = (lKnee.x - lAnkle.x) / hipWidth
+        let rightInward = (rAnkle.x - rKnee.x) / hipWidth
+
+        let maxInward = max(leftInward, rightInward)
+        let violated = maxInward > (check.threshold ?? 0.15)
+
+        return PositionalCheckResult(key: check.id, violated: violated, value: maxInward)
+    }
+
+    /// Heel rise: detects if the heel landmark rises above the
+    /// foot-index landmark, indicating the user has come up on their toes.
+    private static func evaluateHeelRise(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        let leftRise: CGFloat
+        let rightRise: CGFloat
+
+        if let heel = joints2D[.leftHeel], let toe = joints2D[.leftFootIndex] {
+            leftRise = toe.y - heel.y
+        } else { leftRise = 0 }
+
+        if let heel = joints2D[.rightHeel], let toe = joints2D[.rightFootIndex] {
+            rightRise = toe.y - heel.y
+        } else { rightRise = 0 }
+
+        let maxRise = max(leftRise, rightRise)
+        let violated = maxRise > (check.threshold ?? 0.02)
+
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(maxRise))
+    }
+
+    /// Checks whether one joint's Y coordinate is above another's.
+    /// Uses `jointA` and `jointB` from the check; violated when
+    /// jointA.y < jointB.y (higher on screen) by more than threshold.
+    private static func evaluateJointAboveJoint(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        guard let jointA = check.jointA, let jointB = check.jointB,
+              let ptA = joints2D[jointA], let ptB = joints2D[jointB]
+        else { return nil }
+
+        let diff = ptB.y - ptA.y
+        let violated = diff > (check.threshold ?? 0.02)
+
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(diff))
+    }
+
+    /// Checks whether two joints are roughly aligned on the X axis.
+    /// Violated when abs(jointA.x - jointB.x) exceeds threshold
+    /// (normalized to frame width 0-1).
+    private static func evaluateJointAlignedX(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        guard let jointA = check.jointA, let jointB = check.jointB,
+              let ptA = joints2D[jointA], let ptB = joints2D[jointB]
+        else { return nil }
+
+        let diff = abs(ptA.x - ptB.x)
+        let violated = diff > (check.threshold ?? 0.05)
+
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(diff))
+    }
+
+    /// Checks whether the left and right shoulders are at roughly the
+    /// same Y level. Violated when abs(delta Y) exceeds threshold.
+    private static func evaluateShoulderLevel(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        guard let lShoulder = joints2D[.leftShoulder],
+              let rShoulder = joints2D[.rightShoulder]
+        else { return nil }
+
+        let diff = abs(lShoulder.y - rShoulder.y)
+        let violated = diff > (check.threshold ?? 0.03)
+
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(diff))
     }
 }
