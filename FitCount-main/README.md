@@ -107,3 +107,5 @@ else if sessionConfig.exercise.name == "My Exercise" {
 
 1. Register for a free SDK key at our [Development portal](https://dev.quickpose.ai/auth/signup).
 2. Check out our [GitHub Repository](https://github.com/quickpose/quickpose-ios-sdk) and [Getting Started Guide](https://docs.quickpose.ai/docs/MobileSDK/GettingStarted/Integration).
+
+test (ignore)
