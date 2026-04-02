@@ -46,18 +46,80 @@ struct RepCounterOutput {
     /// Whether the user is currently in the held position.
     let isHolding: Bool
 
+    /// Per-rep form quality score (0–100). `nil` if no rep was just completed.
+    let formScore: FormScore?
+
     init(
         repCount: Int,
         phase: RepPhase,
         cues: [CoachCue],
         holdDuration: TimeInterval = 0,
-        isHolding: Bool = false
+        isHolding: Bool = false,
+        formScore: FormScore? = nil
     ) {
         self.repCount = repCount
         self.phase = phase
         self.cues = cues
         self.holdDuration = holdDuration
         self.isHolding = isHolding
+        self.formScore = formScore
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// MARK: - Form Score
+// ────────────────────────────────────────────────────────────────────
+
+/// Per-rep form quality assessment combining ROM, tempo, and
+/// real-time feedback violations.
+struct FormScore {
+    /// 0 → 100 composite quality score.
+    let score: Int
+
+    /// Letter grade derived from score.
+    let grade: Grade
+
+    /// Individual component breakdowns (for UI detail).
+    let romPenalty: Int
+    let tempoPenalty: Int
+    let feedbackPenalty: Int
+
+    enum Grade: String, Comparable {
+        case A, B, C, D, F
+
+        private var rank: Int {
+            switch self {
+            case .A: 4
+            case .B: 3
+            case .C: 2
+            case .D: 1
+            case .F: 0
+            }
+        }
+
+        static func < (lhs: Grade, rhs: Grade) -> Bool {
+            lhs.rank < rhs.rank
+        }
+
+        static func from(score: Int) -> Grade {
+            switch score {
+            case 90...100: .A
+            case 80..<90:  .B
+            case 70..<80:  .C
+            case 60..<70:  .D
+            default:       .F
+            }
+        }
+
+        var color: String {
+            switch self {
+            case .A: "positive"
+            case .B: "accent"
+            case .C: "accent"
+            case .D: "warning"
+            case .F: "danger"
+            }
+        }
     }
 }
 

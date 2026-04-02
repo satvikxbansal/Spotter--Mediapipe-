@@ -59,6 +59,9 @@ enum BodyCategory: String, CaseIterable, Identifiable {
                 ExerciseOption(type: .overheadPress, available: true),
                 ExerciseOption(type: .cobraWings, available: true),
                 ExerciseOption(type: .overarmReach, available: true),
+                ExerciseOption(type: .hammerCurl, available: true),
+                ExerciseOption(type: .shoulderPress, available: true),
+                ExerciseOption(type: .tricepDip, available: true),
             ]
         case .lowerBody:
             [
@@ -69,6 +72,9 @@ enum BodyCategory: String, CaseIterable, Identifiable {
                 ExerciseOption(type: .gluteBridge, available: true),
                 ExerciseOption(type: .hipAbduction, available: true),
                 ExerciseOption(type: .legRaise, available: true),
+                ExerciseOption(type: .wallSit, available: true),
+                ExerciseOption(type: .deadlift, available: true),
+                ExerciseOption(type: .calfRaise, available: true),
             ]
         case .fullBody:
             [
@@ -77,6 +83,8 @@ enum BodyCategory: String, CaseIterable, Identifiable {
                 ExerciseOption(type: .sitUp, available: true),
                 ExerciseOption(type: .vUp, available: true),
                 ExerciseOption(type: .plank, available: true),
+                ExerciseOption(type: .highKnees, available: true),
+                ExerciseOption(type: .mountainClimber, available: true),
             ]
         case .yoga:
             [
@@ -128,6 +136,9 @@ enum ExerciseType: String, Codable, CaseIterable, Identifiable {
     case gluteBridge
     case hipAbduction
     case legRaise
+    case wallSit
+    case deadlift
+    case calfRaise
 
     // Upper Body
     case bicepCurl
@@ -137,6 +148,9 @@ enum ExerciseType: String, Codable, CaseIterable, Identifiable {
     case overheadPress
     case cobraWings
     case overarmReach
+    case hammerCurl
+    case shoulderPress
+    case tricepDip
 
     // Full Body
     case jumpingJack
@@ -144,6 +158,8 @@ enum ExerciseType: String, Codable, CaseIterable, Identifiable {
     case sitUp
     case vUp
     case plank
+    case highKnees
+    case mountainClimber
 
     // Yoga
     case downwardDog

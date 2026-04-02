@@ -35,6 +35,7 @@ struct TrainerSessionView: View {
     @State private var motivationScale: CGFloat = 0.3
     @State private var holdDuration: TimeInterval = 0
     @State private var isHolding: Bool = false
+    @State private var lastFormScore: FormScore?
     @State private var visibilityResult = BodyVisibilityChecker.Result(
         isReady: false,
         visibility: 0,
@@ -158,8 +159,13 @@ struct TrainerSessionView: View {
 
             if !formFeedbacks.isEmpty {
                 coachCues = formFeedbacks.map { $0.asCoachCue }
+                counter.recordFeedbackDuringRep()
             } else {
                 coachCues = output.cues
+            }
+
+            if let score = output.formScore {
+                lastFormScore = score
             }
 
             angleOverlays = buildAngleOverlays(
@@ -432,6 +438,9 @@ struct TrainerSessionView: View {
                     HStack(spacing: Theme.Spacing.sm) {
                         if let angle = debugAngle {
                             debugAngleBadge(angle)
+                        }
+                        if !isIsometric, let score = lastFormScore {
+                            formScoreBadge(score)
                         }
                         if faceLandmarker.faceDetected {
                             effortBadge
@@ -744,6 +753,34 @@ struct TrainerSessionView: View {
             Capsule()
                 .fill(Color.black.opacity(0.5))
         )
+    }
+
+    // MARK: - Form Score Badge
+
+    private func formScoreBadge(_ score: FormScore) -> some View {
+        let color: Color = switch score.grade {
+        case .A: Theme.Colors.positive
+        case .B: Theme.Colors.accent
+        case .C: Theme.Colors.accent
+        case .D: Theme.Colors.danger.opacity(0.8)
+        case .F: Theme.Colors.danger
+        }
+
+        return HStack(spacing: 6) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 10, weight: .bold))
+            Text("\(score.grade.rawValue) \(score.score)")
+                .font(.system(size: 12, weight: .heavy, design: .monospaced))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(Color.black.opacity(0.5))
+        )
+        .transition(.scale.combined(with: .opacity))
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: score.score)
     }
 
     // MARK: - Effort Badge
