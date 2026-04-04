@@ -117,9 +117,11 @@ struct TrainerSessionView: View {
             let joints = poseEstimator.bodyJoints
             let exercise = workout.exercises.first?.exerciseType ?? .squat
 
-            visibilityResult = BodyVisibilityChecker.evaluate(
+            visibilityResult = BodyVisibilityChecker.evaluateFrame(
+                mask: poseEstimator.segmentationMask,
                 joints: joints,
-                for: exercise
+                for: exercise,
+                personality: coachPersonality
             )
 
             // Feed visibility into ready coordinator
@@ -154,7 +156,8 @@ struct TrainerSessionView: View {
                 definition: exerciseDefinition,
                 personality: coachPersonality,
                 bilateralAngles: counter.lastBilateralAngles,
-                worldJoints: poseEstimator.worldJoints
+                worldJoints: poseEstimator.worldJoints,
+                frameMask: poseEstimator.segmentationMask
             )
 
             if !formFeedbacks.isEmpty {

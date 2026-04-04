@@ -13,6 +13,7 @@ final class FormFeedbackEngine {
     // MARK: - Configuration
 
     private let globalCooldown: TimeInterval = 3.0
+    private let frameCooldown: TimeInterval = 5.0
     private let asymmetryThreshold: Double = 15.0
     private let asymmetryCooldown: TimeInterval = 8.0
     private var ruleCooldowns: [String: Date] = [:]
@@ -22,6 +23,7 @@ final class FormFeedbackEngine {
 
     enum FeedbackType: Comparable {
         case bodyPosition
+        case framePosition
         case jointVisibility
         case exerciseRule
     }
@@ -51,12 +53,18 @@ final class FormFeedbackEngine {
         definition: ExerciseDefinition,
         personality: CoachPersonality,
         bilateralAngles: [String: AngleCalculator.BilateralAngle] = [:],
-        worldJoints: [JointName: SIMD3<Float>] = [:]
+        worldJoints: [JointName: SIMD3<Float>] = [:],
+        frameMask: SegmentationMaskData? = nil
     ) -> [Feedback] {
         var feedbacks: [Feedback] = []
 
         if let positionFeedback = checkBodyPosition(joints: joints, definition: definition) {
             feedbacks.append(positionFeedback)
+            return feedbacks
+        }
+
+        if let frameFeedback = checkFramePosition(mask: frameMask, personality: personality) {
+            feedbacks.append(frameFeedback)
             return feedbacks
         }
 
@@ -128,6 +136,41 @@ final class FormFeedbackEngine {
         }
 
         return nil
+    }
+
+    // MARK: - Frame Position Check
+
+    private func checkFramePosition(
+        mask: SegmentationMaskData?,
+        personality: CoachPersonality
+    ) -> Feedback? {
+        guard let mask else { return nil }
+
+        let ruleId = "frame_position"
+        let now = Date()
+
+        if let lastFired = ruleCooldowns[ruleId] {
+            guard now.timeIntervalSince(lastFired) > frameCooldown else { return nil }
+        }
+        if let lastGlobal = lastFeedbackTime {
+            guard now.timeIntervalSince(lastGlobal) > globalCooldown else { return nil }
+        }
+
+        guard let result = FramePositionAnalyzer.analyze(mask),
+              result.guidance != .wellPositioned,
+              result.guidance != .noBodyDetected,
+              let message = FramePositionResult.message(for: result.guidance, personality: personality)
+        else { return nil }
+
+        ruleCooldowns[ruleId] = now
+        lastFeedbackTime = now
+
+        return Feedback(
+            type: .framePosition,
+            message: message,
+            severity: .warning,
+            ruleId: ruleId
+        )
     }
 
     // MARK: - Joint Visibility Check

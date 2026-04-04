@@ -55,4 +55,47 @@ enum BodyVisibilityChecker {
             missingJoints: missing
         )
     }
+
+    // MARK: - Frame-Aware Evaluate
+
+    /// Enhanced evaluation that combines landmark visibility with
+    /// segmentation-mask spatial analysis. When the mask is available,
+    /// this catches framing problems (too close, clipped edges,
+    /// off-center) that landmark visibility alone cannot detect.
+    ///
+    /// Falls back to landmark-only evaluation when `mask` is nil.
+    static func evaluateFrame(
+        mask: SegmentationMaskData?,
+        joints: [JointName: CGPoint],
+        for exerciseType: ExerciseType,
+        personality: CoachPersonality = .good
+    ) -> Result {
+        let landmarkResult = evaluate(joints: joints, for: exerciseType)
+
+        guard landmarkResult.isReady else {
+            return landmarkResult
+        }
+
+        guard let mask,
+              let frameResult = FramePositionAnalyzer.analyze(mask),
+              frameResult.guidance != .wellPositioned,
+              frameResult.guidance != .noBodyDetected
+        else {
+            return landmarkResult
+        }
+
+        guard let message = FramePositionResult.message(
+            for: frameResult.guidance,
+            personality: personality
+        ) else {
+            return landmarkResult
+        }
+
+        return Result(
+            isReady: false,
+            visibility: landmarkResult.visibility,
+            message: message,
+            missingJoints: []
+        )
+    }
 }
