@@ -1,0 +1,137 @@
+---
+description: Mandatory debug log protocol, pre-flight checklist, and code-review self-check for Spotter / VirtualTrainer
+alwaysApply: true
+---
+
+# Cursor Rules: Debugging Protocol & Self-Learning System
+
+This file defines two things:
+
+- **A)** The debug log protocol (mandatory on every bug fix)
+- **B)** A pre-flight checklist the AI must run before writing code
+
+---
+
+# A. DEBUG LOG PROTOCOL
+
+## Rule: Mandatory Debug Logging
+
+Every time you fix a build error, runtime crash, or resolve a bug reported by the user (including Xcode build failures, linker errors, type mismatches, missing imports, SwiftUI preview crashes, or CocoaPods/MediaPipe integration issues), you MUST append a structured entry to `DEBUG_LOG.md` at the project root BEFORE telling the user the fix is complete.
+
+Do NOT skip this step. Do NOT summarize it verbally instead of writing it. Write to the file.
+
+### Completeness (no misses)
+
+- **One entry per distinct root cause.** If one session fixes several unrelated issues, write **separate entries** (each with its own DL number). If multiple symptoms share one root cause, a single entry may cover them if **Error**, **Root Cause**, and **Fix Applied** stay precise.
+- **Same turn as the fix:** Append to `DEBUG_LOG.md` in the **same assistant turn** that lands the code change — never defer logging to a follow-up message or a verbal summary.
+- **User-confirmed fixes count:** If the user reports a bug and you resolve it (including after their confirmation), the log entry is still mandatory before you treat the topic as closed.
+- **Verify on disk:** After editing, confirm the new `### [DL-XXX]` block is present in `DEBUG_LOG.md` (e.g. re-read the tail of the file). Chat-only descriptions are not a substitute.
+
+### Entry Format
+
+Use this exact format for every entry:
+
+````markdown
+---
+
+### [DL-XXX] <Short descriptive title>
+**Date:** YYYY-MM-DD  
+**Severity:** critical | build-breaking | warning | cosmetic  
+**Category:** <see categories below>  
+**File(s):** `<affected file paths>`
+
+**Error:**
+<Exact error message or description as reported by Xcode/compiler/runtime>
+
+**Root Cause:**
+<What was actually wrong in the code. Be specific — name the variable, the type, the missing import, the incorrect threshold. Not "there was a type mismatch" but "AngleCalculator.swift line 142 returned Optional<Double> but UniversalRepCounter expected Double, causing force-unwrap crash.">
+
+**Fix Applied:**
+<What you changed, in which file(s), and why this fixes it>
+
+**Prevention Rule:**
+<A concrete, actionable rule that — if followed during initial coding — would have prevented this error from occurring. Write this as an imperative instruction, e.g., "Always unwrap MediaPipe landmark confidence values with nil-coalescing (default 0.0) rather than force-unwrapping." or "When adding a new SwiftUI view file, immediately add it to the Xcode target membership — don't assume Xcode auto-includes it.">
+
+**Pattern Tags:** #<tag1> #<tag2>
+````
+
+### Categories (use exactly these strings)
+
+- `swift-types` — Type mismatches, optional handling, casting errors
+- `swiftui-views` — View body errors, property wrappers, preview crashes
+- `mediapipe-integration` — Framework linking, model loading, pipeline errors
+- `cocoapods-build` — Pod install issues, workspace config, script phases
+- `xcode-config` — Build settings, signing, entitlements, target membership
+- `angle-math` — Incorrect angle calculations, threshold logic, 2D/3D fallback
+- `exercise-definitions` — Malformed ExerciseDefinition, missing fields, wrong keys
+- `concurrency` — Main actor isolation, async/await, published property threading
+- `camera-pipeline` — AVCaptureSession, frame delivery, permissions
+- `ui-layout` — Auto Layout, safe area, overlay positioning, animations
+- `state-management` — ObservableObject, @Published, @State, @Binding issues
+- `other` — Anything not covered above
+
+### DL Number Sequence
+
+Read the last `### [DL-XXX]` heading in `DEBUG_LOG.md` to determine the next DL number. If there are no entries yet, use **DL-001**.
+
+---
+
+# B. PRE-FLIGHT CHECKLIST (Before Writing ANY Code)
+
+## Rule: Consult Debug Log Before Coding
+
+Before writing or modifying any Swift code, silently read `DEBUG_LOG.md` and check if any Prevention Rules are relevant to the code you're about to write. If they are, follow them. Do not mention that you're doing this unless the user asks.
+
+## Rule: Swift/SwiftUI Pre-Flight
+
+Before generating Swift code, mentally verify these common failure points (derived from recurring issues in this project):
+
+1. **Optional Safety:** Never force-unwrap (`!`) MediaPipe outputs, dictionary lookups, or angle calculations. Always use `guard let`, `if let`, or nil-coalescing (`??`) with sensible defaults.
+
+2. **File Target Membership:** When creating a new .swift file, explicitly confirm it will be added to the `VirtualTrainer` target. Remind the user to verify in Xcode if needed.
+
+3. **Import Discipline:** No file outside the `Vision/` directory should import `MediaPipeTasksVision` or `MediaPipeTasksCommon`. All MediaPipe access goes through the `JointName`, `PoseEstimator`, and `AngleCalculator` abstractions.
+
+4. **Main Actor Isolation:** This project uses strict concurrency (`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`). Any new class or struct that publishes state must be `@MainActor`. Any async callback from MediaPipe must dispatch to main before updating `@Published` properties.
+
+5. **Workspace, Not Project:** Never instruct the user to open `.xcodeproj`. Always reference `.xcworkspace`. CocoaPods will not link otherwise.
+
+6. **ExerciseDefinition Completeness:** Every new exercise definition must include ALL required fields: id, displayName, category, movementType, cameraPosition, setupInstruction, requiredJoints, visibilityHint, angles (with primaryAngleKey matching one angle's key), downThreshold, upThreshold, qualityTarget, qualityTargetIsMinimum, formRules (with both feedbackGood and feedbackDrill), targetMuscles, minRepDuration, idealAngles, tempoRange. Missing any field will cause a compile error or silent malfunction.
+
+7. **3D-First Angles:** When writing angle calculation logic, always attempt 3D world coordinates first, falling back to 2D normalized coordinates only when worldJoints data is nil for the required triple.
+
+8. **CoachCue Personality:** Every user-facing feedback string must have both a `good` and `drill` variant. Never add a form rule with only one variant.
+
+9. **Haptic Fallbacks:** CoreHaptics may not be available on all devices. Always check `CHHapticEngine.capabilitiesForHardware().supportsHaptics` and fall back to `UIImpactFeedbackGenerator`.
+
+10. **EMA Smoothing Constants:** The rep counter uses EMA alpha=0.4 and hysteresis of 2 frames. If adding new signal processing, document the smoothing parameters and justify the values.
+
+---
+
+# C. CODE REVIEW SELF-CHECK (Before Presenting Code to User)
+
+Before presenting any code change to the user, silently run through this checklist:
+
+- [ ] Does the code compile with strict concurrency enabled?
+- [ ] Are all optionals handled safely (no force unwraps on external data)?
+- [ ] Are new files in the correct directory per the module structure (Camera/, Vision/, Models/, RepCounting/, Coaching/, UI/, DesignSystem/, Services/)?
+- [ ] Do new UI elements use Theme tokens (Theme.Colors, Theme.Fonts, Theme.Spacing) instead of hardcoded values?
+- [ ] If I added a new view, does it respect the "No-Fluff Noir" design system?
+- [ ] If I modified ExerciseLibrary.swift, are all fields present and consistent?
+- [ ] Have I checked DEBUG_LOG.md for relevant Prevention Rules?
+
+If any check fails, fix the code before presenting it.
+
+---
+
+# D. PROJECT CONTEXT (Key Facts)
+
+- This is an iOS app called "Spotter" — a real-time AI workout companion
+- Built with Swift 5, SwiftUI, MediaPipe (via CocoaPods), targeting iOS 16+
+- Uses MediaPipe PoseLandmarker (33 body points, 3D world coords), HandGestureDetector, FaceLandmarkerService
+- Architecture: Camera → Vision → RepCounting → Coaching → UI
+- Design system: "No-Fluff Noir" — dark theme, single warm amber accent
+- Two coach personalities: Bennett (supportive) and Fletcher (drill sergeant)
+- The UniversalRepCounter is data-driven from ExerciseDefinition — never write exercise-specific counter classes
+- All angle calculations prefer 3D world coordinates over 2D
+- The full project context is documented in `SPOTTER_CONTEXT_DOC.md` at project root

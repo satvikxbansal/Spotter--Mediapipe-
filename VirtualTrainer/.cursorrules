@@ -44,3 +44,8 @@ The prompts and guidelines below should be used as inpriation. You are allowed t
 - Write clean, highly modular Swift code.
 - Add brief, professional comments explaining complex math (e.g., joint angle calculations).
 - If creating UI, build the `DesignSystem` constants first rather than hardcoding colors and fonts in the View.
+
+# Debugging protocol & self-learning (authoritative detail)
+- Full spec: repo root `.cursor/rules/debugging.mdc` (`alwaysApply: true`).
+- On every bug/build/runtime fix: append a structured entry to repo root `DEBUG_LOG.md` (DL-XXX format) before declaring the fix complete.
+- Before Swift changes: silently consult `DEBUG_LOG.md` prevention rules; run the pre-flight and code-review checklists in that rule.
