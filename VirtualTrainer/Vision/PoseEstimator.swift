@@ -51,6 +51,13 @@ final class PoseEstimator: NSObject, ObservableObject {
     /// 2D normalized landmarks for overlay rendering.
     @Published var bodyJoints: [JointName: CGPoint] = [:]
 
+    /// Per-joint MediaPipe visibility scores for side selection and confidence.
+    @Published var jointVisibility: [JointName: Float] = [:]
+
+    /// Smoothed 2D landmarks for visual overlay only.
+    /// Rep counting and form rules use `bodyJoints` to avoid smoothing lag.
+    @Published var overlayBodyJoints: [JointName: CGPoint] = [:]
+
     /// 3D world landmarks in meters (hip-center origin) for angle calculations.
     @Published var worldJoints: [JointName: SIMD3<Float>] = [:]
 
@@ -59,6 +66,10 @@ final class PoseEstimator: NSObject, ObservableObject {
     /// Body segmentation mask dimensions + float data from the pose landmarker.
     /// Nil when no pose is detected or segmentation is unavailable.
     @Published var segmentationMask: SegmentationMaskData?
+
+    /// Aspect ratio of the image coordinate space used by MediaPipe landmarks.
+    /// The overlay uses this to match `.resizeAspectFill` camera preview cropping.
+    @Published var imageAspectRatio: CGFloat = 9.0 / 16.0
 
     // MARK: - Private
 
@@ -72,8 +83,7 @@ final class PoseEstimator: NSObject, ObservableObject {
 
     /// Minimum per-landmark visibility to include in output.
     private let visibilityThreshold: Float = 0.5
-    private let smoother2D = LandmarkSmoother2D()
-    private let smoother3D = LandmarkSmoother3D()
+    private let overlaySmoother = LandmarkSmoother2D()
 
     // MARK: - Init
 
@@ -117,6 +127,8 @@ final class PoseEstimator: NSObject, ObservableObject {
     func processFrame(_ sampleBuffer: CMSampleBuffer) {
         guard let poseLandmarker else { return }
 
+        publishImageAspectRatio(from: sampleBuffer)
+
         let currentTimestamp = sampleTimestampMilliseconds(sampleBuffer)
         guard currentTimestamp > timestampMs else { return }
         timestampMs = currentTimestamp
@@ -144,11 +156,12 @@ final class PoseEstimator: NSObject, ObservableObject {
               !landmarks.isEmpty else {
             DispatchQueue.main.async { [weak self] in
                 self?.bodyJoints = [:]
+                self?.jointVisibility = [:]
+                self?.overlayBodyJoints = [:]
                 self?.worldJoints = [:]
                 self?.confidence = 0
                 self?.segmentationMask = nil
-                self?.smoother2D.reset()
-                self?.smoother3D.reset()
+                self?.overlaySmoother.reset()
             }
             return
         }
@@ -156,11 +169,15 @@ final class PoseEstimator: NSObject, ObservableObject {
         // --- 2D normalized landmarks (for overlay rendering) ---
         var converted2D: [JointName: CGPoint] = [:]
         converted2D.reserveCapacity(35)
+        var visibility: [JointName: Float] = [:]
+        visibility.reserveCapacity(35)
 
         for (index, landmark) in landmarks.enumerated() {
-            guard landmark.visibility?.floatValue ?? 0 > visibilityThreshold,
+            let score = landmark.visibility?.floatValue ?? 0
+            guard score > visibilityThreshold,
                   let joint = JointName(rawValue: index) else { continue }
             converted2D[joint] = CGPoint(x: CGFloat(landmark.x), y: CGFloat(landmark.y))
+            visibility[joint] = score
         }
 
         // --- 3D world landmarks (for accurate angle math) ---
@@ -182,12 +199,18 @@ final class PoseEstimator: NSObject, ObservableObject {
                 x: (ls.x + rs.x) / 2,
                 y: (ls.y + rs.y) / 2
             )
+            if let lVis = visibility[.leftShoulder], let rVis = visibility[.rightShoulder] {
+                visibility[.neck] = min(lVis, rVis)
+            }
         }
         if let lh = converted2D[.leftHip], let rh = converted2D[.rightHip] {
             converted2D[.root] = CGPoint(
                 x: (lh.x + rh.x) / 2,
                 y: (lh.y + rh.y) / 2
             )
+            if let lVis = visibility[.leftHip], let rVis = visibility[.rightHip] {
+                visibility[.root] = min(lVis, rVis)
+            }
         }
 
         // Synthetic joints — 3D
@@ -199,8 +222,7 @@ final class PoseEstimator: NSObject, ObservableObject {
         }
 
         let timestampSeconds = TimeInterval(timestampInMilliseconds) / 1000.0
-        let smoothed2D = smoother2D.smooth(converted2D, timestamp: timestampSeconds)
-        let smoothed3D = smoother3D.smooth(converted3D, timestamp: timestampSeconds)
+        let overlayJoints = overlaySmoother.smooth(converted2D, timestamp: timestampSeconds)
 
         // --- Segmentation mask ---
         var maskData: SegmentationMaskData?
@@ -218,8 +240,10 @@ final class PoseEstimator: NSObject, ObservableObject {
         let topConfidence = landmarks.first?.visibility?.floatValue ?? 0
 
         DispatchQueue.main.async { [weak self] in
-            self?.bodyJoints = smoothed2D
-            self?.worldJoints = smoothed3D
+            self?.bodyJoints = converted2D
+            self?.jointVisibility = visibility
+            self?.overlayBodyJoints = overlayJoints
+            self?.worldJoints = converted3D
             self?.confidence = topConfidence
             self?.segmentationMask = maskData
         }
@@ -232,6 +256,21 @@ final class PoseEstimator: NSObject, ObservableObject {
             return Int(seconds * 1000.0)
         }
         return Int(Date().timeIntervalSince1970 * 1000)
+    }
+
+    private func publishImageAspectRatio(from sampleBuffer: CMSampleBuffer) {
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
+        let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+        guard width > 0, height > 0 else { return }
+
+        let aspect = width / height
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if abs(self.imageAspectRatio - aspect) > 0.001 {
+                self.imageAspectRatio = aspect
+            }
+        }
     }
 }
 

@@ -142,6 +142,7 @@ struct TrainerSessionView: View {
             let output = counter.processJoints(
                 joints,
                 worldJoints: poseEstimator.worldJoints,
+                jointVisibility: poseEstimator.jointVisibility,
                 personality: coachPersonality
             )
             repCount = output.repCount
@@ -179,7 +180,8 @@ struct TrainerSessionView: View {
                 angles: counter.lastAngles,
                 definition: exerciseDefinition,
                 joints: joints,
-                worldJoints: poseEstimator.worldJoints
+                worldJoints: poseEstimator.worldJoints,
+                jointVisibility: poseEstimator.jointVisibility
             )
 
             violatedJoints = buildViolatedJoints(
@@ -225,10 +227,11 @@ struct TrainerSessionView: View {
 
     private var skeletonLayer: some View {
         TrainerOverlayView(
-            bodyJoints: poseEstimator.bodyJoints,
+            bodyJoints: poseEstimator.overlayBodyJoints,
             allHandLandmarks: handGesture.allHandLandmarks,
             angleOverlays: angleOverlays,
-            violatedJoints: violatedJoints
+            violatedJoints: violatedJoints,
+            imageAspectRatio: poseEstimator.imageAspectRatio
         )
         .ignoresSafeArea()
     }
@@ -689,7 +692,8 @@ struct TrainerSessionView: View {
         angles: [String: Double],
         definition: ExerciseDefinition,
         joints: [JointName: CGPoint],
-        worldJoints: [JointName: SIMD3<Float>]
+        worldJoints: [JointName: SIMD3<Float>],
+        jointVisibility: [JointName: Float]
     ) -> [TrainerOverlayView.AngleOverlayData] {
         var result: [TrainerOverlayView.AngleOverlayData] = []
         for angleDef in definition.angles {
@@ -698,7 +702,8 @@ struct TrainerSessionView: View {
             if let side = AngleCalculator.preferredOverlaySide(
                 for: angleDef,
                 joints2D: joints,
-                joints3D: worldJoints
+                joints3D: worldJoints,
+                jointVisibility: jointVisibility
             ), let triple = AngleCalculator.resolveJointTriple(for: angleDef, side: side) {
                 result.append(.init(
                     label: angleDef.label,

@@ -29,13 +29,18 @@ nonisolated enum AngleCalculator {
 
     static func computeAngles(
         joints: [JointName: CGPoint],
+        jointVisibility: [JointName: Float] = [:],
         for definition: ExerciseDefinition
     ) -> [String: Double] {
         var result: [String: Double] = [:]
         result.reserveCapacity(definition.angles.count)
 
         for angleDef in definition.angles {
-            if let angle = computeSingleAngle(angleDef, joints: joints) {
+            if let angle = computeSingleAngle(
+                angleDef,
+                joints: joints,
+                jointVisibility: jointVisibility
+            ) {
                 result[angleDef.key] = angle
             }
         }
@@ -151,7 +156,8 @@ nonisolated enum AngleCalculator {
 
     private static func computeSingleAngle(
         _ def: AngleDefinition,
-        joints: [JointName: CGPoint]
+        joints: [JointName: CGPoint],
+        jointVisibility: [JointName: Float] = [:]
     ) -> Double? {
         switch def.side {
         case .left:
@@ -171,16 +177,43 @@ nonisolated enum AngleCalculator {
             }
 
         case .bestAvailable:
-            if let right = resolveAndMeasure(def, joints: joints, side: "right") {
-                return right
-            }
-            return resolveAndMeasure(def, joints: joints, side: "left")
+            return pickBestAvailableValue(def, joints: joints, jointVisibility: jointVisibility)
 
         case .moreFlexed:
             return pickSideValue(def, joints: joints, preferSmaller: true)
 
         case .lessFlexed:
             return pickSideValue(def, joints: joints, preferSmaller: false)
+        }
+    }
+
+    private static func pickBestAvailableValue(
+        _ def: AngleDefinition,
+        joints: [JointName: CGPoint],
+        jointVisibility: [JointName: Float]
+    ) -> Double? {
+        let left = resolveAndMeasure(def, joints: joints, side: "left")
+        let right = resolveAndMeasure(def, joints: joints, side: "right")
+        switch (left, right) {
+        case let (l?, r?):
+            let leftScore = visibilityScore(for: def, side: "left", jointVisibility: jointVisibility)
+            let rightScore = visibilityScore(for: def, side: "right", jointVisibility: jointVisibility)
+            switch (leftScore, rightScore) {
+            case let (ls?, rs?):
+                return ls > rs ? l : r
+            case (_?, nil):
+                return l
+            case (nil, _?):
+                return r
+            case (nil, nil):
+                return r
+            }
+        case let (l?, nil):
+            return l
+        case let (nil, r?):
+            return r
+        case (nil, nil):
+            return nil
         }
     }
 
@@ -380,6 +413,7 @@ nonisolated enum AngleCalculator {
     static func computeAngles3D(
         joints2D: [JointName: CGPoint],
         joints3D: [JointName: SIMD3<Float>],
+        jointVisibility: [JointName: Float] = [:],
         for definition: ExerciseDefinition
     ) -> [String: Double] {
         var result: [String: Double] = [:]
@@ -387,11 +421,23 @@ nonisolated enum AngleCalculator {
 
         for angleDef in definition.angles {
             if angleDef.key == "bodyLineAngle",
-               let angle = computeSingleAngle(angleDef, joints: joints2D) {
+               let angle = computeSingleAngle3D(
+                angleDef,
+                joints3D: joints3D,
+                jointVisibility: jointVisibility
+               ) {
                 result[angleDef.key] = angle
-            } else if let angle = computeSingleAngle3D(angleDef, joints3D: joints3D) {
+            } else if let angle = computeSingleAngle3D(
+                angleDef,
+                joints3D: joints3D,
+                jointVisibility: jointVisibility
+            ) {
                 result[angleDef.key] = angle
-            } else if let angle = computeSingleAngle(angleDef, joints: joints2D) {
+            } else if let angle = computeSingleAngle(
+                angleDef,
+                joints: joints2D,
+                jointVisibility: jointVisibility
+            ) {
                 result[angleDef.key] = angle
             }
         }
@@ -432,7 +478,8 @@ nonisolated enum AngleCalculator {
 
     private static func computeSingleAngle3D(
         _ def: AngleDefinition,
-        joints3D: [JointName: SIMD3<Float>]
+        joints3D: [JointName: SIMD3<Float>],
+        jointVisibility: [JointName: Float] = [:]
     ) -> Double? {
         switch def.side {
         case .left:
@@ -452,16 +499,43 @@ nonisolated enum AngleCalculator {
             }
 
         case .bestAvailable:
-            if let right = resolveAndMeasure3D(def, joints: joints3D, side: "right") {
-                return right
-            }
-            return resolveAndMeasure3D(def, joints: joints3D, side: "left")
+            return pickBestAvailableValue3D(def, joints: joints3D, jointVisibility: jointVisibility)
 
         case .moreFlexed:
             return pickSideValue3D(def, joints: joints3D, preferSmaller: true)
 
         case .lessFlexed:
             return pickSideValue3D(def, joints: joints3D, preferSmaller: false)
+        }
+    }
+
+    private static func pickBestAvailableValue3D(
+        _ def: AngleDefinition,
+        joints: [JointName: SIMD3<Float>],
+        jointVisibility: [JointName: Float]
+    ) -> Double? {
+        let left = resolveAndMeasure3D(def, joints: joints, side: "left")
+        let right = resolveAndMeasure3D(def, joints: joints, side: "right")
+        switch (left, right) {
+        case let (l?, r?):
+            let leftScore = visibilityScore(for: def, side: "left", jointVisibility: jointVisibility)
+            let rightScore = visibilityScore(for: def, side: "right", jointVisibility: jointVisibility)
+            switch (leftScore, rightScore) {
+            case let (ls?, rs?):
+                return ls > rs ? l : r
+            case (_?, nil):
+                return l
+            case (nil, _?):
+                return r
+            case (nil, nil):
+                return r
+            }
+        case let (l?, nil):
+            return l
+        case let (nil, r?):
+            return r
+        case (nil, nil):
+            return nil
         }
     }
 
@@ -476,7 +550,43 @@ nonisolated enum AngleCalculator {
             let endJoint = resolveJointName(def.endJoint, side: side)
         else { return nil }
 
+        if def.key == "bodyLineAngle" {
+            return measureSignedBodyLine3D(joints: joints, start: startJoint, mid: midJoint, end: endJoint)
+        }
         return measureAngle3D(joints: joints, start: startJoint, mid: midJoint, end: endJoint)
+    }
+
+    /// 3D signed body line using the vertical displacement of the hip from the
+    /// shoulder-to-ankle line. MediaPipe world Y follows the image-space
+    /// convention closely enough for this sign: higher hip = pike, lower hip = sag.
+    private static func measureSignedBodyLine3D(
+        joints: [JointName: SIMD3<Float>],
+        start: JointName,
+        mid: JointName,
+        end: JointName
+    ) -> Double? {
+        guard let shoulder = joints[start],
+              let hip = joints[mid],
+              let ankle = joints[end] else { return nil }
+
+        let folded = angle3D(start: shoulder, mid: hip, end: ankle)
+        let deviation = 180.0 - folded
+        guard deviation > 0 else { return 180.0 }
+
+        let line = ankle - shoulder
+        let lineLenSq = simd_dot(line, line)
+        guard lineLenSq > 1e-8 else { return 180.0 }
+
+        let t = min(max(simd_dot(hip - shoulder, line) / lineLenSq, 0), 1)
+        let closestPoint = shoulder + t * line
+
+        if hip.y < closestPoint.y {
+            return 180.0 + deviation
+        } else if hip.y > closestPoint.y {
+            return 180.0 - deviation
+        } else {
+            return 180.0
+        }
     }
 
     private static func pickSideValue3D(
@@ -504,7 +614,8 @@ nonisolated enum AngleCalculator {
     static func preferredOverlaySide(
         for def: AngleDefinition,
         joints2D: [JointName: CGPoint],
-        joints3D: [JointName: SIMD3<Float>] = [:]
+        joints3D: [JointName: SIMD3<Float>] = [:],
+        jointVisibility: [JointName: Float] = [:]
     ) -> String? {
         switch def.side {
         case .left:
@@ -512,8 +623,23 @@ nonisolated enum AngleCalculator {
         case .right:
             return resolveAndMeasure(def, joints: joints2D, side: "right") != nil ? "right" : nil
         case .both, .bestAvailable:
-            if resolveAndMeasure(def, joints: joints2D, side: "right") != nil { return "right" }
-            return resolveAndMeasure(def, joints: joints2D, side: "left") != nil ? "left" : nil
+            let left = resolveAndMeasure(def, joints: joints2D, side: "left")
+            let right = resolveAndMeasure(def, joints: joints2D, side: "right")
+            switch (left, right) {
+            case (_?, _?):
+                let leftScore = visibilityScore(for: def, side: "left", jointVisibility: jointVisibility)
+                let rightScore = visibilityScore(for: def, side: "right", jointVisibility: jointVisibility)
+                if let leftScore, let rightScore {
+                    return leftScore > rightScore ? "left" : "right"
+                }
+                return "right"
+            case (_?, nil):
+                return "left"
+            case (nil, _?):
+                return "right"
+            case (nil, nil):
+                return nil
+            }
         case .moreFlexed, .lessFlexed:
             let preferSmaller = def.side == .moreFlexed
             let left3D = resolveAndMeasure3D(def, joints: joints3D, side: "left")
@@ -531,6 +657,21 @@ nonisolated enum AngleCalculator {
                 return nil
             }
         }
+    }
+
+    private static func visibilityScore(
+        for def: AngleDefinition,
+        side: String,
+        jointVisibility: [JointName: Float]
+    ) -> Float? {
+        guard
+            let triple = resolveJointTriple(for: def, side: side),
+            let start = jointVisibility[triple.start],
+            let mid = jointVisibility[triple.mid],
+            let end = jointVisibility[triple.end]
+        else { return nil }
+
+        return (start + mid + end) / 3.0
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -567,7 +708,7 @@ nonisolated enum AngleCalculator {
     ) -> PositionalCheckResult? {
         switch check.checkType {
         case .kneeValgus:
-            return evaluateKneeValgus(check, joints2D: joints2D)
+            return evaluateKneeValgus(check, joints2D: joints2D, joints3D: joints3D)
 
         case .heelRise:
             return evaluateHeelRise(check, joints2D: joints2D)
@@ -588,8 +729,13 @@ nonisolated enum AngleCalculator {
     /// abs(hip.x - ankle.x). A ratio above threshold means valgus.
     private static func evaluateKneeValgus(
         _ check: PositionalCheck,
-        joints2D: [JointName: CGPoint]
+        joints2D: [JointName: CGPoint],
+        joints3D: [JointName: SIMD3<Float>]
     ) -> PositionalCheckResult? {
+        if let result = evaluateKneeValgus3D(check, joints3D: joints3D) {
+            return result
+        }
+
         guard let lHip = joints2D[.leftHip], let rHip = joints2D[.rightHip],
               let lKnee = joints2D[.leftKnee], let rKnee = joints2D[.rightKnee],
               let lAnkle = joints2D[.leftAnkle], let rAnkle = joints2D[.rightAnkle]
@@ -602,6 +748,32 @@ nonisolated enum AngleCalculator {
         let rightInward = (rAnkle.x - rKnee.x) / hipWidth
 
         let maxInward = max(leftInward, rightInward)
+        let violated = maxInward > (check.threshold ?? 0.15)
+
+        return PositionalCheckResult(key: check.id, violated: violated, value: maxInward)
+    }
+
+    /// 3D knee valgus approximation: project knee-vs-ankle displacement onto
+    /// the user's hip-width lateral axis. This keeps the same normalized ratio
+    /// semantics as the 2D FPPA-style check while being less sensitive to
+    /// camera tilt or slight off-front positioning.
+    private static func evaluateKneeValgus3D(
+        _ check: PositionalCheck,
+        joints3D: [JointName: SIMD3<Float>]
+    ) -> PositionalCheckResult? {
+        guard let lHip = joints3D[.leftHip], let rHip = joints3D[.rightHip],
+              let lKnee = joints3D[.leftKnee], let rKnee = joints3D[.rightKnee],
+              let lAnkle = joints3D[.leftAnkle], let rAnkle = joints3D[.rightAnkle]
+        else { return nil }
+
+        let hipVector = rHip - lHip
+        let hipWidth = simd_length(hipVector)
+        guard hipWidth > 1e-4 else { return nil }
+
+        let lateralAxis = hipVector / hipWidth
+        let leftInward = simd_dot(lKnee - lAnkle, lateralAxis) / hipWidth
+        let rightInward = simd_dot(rAnkle - rKnee, lateralAxis) / hipWidth
+        let maxInward = Double(max(leftInward, rightInward))
         let violated = maxInward > (check.threshold ?? 0.15)
 
         return PositionalCheckResult(key: check.id, violated: violated, value: maxInward)

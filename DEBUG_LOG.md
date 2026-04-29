@@ -96,3 +96,25 @@ Changed the comparison/assignment to explicitly use `HandGesture.none` and remov
 When an enum has a `.none` case and the expression is optional-chained, always spell the enum case explicitly as `EnumName.none`.
 
 **Pattern Tags:** #swift-types #warnings #hand-gesture
+
+---
+
+### [DL-005] Align Skeleton Overlay With Aspect-Fill Camera Preview
+**Date:** 2026-04-29  
+**Severity:** critical  
+**Category:** ui-layout  
+**File(s):** `VirtualTrainer/Vision/PoseEstimator.swift`, `VirtualTrainer/UI/TrainerOverlayView.swift`, `VirtualTrainer/UI/TrainerSessionView.swift`
+
+**Error:**
+Skeleton overlay looked rough and drifted from the body because `CameraPreviewView` uses `.resizeAspectFill`, while `TrainerOverlayView.screenPoint(_:)` mapped normalized MediaPipe coordinates directly with `x * width` and `y * height`.
+
+**Root Cause:**
+MediaPipe landmarks are normalized in the camera image coordinate space, but `.resizeAspectFill` scales that image to cover the SwiftUI view and crops whichever dimension exceeds the view. The overlay did not apply the same aspect-fill transform, so body and hand points drifted farther from the preview image as they moved away from center. The earlier smoothing change also fed smoothed joints into both overlay and rep counting, which risked adding lag to biomechanics.
+
+**Fix Applied:**
+Published the camera image aspect ratio from `PoseEstimator`, passed it into `TrainerOverlayView`, and mapped body joints, hand joints, and angle arcs through an aspect-fill rect matching the preview. Split pose outputs so `bodyJoints` remains raw for rep counting/form feedback while `overlayBodyJoints` is smoothed for visual rendering only.
+
+**Prevention Rule:**
+Whenever camera preview uses `.resizeAspectFill`, overlay coordinates must be mapped through the same aspect-fill displayed image rect; never map normalized camera coordinates directly to the full SwiftUI view bounds.
+
+**Pattern Tags:** #ui-layout #camera-pipeline #overlay #coordinate-mapping

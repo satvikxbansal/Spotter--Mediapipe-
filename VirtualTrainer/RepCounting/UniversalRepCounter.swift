@@ -98,12 +98,17 @@ nonisolated final class UniversalRepCounter: RepCounter {
     func processJoints(
         _ joints: [JointName: CGPoint],
         worldJoints: [JointName: SIMD3<Float>] = [:],
+        jointVisibility: [JointName: Float] = [:],
         personality: CoachPersonality = .good,
         formEngine: FormFeedbackEngine? = nil
     ) -> RepCounterOutput {
         let angles: [String: Double]
         if worldJoints.isEmpty {
-            angles = AngleCalculator.computeAngles(joints: joints, for: definition)
+            angles = AngleCalculator.computeAngles(
+                joints: joints,
+                jointVisibility: jointVisibility,
+                for: definition
+            )
             lastBilateralAngles = AngleCalculator.computeBilateralAngles(
                 joints: joints, for: definition
             )
@@ -111,6 +116,7 @@ nonisolated final class UniversalRepCounter: RepCounter {
             angles = AngleCalculator.computeAngles3D(
                 joints2D: joints,
                 joints3D: worldJoints,
+                jointVisibility: jointVisibility,
                 for: definition
             )
             lastBilateralAngles = AngleCalculator.computeBilateralAngles3D(

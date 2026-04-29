@@ -8,8 +8,9 @@ import SwiftUI
 ///
 /// Joint positions arrive as normalised 0…1 values (already in
 /// SwiftUI's top-left coordinate space thanks to `PoseEstimator`).
-/// A `GeometryReader` maps them to screen pixels, then a `Canvas`
-/// renders bones and joint dots in a single draw pass.
+/// A `GeometryReader` maps them through the same aspect-fill transform
+/// as `CameraPreviewView`, then a `Canvas` renders bones and joint dots
+/// in a single draw pass.
 ///
 /// ## Visual Style
 ///
@@ -28,6 +29,7 @@ struct TrainerOverlayView: View {
     var allHandLandmarks: [[Int: CGPoint]] = []
     var angleOverlays: [AngleOverlayData] = []
     var violatedJoints: Set<JointName> = []
+    var imageAspectRatio: CGFloat = 9.0 / 16.0
 
     struct AngleOverlayData {
         let label: String
@@ -256,7 +258,38 @@ struct TrainerOverlayView: View {
     // MARK: - Helpers
 
     private func screenPoint(_ pt: CGPoint, in size: CGSize) -> CGPoint {
-        CGPoint(x: pt.x * size.width, y: pt.y * size.height)
+        let rect = aspectFillRect(forImageAspect: imageAspectRatio, in: size)
+        return CGPoint(
+            x: rect.minX + pt.x * rect.width,
+            y: rect.minY + pt.y * rect.height
+        )
+    }
+
+    private func aspectFillRect(forImageAspect imageAspect: CGFloat, in size: CGSize) -> CGRect {
+        guard imageAspect > 0, size.width > 0, size.height > 0 else {
+            return CGRect(origin: .zero, size: size)
+        }
+
+        let viewAspect = size.width / size.height
+        if imageAspect > viewAspect {
+            let height = size.height
+            let width = height * imageAspect
+            return CGRect(
+                x: (size.width - width) / 2,
+                y: 0,
+                width: width,
+                height: height
+            )
+        } else {
+            let width = size.width
+            let height = width / imageAspect
+            return CGRect(
+                x: 0,
+                y: (size.height - height) / 2,
+                width: width,
+                height: height
+            )
+        }
     }
 }
 
