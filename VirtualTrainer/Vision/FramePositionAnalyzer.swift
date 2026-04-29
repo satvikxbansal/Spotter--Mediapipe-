@@ -56,6 +56,7 @@ nonisolated enum FramePositionAnalyzer {
         var bodyCount = 0
         var sumX: Double = 0
         var sumY: Double = 0
+        var totalWeight: Double = 0
 
         var minX = w, maxX = 0
         var minY = h, maxY = 0
@@ -67,6 +68,7 @@ nonisolated enum FramePositionAnalyzer {
                 guard val > pixelThreshold else { continue }
                 bodyCount += 1
                 let dval = Double(val)
+                totalWeight += dval
                 sumX += Double(x) * dval
                 sumY += Double(y) * dval
                 if x < minX { minX = x }
@@ -88,9 +90,6 @@ nonisolated enum FramePositionAnalyzer {
 
         let coverage = Double(bodyCount) / Double(totalPixels)
 
-        let totalWeight = data.reduce(0.0) { acc, v in
-            v > pixelThreshold ? acc + Double(v) : acc
-        }
         let centroidX = totalWeight > 0 ? sumX / totalWeight / Double(w - 1) : 0.5
         let centroidY = totalWeight > 0 ? sumY / totalWeight / Double(h - 1) : 0.5
 
