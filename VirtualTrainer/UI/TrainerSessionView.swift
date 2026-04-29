@@ -1,4 +1,5 @@
 import SwiftUI
+import simd
 
 // ────────────────────────────────────────────────────────────────────
 // MARK: - TrainerSessionView
@@ -163,6 +164,9 @@ struct TrainerSessionView: View {
             if !formFeedbacks.isEmpty {
                 coachCues = formFeedbacks.map { $0.asCoachCue }
                 counter.recordFeedbackDuringRep()
+                if let cue = coachCues.first, cue.severity >= .warning {
+                    Task { await voiceCoach.playCue(cue, personality: coachPersonality) }
+                }
             } else {
                 coachCues = output.cues
             }
@@ -173,7 +177,9 @@ struct TrainerSessionView: View {
 
             angleOverlays = buildAngleOverlays(
                 angles: counter.lastAngles,
-                definition: exerciseDefinition
+                definition: exerciseDefinition,
+                joints: joints,
+                worldJoints: poseEstimator.worldJoints
             )
 
             violatedJoints = buildViolatedJoints(
@@ -183,6 +189,7 @@ struct TrainerSessionView: View {
 
             if repCount > previousRepCount {
                 previousRepCount = repCount
+                HapticsEngine.shared.repTick()
                 motivationEngine.evaluateEffort(
                     currentRepCount: repCount,
                     faceEffortScore: exertionAnalyzer.effortScore
@@ -680,21 +687,19 @@ struct TrainerSessionView: View {
 
     private func buildAngleOverlays(
         angles: [String: Double],
-        definition: ExerciseDefinition
+        definition: ExerciseDefinition,
+        joints: [JointName: CGPoint],
+        worldJoints: [JointName: SIMD3<Float>]
     ) -> [TrainerOverlayView.AngleOverlayData] {
         var result: [TrainerOverlayView.AngleOverlayData] = []
         for angleDef in definition.angles {
             guard let degrees = angles[angleDef.key] else { continue }
 
-            if let triple = AngleCalculator.resolveJointTriple(for: angleDef, side: "right") {
-                result.append(.init(
-                    label: angleDef.label,
-                    degrees: degrees,
-                    vertexJoint: triple.mid,
-                    startJoint: triple.start,
-                    endJoint: triple.end
-                ))
-            } else if let triple = AngleCalculator.resolveJointTriple(for: angleDef, side: "left") {
+            if let side = AngleCalculator.preferredOverlaySide(
+                for: angleDef,
+                joints2D: joints,
+                joints3D: worldJoints
+            ), let triple = AngleCalculator.resolveJointTriple(for: angleDef, side: side) {
                 result.append(.init(
                     label: angleDef.label,
                     degrees: degrees,
@@ -719,9 +724,15 @@ struct TrainerSessionView: View {
             .compactMap { $0.ruleId }
 
         for ruleId in violatedRuleIds {
-            guard let rule = definition.formRules.first(where: { $0.id == ruleId }),
-                  let angleDef = definition.angles.first(where: { $0.key == rule.angleKey })
-            else { continue }
+            let angleDef: AngleDefinition?
+            if let rule = definition.formRules.first(where: { $0.id == ruleId }) {
+                angleDef = definition.angles.first(where: { $0.key == rule.angleKey })
+            } else if let check = definition.positionalChecks.first(where: { $0.id == ruleId }) {
+                angleDef = angleDefinition(for: check, definition: definition)
+            } else {
+                angleDef = nil
+            }
+            guard let angleDef else { continue }
 
             for side in ["right", "left"] {
                 if let triple = AngleCalculator.resolveJointTriple(for: angleDef, side: side) {
@@ -732,6 +743,21 @@ struct TrainerSessionView: View {
             }
         }
         return joints
+    }
+
+    private func angleDefinition(
+        for check: PositionalCheck,
+        definition: ExerciseDefinition
+    ) -> AngleDefinition? {
+        switch check.checkType {
+        case .kneeValgus, .heelRise:
+            return definition.angles.first { $0.key.lowercased().contains("knee") }
+        case .shoulderLevel:
+            return definition.angles.first { $0.startJoint.contains("shoulder") || $0.midJoint.contains("shoulder") }
+                ?? definition.angles.first
+        case .jointAboveJoint, .jointAlignedX:
+            return definition.angles.first
+        }
     }
 
     // MARK: - Debug Angle

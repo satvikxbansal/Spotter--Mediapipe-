@@ -12,7 +12,7 @@ import simd
 /// from the definition and applies them generically.
 ///
 /// Prefers 3D world landmarks for angle calculations when available.
-final class UniversalRepCounter: RepCounter {
+nonisolated final class UniversalRepCounter: RepCounter {
 
     // MARK: - Properties
 
@@ -42,6 +42,7 @@ final class UniversalRepCounter: RepCounter {
     /// Running average of all rep form scores in the current set.
     private(set) var averageFormScore: Double = 0
     private var formScoreAccumulator: Double = 0
+    private(set) var repRecords: [RepRecord] = []
 
     // EMA smoothing for angle stability (reduces jitter from 3D world landmarks)
     private var emaAngles: [String: Double] = [:]
@@ -51,6 +52,7 @@ final class UniversalRepCounter: RepCounter {
     private var consecutiveDownFrames: Int = 0
     private var consecutiveUpFrames: Int = 0
     private let hysteresisFrameCount: Int = 2
+    private var upPhaseFramesRemaining: Int = 0
 
     // Min rep duration: prevents false positives from jitter / bouncing
     private var lastRepTime: Date?
@@ -62,6 +64,15 @@ final class UniversalRepCounter: RepCounter {
 
     // Feedback accumulator for current rep
     private(set) var currentRepFeedbackCount: Int = 0
+
+    struct RepRecord {
+        let index: Int
+        let completedAt: Date
+        let duration: TimeInterval
+        let peakAngles: [String: Double]
+        let formScore: FormScore
+        let feedbackCount: Int
+    }
 
     // MARK: - Init
 
@@ -155,7 +166,6 @@ final class UniversalRepCounter: RepCounter {
 
     private func processRepetition(primaryAngle: Double, angles: [String: Double]) -> RepCounterOutput {
         var cues: [CoachCue] = []
-        let previousRepCount = repCount
         var completedFormScore: FormScore?
 
         switch currentPhase {
@@ -193,8 +203,9 @@ final class UniversalRepCounter: RepCounter {
                     repCount += 1
                     lastRepTime = now
 
-                    if let start = repStartTime {
-                        repDurations.append(now.timeIntervalSince(start))
+                    let duration = repStartTime.map { now.timeIntervalSince($0) } ?? 0
+                    if duration > 0 {
+                        repDurations.append(duration)
                     }
 
                     completedFormScore = calculateFormScore(feedbackCount: currentRepFeedbackCount)
@@ -209,21 +220,32 @@ final class UniversalRepCounter: RepCounter {
                         cues.append(qualityCue)
                     }
 
+                    if let completedFormScore {
+                        repRecords.append(RepRecord(
+                            index: repCount,
+                            completedAt: now,
+                            duration: duration,
+                            peakAngles: extremeAnglesDuringDown,
+                            formScore: completedFormScore,
+                            feedbackCount: currentRepFeedbackCount
+                        ))
+                    }
+
                     extremeAngleDuringDown = nil
                     extremeAnglesDuringDown = [:]
                     consecutiveUpFrames = 0
-                    currentPhase = .idle
+                    upPhaseFramesRemaining = hysteresisFrameCount
                 }
             } else {
                 consecutiveUpFrames = 0
             }
 
         case .up:
-            currentPhase = .idle
-        }
-
-        if repCount > previousRepCount {
-            HapticsEngine.shared.repTick()
+            if upPhaseFramesRemaining > 0 {
+                upPhaseFramesRemaining -= 1
+            } else {
+                currentPhase = .idle
+            }
         }
 
         return RepCounterOutput(
@@ -244,7 +266,7 @@ final class UniversalRepCounter: RepCounter {
     // MARK: - Isometric State Machine
 
     private func processIsometric(primaryAngle: Double, angles: [String: Double]) -> RepCounterOutput {
-        let inPosition = shouldEnterDown(primaryAngle)
+        let inPosition = isWithinHoldPosition(primaryAngle)
 
         switch currentPhase {
         case .idle:
@@ -304,6 +326,13 @@ final class UniversalRepCounter: RepCounter {
         return false
     }
 
+    private func isWithinHoldPosition(_ angle: Double) -> Bool {
+        if let range = definition.holdAngleRange {
+            return range.contains(angle)
+        }
+        return shouldEnterDown(angle)
+    }
+
     // MARK: - Quality Check
 
     private func updateExtremeAngle(_ angle: Double) {
@@ -333,21 +362,27 @@ final class UniversalRepCounter: RepCounter {
     }
 
     private func checkQuality() -> CoachCue? {
-        guard let target = definition.qualityTarget,
-              let extreme = extremeAngleDuringDown else { return nil }
-
         if let lastCue = lastQualityCueTime {
             guard Date().timeIntervalSince(lastCue) > qualityCueCooldown else { return nil }
         }
 
-        let missed: Bool
-        if definition.qualityTargetIsMinimum {
-            missed = extreme < target
+        if !definition.idealAngles.isEmpty {
+            let missedIdeal = definition.idealAngles.contains { key, ideal in
+                guard let extreme = extremeAnglesDuringDown[key] else { return false }
+                return abs(extreme - ideal) > 12
+            }
+            guard missedIdeal else { return nil }
         } else {
-            missed = extreme > target
+            guard let target = definition.qualityTarget,
+                  let extreme = extremeAngleDuringDown else { return nil }
+            let missed: Bool
+            if definition.qualityTargetIsMinimum {
+                missed = extreme < target
+            } else {
+                missed = extreme > target
+            }
+            guard missed else { return nil }
         }
-
-        guard missed else { return nil }
 
         lastQualityCueTime = Date()
         return CoachCue(
@@ -432,6 +467,7 @@ final class UniversalRepCounter: RepCounter {
         emaAngles = [:]
         consecutiveDownFrames = 0
         consecutiveUpFrames = 0
+        upPhaseFramesRemaining = 0
         lastRepTime = nil
         repStartTime = nil
         repDurations = []
@@ -439,5 +475,6 @@ final class UniversalRepCounter: RepCounter {
         lastFormScore = nil
         averageFormScore = 0
         formScoreAccumulator = 0
+        repRecords = []
     }
 }

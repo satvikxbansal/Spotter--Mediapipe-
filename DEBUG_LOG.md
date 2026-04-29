@@ -8,3 +8,91 @@ Structured incident log for build failures, crashes, and bug fixes. **Format and
 ---
 
 <!-- Entries: append new blocks below this line (newest at bottom). -->
+
+---
+
+### [DL-001] Disable Missing Swift Profile Runtime Linkage
+**Date:** 2026-04-29  
+**Severity:** build-breaking  
+**Category:** xcode-config  
+**File(s):** `VirtualTrainer.xcodeproj/project.pbxproj`
+
+**Error:**
+`Library '/Users/satvik.bansal/Library/Developer/Toolchains/swift-6.2-RELEASE.xctoolchain/usr/lib/clang/17/lib/darwin/libclang_rt.profile_ios.a' not found` and `Linker command failed with exit code 1`.
+
+**Root Cause:**
+The app/test build was being linked with coverage/profile instrumentation while the selected Swift 6.2 release toolchain did not include the iOS profiling runtime archive at the expected path. This injected a dependency on `libclang_rt.profile_ios.a` during app linking even though the normal app build does not need coverage instrumentation.
+
+**Fix Applied:**
+Disabled code coverage and GCC-style coverage instrumentation in the app and test target build settings by setting `CLANG_ENABLE_CODE_COVERAGE = NO`, `GCC_GENERATE_TEST_COVERAGE_FILES = NO`, and `GCC_INSTRUMENT_PROGRAM_FLOW_ARCS = NO`.
+
+**Prevention Rule:**
+When using a custom Swift toolchain, never leave coverage/profile instrumentation enabled for normal app builds unless the toolchain’s platform profiling runtime has been verified to exist.
+
+**Pattern Tags:** #xcode-config #toolchain #linker #coverage
+
+---
+
+### [DL-002] Fix XCFramework MediaPipe Link Flags
+**Date:** 2026-04-29  
+**Severity:** build-breaking  
+**Category:** cocoapods-build  
+**File(s):** `Podfile`, `Pods/Target Support Files/Pods-VirtualTrainer/Pods-VirtualTrainer.debug.xcconfig`, `Pods/Target Support Files/Pods-VirtualTrainer/Pods-VirtualTrainer.release.xcconfig`, `VirtualTrainer.xcodeproj/project.pbxproj`
+
+**Error:**
+`ld: library 'MediaPipeTasksCommon' not found` and earlier `no such module 'MediaPipeTasksVision'`.
+
+**Root Cause:**
+CocoaPods generated aggregate linker flags using `-l"MediaPipeTasksCommon" -l"MediaPipeTasksVision"` while the MediaPipe pods are vendored XCFramework frameworks copied under `XCFrameworkIntermediates`. Xcode 26 / Swift 6.2 resolved the framework headers after search-path fixes, but the linker still searched for static libraries named `libMediaPipeTasksCommon` and `libMediaPipeTasksVision`.
+
+**Fix Applied:**
+Updated the `Podfile` post-install hook to rewrite the generated `Pods-VirtualTrainer` xcconfigs so MediaPipe is linked with `-framework "MediaPipeTasksCommon" -framework "MediaPipeTasksVision"` and the XCFramework intermediate framework paths are included in `FRAMEWORK_SEARCH_PATHS`. Re-ran `pod install` to regenerate the configs.
+
+**Prevention Rule:**
+For vendored XCFramework pods, verify that generated CocoaPods linker flags use `-framework` and include `$(PODS_XCFRAMEWORKS_BUILD_DIR)` framework search paths before debugging Swift imports.
+
+**Pattern Tags:** #cocoapods-build #mediapipe-integration #xcframework #linker
+
+---
+
+### [DL-003] Resolve Strict Concurrency Warnings From Pure Counter Isolation
+**Date:** 2026-04-29  
+**Severity:** warning  
+**Category:** concurrency  
+**File(s):** `VirtualTrainer/RepCounting/UniversalRepCounter.swift`, `VirtualTrainer/RepCounting/RepCounterProtocol.swift`, `VirtualTrainer/Models/ExerciseLibrary.swift`, `VirtualTrainer/Models/WorkoutData.swift`, `VirtualTrainer/Vision/AngleCalculator.swift`, `VirtualTrainer/Vision/JointName.swift`, `VirtualTrainer/Vision/BodyVisibilityChecker.swift`, `VirtualTrainer/Vision/FramePositionAnalyzer.swift`, `VirtualTrainer/UI/TrainerSessionView.swift`
+
+**Error:**
+Warnings such as `Call to main actor-isolated static method 'definition(for:)' in a synchronous nonisolated context`, `Main actor-isolated static property 'squats' can not be referenced from a nonisolated context`, and `Call to main actor-isolated initializer 'init(repCount:phase:cues:holdDuration:isHolding:formScore:)' in a synchronous nonisolated context`.
+
+**Root Cause:**
+`UniversalRepCounter` was made `nonisolated` to avoid a Swift 6.2 simulator deallocation crash in pure unit tests, but the value models and stateless helpers it depends on were still implicitly `MainActor` because the project uses `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. The counter also still owned a UI haptic side effect.
+
+**Fix Applied:**
+Marked pure value/model/math types as `nonisolated`, including exercise definitions, workout models, `RepCounterOutput`, `FormScore`, `AngleCalculator`, `JointName`, visibility/framing helpers, and the rep protocol. Moved the rep haptic side effect from `UniversalRepCounter` to the already-main-actor `TrainerSessionView` rep increment path.
+
+**Prevention Rule:**
+If a pure logic class is marked `nonisolated`, all value models and stateless helpers it synchronously calls must also be nonisolated, and UI side effects must remain in main-actor UI/coordinator layers.
+
+**Pattern Tags:** #concurrency #mainactor #rep-counter #strict-concurrency
+
+---
+
+### [DL-004] Clean Hand Gesture Strict Swift Warnings
+**Date:** 2026-04-29  
+**Severity:** warning  
+**Category:** swift-types  
+**File(s):** `VirtualTrainer/Vision/HandGestureDetector.swift`
+
+**Error:**
+`Assuming you mean 'Optional<HandGesture>.none'; did you mean 'HandGesture.none' instead?` and `Initialization of immutable value 'thumbCMC' was never used`.
+
+**Root Cause:**
+Inside an optional-chained comparison, `.none` was ambiguous between `Optional.none` and the `HandGesture.none` enum case. The fallback hand pose analyzer also retained an unused `thumbCMC` local.
+
+**Fix Applied:**
+Changed the comparison/assignment to explicitly use `HandGesture.none` and removed the unused `thumbCMC` local.
+
+**Prevention Rule:**
+When an enum has a `.none` case and the expression is optional-chained, always spell the enum case explicitly as `EnumName.none`.
+
+**Pattern Tags:** #swift-types #warnings #hand-gesture

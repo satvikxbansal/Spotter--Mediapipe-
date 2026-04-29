@@ -13,7 +13,7 @@ import Foundation
 /// Downstream code (angle calculators, rep counters, form engines,
 /// overlay views) should use this enum exclusively — never import
 /// Vision or MediaPipe directly.
-enum JointName: Int, CaseIterable, Hashable, Codable {
+nonisolated enum JointName: Int, CaseIterable, Hashable, Codable {
 
     // MediaPipe indices 0–32
     case nose                = 0
@@ -128,6 +128,7 @@ enum JointName: Int, CaseIterable, Hashable, Codable {
         (.rightAnkle,    .rightFootIndex),
 
         // Neck / head
+        (.neck,          .root),
         (.neck,          .leftShoulder),
         (.neck,          .rightShoulder),
         (.neck,          .nose),

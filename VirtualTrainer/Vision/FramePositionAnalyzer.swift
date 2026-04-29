@@ -16,7 +16,7 @@ import CoreGraphics
 ///
 /// The analyzer is stateless — it takes a `SegmentationMaskData`
 /// snapshot and returns a `FramePositionResult` with guidance.
-enum FramePositionAnalyzer {
+nonisolated enum FramePositionAnalyzer {
 
     // MARK: - Thresholds
 
@@ -233,7 +233,7 @@ enum FramePositionAnalyzer {
 // ────────────────────────────────────────────────────────────────────
 
 /// An edge of the camera frame where body clipping can occur.
-enum FrameEdge: String, Hashable {
+nonisolated enum FrameEdge: String, Hashable {
     case top, bottom, left, right
 }
 
@@ -242,7 +242,7 @@ enum FrameEdge: String, Hashable {
 // ────────────────────────────────────────────────────────────────────
 
 /// The type of positioning correction the user needs.
-enum FrameGuidance: Equatable {
+nonisolated enum FrameGuidance: Equatable {
     case wellPositioned
     case tooClose
     case tooFar
@@ -261,7 +261,7 @@ enum FrameGuidance: Equatable {
 
 /// Complete analysis of the user's spatial positioning within the
 /// camera frame, derived from the segmentation mask.
-struct FramePositionResult: Equatable {
+nonisolated struct FramePositionResult: Equatable {
     /// Fraction of frame pixels occupied by the body (0-1).
     let coverage: Double
 

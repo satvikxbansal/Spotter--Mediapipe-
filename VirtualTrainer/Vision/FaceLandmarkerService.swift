@@ -85,7 +85,7 @@ final class FaceLandmarkerService: NSObject, ObservableObject {
     func processFrame(_ sampleBuffer: CMSampleBuffer) {
         guard let faceLandmarker else { return }
 
-        let currentTimestamp = Int(Date().timeIntervalSince1970 * 1000)
+        let currentTimestamp = sampleTimestampMilliseconds(sampleBuffer)
         guard currentTimestamp > timestampMs else { return }
         timestampMs = currentTimestamp
 
@@ -127,6 +127,15 @@ final class FaceLandmarkerService: NSObject, ObservableObject {
             self?.blendshapes = shapes
             self?.faceDetected = true
         }
+    }
+
+    private func sampleTimestampMilliseconds(_ sampleBuffer: CMSampleBuffer) -> Int {
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let seconds = CMTimeGetSeconds(pts)
+        if seconds.isFinite && seconds >= 0 {
+            return Int(seconds * 1000.0)
+        }
+        return Int(Date().timeIntervalSince1970 * 1000)
     }
 }
 

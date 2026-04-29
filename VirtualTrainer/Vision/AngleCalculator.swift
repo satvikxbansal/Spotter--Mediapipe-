@@ -21,7 +21,7 @@ import simd
 ///
 /// The preferred call path is `computeAngles3D` when world landmarks
 /// are available, falling back to the 2D variant when they aren't.
-enum AngleCalculator {
+nonisolated enum AngleCalculator {
 
     // ────────────────────────────────────────────────────────────────
     // MARK: - Public API
@@ -175,6 +175,12 @@ enum AngleCalculator {
                 return right
             }
             return resolveAndMeasure(def, joints: joints, side: "left")
+
+        case .moreFlexed:
+            return pickSideValue(def, joints: joints, preferSmaller: true)
+
+        case .lessFlexed:
+            return pickSideValue(def, joints: joints, preferSmaller: false)
         }
     }
 
@@ -189,7 +195,64 @@ enum AngleCalculator {
             let endJoint = resolveJointName(def.endJoint, side: side)
         else { return nil }
 
+        if def.key == "bodyLineAngle" {
+            return measureSignedBodyLine(joints: joints, start: startJoint, mid: midJoint, end: endJoint)
+        }
         return measureAngle(joints: joints, start: startJoint, mid: midJoint, end: endJoint)
+    }
+
+    private static func pickSideValue(
+        _ def: AngleDefinition,
+        joints: [JointName: CGPoint],
+        preferSmaller: Bool
+    ) -> Double? {
+        let left = resolveAndMeasure(def, joints: joints, side: "left")
+        let right = resolveAndMeasure(def, joints: joints, side: "right")
+        switch (left, right) {
+        case let (l?, r?):
+            return preferSmaller ? min(l, r) : max(l, r)
+        case let (l?, nil):
+            return l
+        case let (nil, r?):
+            return r
+        case (nil, nil):
+            return nil
+        }
+    }
+
+    /// Body-line angles need direction: a folded 0-180 angle cannot tell a
+    /// push-up sag from a pike. Returns 180 for straight, below 180 for sag,
+    /// and above 180 for pike in image coordinates.
+    private static func measureSignedBodyLine(
+        joints: [JointName: CGPoint],
+        start: JointName,
+        mid: JointName,
+        end: JointName
+    ) -> Double? {
+        guard let shoulder = joints[start],
+              let hip = joints[mid],
+              let ankle = joints[end] else { return nil }
+
+        let folded = angle(start: shoulder, mid: hip, end: ankle)
+        let deviation = 180.0 - folded
+        guard deviation > 0 else { return 180.0 }
+
+        let lineY: CGFloat
+        let dx = ankle.x - shoulder.x
+        if abs(dx) > 0.0001 {
+            let t = (hip.x - shoulder.x) / dx
+            lineY = shoulder.y + t * (ankle.y - shoulder.y)
+        } else {
+            lineY = (shoulder.y + ankle.y) / 2
+        }
+
+        if hip.y < lineY {
+            return 180.0 + deviation
+        } else if hip.y > lineY {
+            return 180.0 - deviation
+        } else {
+            return 180.0
+        }
     }
 
     /// Resolves the three `JointName`s (start, mid, end) for an
@@ -216,9 +279,9 @@ enum AngleCalculator {
     ) -> JointName? {
         switch name {
         case "hip_center":
-            return side == "left" ? .leftHip : .rightHip
+            return .root
         case "shoulder_center":
-            return side == "left" ? .leftShoulder : .rightShoulder
+            return .neck
         case "knee_left":
             return .leftKnee
         case "knee_right":
@@ -323,7 +386,10 @@ enum AngleCalculator {
         result.reserveCapacity(definition.angles.count)
 
         for angleDef in definition.angles {
-            if let angle = computeSingleAngle3D(angleDef, joints3D: joints3D) {
+            if angleDef.key == "bodyLineAngle",
+               let angle = computeSingleAngle(angleDef, joints: joints2D) {
+                result[angleDef.key] = angle
+            } else if let angle = computeSingleAngle3D(angleDef, joints3D: joints3D) {
                 result[angleDef.key] = angle
             } else if let angle = computeSingleAngle(angleDef, joints: joints2D) {
                 result[angleDef.key] = angle
@@ -390,6 +456,12 @@ enum AngleCalculator {
                 return right
             }
             return resolveAndMeasure3D(def, joints: joints3D, side: "left")
+
+        case .moreFlexed:
+            return pickSideValue3D(def, joints: joints3D, preferSmaller: true)
+
+        case .lessFlexed:
+            return pickSideValue3D(def, joints: joints3D, preferSmaller: false)
         }
     }
 
@@ -405,6 +477,60 @@ enum AngleCalculator {
         else { return nil }
 
         return measureAngle3D(joints: joints, start: startJoint, mid: midJoint, end: endJoint)
+    }
+
+    private static func pickSideValue3D(
+        _ def: AngleDefinition,
+        joints: [JointName: SIMD3<Float>],
+        preferSmaller: Bool
+    ) -> Double? {
+        let left = resolveAndMeasure3D(def, joints: joints, side: "left")
+        let right = resolveAndMeasure3D(def, joints: joints, side: "right")
+        switch (left, right) {
+        case let (l?, r?):
+            return preferSmaller ? min(l, r) : max(l, r)
+        case let (l?, nil):
+            return l
+        case let (nil, r?):
+            return r
+        case (nil, nil):
+            return nil
+        }
+    }
+
+    /// Returns the side whose joint triple best represents the computed angle.
+    /// This keeps angle overlays and violated-joint highlighting aligned with
+    /// active-side rules instead of always drawing the right-side triple.
+    static func preferredOverlaySide(
+        for def: AngleDefinition,
+        joints2D: [JointName: CGPoint],
+        joints3D: [JointName: SIMD3<Float>] = [:]
+    ) -> String? {
+        switch def.side {
+        case .left:
+            return resolveAndMeasure(def, joints: joints2D, side: "left") != nil ? "left" : nil
+        case .right:
+            return resolveAndMeasure(def, joints: joints2D, side: "right") != nil ? "right" : nil
+        case .both, .bestAvailable:
+            if resolveAndMeasure(def, joints: joints2D, side: "right") != nil { return "right" }
+            return resolveAndMeasure(def, joints: joints2D, side: "left") != nil ? "left" : nil
+        case .moreFlexed, .lessFlexed:
+            let preferSmaller = def.side == .moreFlexed
+            let left3D = resolveAndMeasure3D(def, joints: joints3D, side: "left")
+            let right3D = resolveAndMeasure3D(def, joints: joints3D, side: "right")
+            let left = left3D ?? resolveAndMeasure(def, joints: joints2D, side: "left")
+            let right = right3D ?? resolveAndMeasure(def, joints: joints2D, side: "right")
+            switch (left, right) {
+            case let (l?, r?):
+                return preferSmaller ? (l <= r ? "left" : "right") : (l >= r ? "left" : "right")
+            case let (l?, nil):
+                return l.isFinite ? "left" : nil
+            case let (nil, r?):
+                return r.isFinite ? "right" : nil
+            case (nil, nil):
+                return nil
+            }
+        }
     }
 
     // ────────────────────────────────────────────────────────────────

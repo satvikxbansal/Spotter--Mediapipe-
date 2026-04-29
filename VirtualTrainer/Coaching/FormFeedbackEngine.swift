@@ -18,6 +18,7 @@ final class FormFeedbackEngine {
     private let asymmetryCooldown: TimeInterval = 8.0
     private var ruleCooldowns: [String: Date] = [:]
     private var lastFeedbackTime: Date?
+    private var positionalViolationFrames: [String: Int] = [:]
 
     // MARK: - Feedback Types
 
@@ -74,6 +75,10 @@ final class FormFeedbackEngine {
             return feedbacks
         }
 
+        if let lastGlobal = lastFeedbackTime {
+            guard Date().timeIntervalSince(lastGlobal) > globalCooldown else { return [] }
+        }
+
         let formFeedbacks = checkFormRules(
             angles: angles,
             phase: phase,
@@ -82,7 +87,7 @@ final class FormFeedbackEngine {
         )
         feedbacks.append(contentsOf: formFeedbacks)
 
-        if feedbacks.isEmpty, !definition.positionalChecks.isEmpty {
+        if !definition.positionalChecks.isEmpty {
             let positionalFeedbacks = checkPositionalRules(
                 joints2D: joints,
                 joints3D: worldJoints,
@@ -93,7 +98,7 @@ final class FormFeedbackEngine {
             feedbacks.append(contentsOf: positionalFeedbacks)
         }
 
-        if feedbacks.isEmpty, !bilateralAngles.isEmpty {
+        if !bilateralAngles.isEmpty {
             let asymmetryFeedbacks = checkBilateralAsymmetry(
                 bilateralAngles: bilateralAngles,
                 phase: phase,
@@ -103,11 +108,19 @@ final class FormFeedbackEngine {
             feedbacks.append(contentsOf: asymmetryFeedbacks)
         }
 
-        return feedbacks
+        guard let best = feedbacks.max(by: { $0.severity < $1.severity }) else {
+            return []
+        }
+        if let ruleId = best.ruleId {
+            ruleCooldowns[ruleId] = Date()
+        }
+        lastFeedbackTime = Date()
+        return [best]
     }
 
     func reset() {
         ruleCooldowns.removeAll()
+        positionalViolationFrames.removeAll()
         lastFeedbackTime = nil
     }
 
@@ -126,7 +139,9 @@ final class FormFeedbackEngine {
             )
         }
 
-        if joints.count < 4 {
+        let missingRequired = definition.requiredJoints.filter { joints[$0] == nil }
+        if !definition.requiredJoints.isEmpty,
+           Double(missingRequired.count) / Double(definition.requiredJoints.count) > 0.5 {
             return Feedback(
                 type: .bodyPosition,
                 message: "Move further from the camera — show more of your body",
@@ -226,10 +241,6 @@ final class FormFeedbackEngine {
                 guard now.timeIntervalSince(lastFired) > rule.cooldownSeconds else { continue }
             }
 
-            if let lastGlobal = lastFeedbackTime {
-                guard now.timeIntervalSince(lastGlobal) > globalCooldown else { continue }
-            }
-
             guard let angleValue = angles[rule.angleKey] else { continue }
 
             var violated = false
@@ -262,9 +273,6 @@ final class FormFeedbackEngine {
                 severity: severity,
                 ruleId: rule.id
             ))
-
-            ruleCooldowns[rule.id] = now
-            lastFeedbackTime = now
 
             break
         }
@@ -299,11 +307,11 @@ final class FormFeedbackEngine {
             if let lastFired = ruleCooldowns[check.id] {
                 guard now.timeIntervalSince(lastFired) > check.cooldownSeconds else { continue }
             }
-            if let lastGlobal = lastFeedbackTime {
-                guard now.timeIntervalSince(lastGlobal) > globalCooldown else { continue }
-            }
-
             guard let result = results[check.id], result.violated else { continue }
+            positionalViolationFrames[check.id, default: 0] += 1
+            guard positionalViolationFrames[check.id, default: 0] >= requiredPersistenceFrames(for: check) else {
+                continue
+            }
 
             let message: String
             switch personality {
@@ -325,12 +333,23 @@ final class FormFeedbackEngine {
                 ruleId: check.id
             ))
 
-            ruleCooldowns[check.id] = now
-            lastFeedbackTime = now
             break
         }
 
+        for check in definition.positionalChecks where results[check.id]?.violated != true {
+            positionalViolationFrames[check.id] = 0
+        }
+
         return feedbacks
+    }
+
+    private func requiredPersistenceFrames(for check: PositionalCheck) -> Int {
+        switch check.checkType {
+        case .kneeValgus, .heelRise:
+            return 3
+        default:
+            return 1
+        }
     }
 
     // MARK: - Bilateral Asymmetry Check
@@ -356,10 +375,6 @@ final class FormFeedbackEngine {
             if let lastFired = ruleCooldowns[ruleId] {
                 guard now.timeIntervalSince(lastFired) > asymmetryCooldown else { continue }
             }
-            if let lastGlobal = lastFeedbackTime {
-                guard now.timeIntervalSince(lastGlobal) > globalCooldown else { continue }
-            }
-
             let side: String
             if let l = bilateral.left, let r = bilateral.right {
                 side = l < r ? "left" : "right"
@@ -382,8 +397,6 @@ final class FormFeedbackEngine {
                 ruleId: ruleId
             ))
 
-            ruleCooldowns[ruleId] = now
-            lastFeedbackTime = now
             break
         }
 

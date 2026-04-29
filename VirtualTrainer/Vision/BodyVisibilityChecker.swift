@@ -10,7 +10,7 @@ import Foundation
 /// The checker is exercise-agnostic — it pulls `requiredJoints` from
 /// `ExerciseType`, so adding a new movement only requires updating
 /// that enum.
-enum BodyVisibilityChecker {
+nonisolated enum BodyVisibilityChecker {
 
     // MARK: - Result
 

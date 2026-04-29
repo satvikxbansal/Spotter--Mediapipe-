@@ -5,7 +5,7 @@ import Foundation
 // ────────────────────────────────────────────────────────────────────
 
 /// Top-level grouping shown on the home dashboard.
-enum ExerciseCategory: String, CaseIterable, Identifiable {
+nonisolated enum ExerciseCategory: String, CaseIterable, Identifiable {
     case upperBody
     case lowerBody
     case fullBody
@@ -46,7 +46,7 @@ enum ExerciseCategory: String, CaseIterable, Identifiable {
 // ────────────────────────────────────────────────────────────────────
 
 /// Which way the user should face the camera for optimal tracking.
-enum CameraPosition: String, Codable {
+nonisolated enum CameraPosition: String, Codable {
     /// User faces the camera directly (front-facing selfie cam).
     case front
     /// User stands sideways to the camera.
@@ -58,7 +58,7 @@ enum CameraPosition: String, Codable {
 // ────────────────────────────────────────────────────────────────────
 
 /// Whether the exercise counts reps or holds a position.
-enum MovementType: String, Codable {
+nonisolated enum MovementType: String, Codable {
     /// Repeated concentric/eccentric cycles (squats, curls, etc.)
     case repetition
     /// Static hold scored by duration (plank, yoga poses)
@@ -72,7 +72,7 @@ enum MovementType: String, Codable {
 /// Defines how to measure a specific joint angle using three body landmarks.
 /// The angle is measured at `midJoint` between vectors from `startJoint`
 /// and `endJoint`.
-struct AngleDefinition: Codable, Equatable {
+nonisolated struct AngleDefinition: Codable, Equatable {
     /// Human-readable key for the angle dictionary (e.g. "kneeAngle").
     let key: String
 
@@ -89,12 +89,18 @@ struct AngleDefinition: Codable, Equatable {
     /// Which side(s) to measure. `.both` averages left and right.
     let side: MeasurementSide
 
-    enum MeasurementSide: String, Codable {
+    nonisolated enum MeasurementSide: String, Codable {
         case left
         case right
         case both
         /// Use whichever side has more visible joints.
         case bestAvailable
+        /// Use whichever side reaches the smaller angle value.
+        /// Useful for active flexion in lunges, knee raises, and mountain climbers.
+        case moreFlexed
+        /// Use whichever side reaches the larger angle value.
+        /// Useful for trailing/straight-leg checks in unilateral movements.
+        case lessFlexed
     }
 }
 
@@ -103,7 +109,7 @@ struct AngleDefinition: Codable, Equatable {
 // ────────────────────────────────────────────────────────────────────
 
 /// Defines the angle range that triggers a specific rep phase.
-struct PhaseThreshold: Codable, Equatable {
+nonisolated struct PhaseThreshold: Codable, Equatable {
     /// The angle key this threshold applies to (matches AngleDefinition.key).
     let angleKey: String
 
@@ -120,7 +126,7 @@ struct PhaseThreshold: Codable, Equatable {
 
 /// A biomechanical constraint checked every frame during an exercise.
 /// When violated, the engine generates a coach cue.
-struct FormRule: Codable, Equatable, Identifiable {
+nonisolated struct FormRule: Codable, Equatable, Identifiable {
     let id: String
 
     /// The angle key to check.
@@ -153,7 +159,7 @@ struct FormRule: Codable, Equatable, Identifiable {
 /// A spatial / landmark-relative check that goes beyond simple
 /// 3-point angle comparisons. Evaluated by `AngleCalculator` and
 /// consumed by `FormFeedbackEngine`.
-struct PositionalCheck: Codable, Equatable, Identifiable {
+nonisolated struct PositionalCheck: Codable, Equatable, Identifiable {
     let id: String
 
     let checkType: CheckType
@@ -173,7 +179,7 @@ struct PositionalCheck: Codable, Equatable, Identifiable {
     let severity: String
     let cooldownSeconds: Double
 
-    enum CheckType: String, Codable {
+    nonisolated enum CheckType: String, Codable {
         case kneeValgus
         case heelRise
         case jointAboveJoint
@@ -189,7 +195,7 @@ struct PositionalCheck: Codable, Equatable, Identifiable {
 /// Complete specification for a single exercise. Contains everything
 /// needed to count reps, check form, render ROM overlays, and
 /// generate coaching feedback.
-struct ExerciseDefinition: Identifiable, Equatable {
+nonisolated struct ExerciseDefinition: Identifiable, Equatable {
     /// Matches the ExerciseType rawValue.
     let id: String
 
@@ -255,6 +261,10 @@ struct ExerciseDefinition: Identifiable, Equatable {
     /// range incur a tempo penalty in the form score.
     let tempoRange: ClosedRange<Double>
 
+    /// Acceptable primary-angle range for isometric holds. When present,
+    /// hold time only accumulates while the primary angle stays inside this band.
+    let holdAngleRange: ClosedRange<Double>?
+
     init(
         id: String,
         displayName: String,
@@ -275,7 +285,8 @@ struct ExerciseDefinition: Identifiable, Equatable {
         targetMuscles: [String],
         minRepDuration: TimeInterval? = nil,
         idealAngles: [String: Double] = [:],
-        tempoRange: ClosedRange<Double> = 1.0...4.0
+        tempoRange: ClosedRange<Double> = 1.0...4.0,
+        holdAngleRange: ClosedRange<Double>? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -297,6 +308,7 @@ struct ExerciseDefinition: Identifiable, Equatable {
         self.minRepDuration = minRepDuration
         self.idealAngles = idealAngles
         self.tempoRange = tempoRange
+        self.holdAngleRange = holdAngleRange
     }
 
     static func == (lhs: ExerciseDefinition, rhs: ExerciseDefinition) -> Bool {
@@ -311,22 +323,25 @@ struct ExerciseDefinition: Identifiable, Equatable {
 /// Central registry of every exercise the app supports.
 /// Each entry contains complete biomechanical data for rep counting,
 /// form feedback, and ROM display.
-enum ExerciseLibrary {
+nonisolated enum ExerciseLibrary {
 
     /// All registered exercises.
     static let all: [ExerciseDefinition] = [
         // Lower Body
         squats, sumoSquats, lunges, sideLunges, gluteBridge,
         hipAbductionStanding, legRaises, wallSit, deadlift, calfRaises,
+        romanianDeadlift, chairSitToStand, hipThrust, reverseLunge,
+        stepUp, donkeyKick,
         // Upper Body
         bicepCurls, pushUps, lateralRaises, frontRaises,
         overheadDumbbellPress, cobraWings, overarmReachBilateral,
-        hammerCurl, shoulderPress, tricepDip,
+        hammerCurl, shoulderPress, tricepDip, inclinePushup,
         // Full Body
         jumpingJacks, kneeRaisesBilateral, sitUps, vUps, plank,
-        highKnees, mountainClimber,
+        highKnees, mountainClimber, reverseCrunch, birdDog, sidePlank,
         // Yoga
-        downwardDog, warrior,
+        downwardDog, warrior, chairPose, treePose, trianglePose,
+        warriorOne, warriorThree, cobraPose, mountainPose,
     ]
 
     /// Lookup by exercise ID.
@@ -470,7 +485,7 @@ enum ExerciseLibrary {
         angles: [
             AngleDefinition(key: "frontKneeAngle", label: "Front Knee",
                             startJoint: "hip", midJoint: "knee", endJoint: "ankle",
-                            side: .bestAvailable),
+                            side: .moreFlexed),
             AngleDefinition(key: "hipAngle", label: "Hip",
                             startJoint: "shoulder", midJoint: "hip", endJoint: "knee",
                             side: .bestAvailable),
@@ -515,10 +530,10 @@ enum ExerciseLibrary {
         angles: [
             AngleDefinition(key: "kneeAngle", label: "Knee",
                             startJoint: "hip", midJoint: "knee", endJoint: "ankle",
-                            side: .bestAvailable),
+                            side: .moreFlexed),
             AngleDefinition(key: "trailingKneeAngle", label: "Trailing Knee",
                             startJoint: "hip", midJoint: "knee", endJoint: "ankle",
-                            side: .both),
+                            side: .lessFlexed),
         ],
         primaryAngleKey: "kneeAngle",
         downThreshold: PhaseThreshold(angleKey: "kneeAngle", enterBelow: 105, enterAbove: nil),
@@ -789,7 +804,7 @@ enum ExerciseLibrary {
                      feedbackDrill: "That's not a push-up, that's a head nod. LOWER!",
                      severity: "warning", cooldownSeconds: 8),
             FormRule(id: "pushup_bodyline", angleKey: "bodyLineAngle",
-                     minAngle: 160, maxAngle: 180,
+                     minAngle: 160, maxAngle: 200,
                      activeDuringPhases: ["down", "up", "idle"],
                      feedbackGood: "Keep your body in a straight line — don't sag or pike!",
                      feedbackDrill: "Your body line is off! Tighten that core NOW!",
@@ -801,7 +816,7 @@ enum ExerciseLibrary {
                      feedbackDrill: "Hips are DROPPING! Tighten everything — you're a PLANK, not a hammock!",
                      severity: "critical", cooldownSeconds: 10),
             FormRule(id: "pushup_hips_pike", angleKey: "bodyLineAngle",
-                     minAngle: nil, maxAngle: 185,
+                     minAngle: nil, maxAngle: 190,
                      activeDuringPhases: ["down", "up"],
                      feedbackGood: "Your hips are too high — flatten your body line!",
                      feedbackDrill: "Stop piking! This is push-ups, not downward dog!",
@@ -1140,7 +1155,7 @@ enum ExerciseLibrary {
         angles: [
             AngleDefinition(key: "hipFlexionAngle", label: "Hip Flexion",
                             startJoint: "shoulder", midJoint: "hip", endJoint: "knee",
-                            side: .bestAvailable),
+                            side: .moreFlexed),
             AngleDefinition(key: "trunkAngle", label: "Trunk",
                             startJoint: "knee", midJoint: "hip", endJoint: "shoulder",
                             side: .bestAvailable),
@@ -1287,13 +1302,14 @@ enum ExerciseLibrary {
                      feedbackDrill: "Your hips are dropping! Tighten that core NOW!",
                      severity: "critical", cooldownSeconds: 8),
             FormRule(id: "plank_pike", angleKey: "bodyLineAngle",
-                     minAngle: nil, maxAngle: 180,
+                     minAngle: nil, maxAngle: 190,
                      activeDuringPhases: [],
                      feedbackGood: "Don't pike your hips — bring them down a touch!",
                      feedbackDrill: "You're not doing downward dog! Flatten out!",
                      severity: "warning", cooldownSeconds: 8),
         ],
-        targetMuscles: ["Core", "Shoulders", "Glutes", "Back"]
+        targetMuscles: ["Core", "Shoulders", "Glutes", "Back"],
+        holdAngleRange: 165...190
     )
 
     // ────────────────────────────────────────────────────────────────
@@ -1351,7 +1367,8 @@ enum ExerciseLibrary {
                      feedbackDrill: "Lock those arms! Push the ground AWAY from you!",
                      severity: "info", cooldownSeconds: 12),
         ],
-        targetMuscles: ["Hamstrings", "Calves", "Shoulders", "Back", "Core"]
+        targetMuscles: ["Hamstrings", "Calves", "Shoulders", "Back", "Core"],
+        holdAngleRange: 55...100
     )
 
     // MARK: Warrior (Warrior II)
@@ -1373,7 +1390,7 @@ enum ExerciseLibrary {
         angles: [
             AngleDefinition(key: "frontKneeAngle", label: "Front Knee",
                             startJoint: "hip", midJoint: "knee", endJoint: "ankle",
-                            side: .bestAvailable),
+                            side: .moreFlexed),
             AngleDefinition(key: "armLineAngle", label: "Arm Line",
                             startJoint: "wrist_left", midJoint: "shoulder_center", endJoint: "wrist_right",
                             side: .both),
@@ -1408,7 +1425,8 @@ enum ExerciseLibrary {
                             feedbackDrill: "LEVEL shoulders! You're a warrior, not a seesaw!",
                             severity: "info", cooldownSeconds: 12),
         ],
-        targetMuscles: ["Quads", "Glutes", "Shoulders", "Core", "Hip Flexors"]
+        targetMuscles: ["Quads", "Glutes", "Shoulders", "Core", "Hip Flexors"],
+        holdAngleRange: 75...110
     )
 
     // ────────────────────────────────────────────────────────────────
@@ -1457,7 +1475,8 @@ enum ExerciseLibrary {
                      severity: "warning", cooldownSeconds: 10),
         ],
         targetMuscles: ["Quadriceps", "Glutes", "Calves", "Core"],
-        idealAngles: ["kneeAngle": 90, "hipAngle": 90]
+        idealAngles: ["kneeAngle": 90, "hipAngle": 90],
+        holdAngleRange: 75...100
     )
 
     // MARK: Deadlift
@@ -1491,8 +1510,8 @@ enum ExerciseLibrary {
             FormRule(id: "deadlift_back", angleKey: "hipAngle",
                      minAngle: 70, maxAngle: nil,
                      activeDuringPhases: ["down"],
-                     feedbackGood: "Keep your back flat — don't let it round over!",
-                     feedbackDrill: "Your back is rounding like a scared cat! FLAT back!",
+                     feedbackGood: "Keep a strong hip hinge — chest and hips should move together!",
+                     feedbackDrill: "Own the hinge! Hips back, chest proud, no folding over!",
                      severity: "critical", cooldownSeconds: 8),
             FormRule(id: "deadlift_lockout", angleKey: "hipAngle",
                      minAngle: 170, maxAngle: nil,
@@ -1524,18 +1543,22 @@ enum ExerciseLibrary {
         setupInstruction: "Stand sideways to the camera, feet hip-width apart",
         requiredJoints: [.leftHip, .rightHip,
                          .leftKnee, .rightKnee,
-                         .leftAnkle, .rightAnkle],
+                         .leftAnkle, .rightAnkle,
+                         .leftFootIndex, .rightFootIndex],
         visibilityHint: "Lower body from the side — hip to ankle",
         angles: [
+            AngleDefinition(key: "ankleAngle", label: "Ankle",
+                            startJoint: "knee", midJoint: "ankle", endJoint: "footIndex",
+                            side: .bestAvailable),
             AngleDefinition(key: "kneeAngle", label: "Knee",
                             startJoint: "hip", midJoint: "knee", endJoint: "ankle",
                             side: .bestAvailable),
         ],
-        primaryAngleKey: "kneeAngle",
-        downThreshold: PhaseThreshold(angleKey: "kneeAngle", enterBelow: 165, enterAbove: nil),
-        upThreshold: PhaseThreshold(angleKey: "kneeAngle", enterBelow: nil, enterAbove: 170),
-        qualityTarget: 155,
-        qualityTargetIsMinimum: false,
+        primaryAngleKey: "ankleAngle",
+        downThreshold: PhaseThreshold(angleKey: "ankleAngle", enterBelow: nil, enterAbove: 115),
+        upThreshold: PhaseThreshold(angleKey: "ankleAngle", enterBelow: 95, enterAbove: nil),
+        qualityTarget: 130,
+        qualityTargetIsMinimum: true,
         formRules: [
             FormRule(id: "calfraise_straight", angleKey: "kneeAngle",
                      minAngle: 160, maxAngle: nil,
@@ -1554,7 +1577,7 @@ enum ExerciseLibrary {
         ],
         targetMuscles: ["Calves", "Soleus"],
         minRepDuration: 0.5,
-        idealAngles: ["kneeAngle": 170],
+        idealAngles: ["ankleAngle": 130, "kneeAngle": 170],
         tempoRange: 0.8...2.5
     )
 
@@ -1734,7 +1757,7 @@ enum ExerciseLibrary {
         angles: [
             AngleDefinition(key: "hipFlexionAngle", label: "Hip Flexion",
                             startJoint: "shoulder", midJoint: "hip", endJoint: "knee",
-                            side: .bestAvailable),
+                            side: .moreFlexed),
         ],
         primaryAngleKey: "hipFlexionAngle",
         downThreshold: PhaseThreshold(angleKey: "hipFlexionAngle", enterBelow: 100, enterAbove: nil),
@@ -1780,7 +1803,7 @@ enum ExerciseLibrary {
         angles: [
             AngleDefinition(key: "hipFlexionAngle", label: "Hip Flexion",
                             startJoint: "shoulder", midJoint: "hip", endJoint: "knee",
-                            side: .bestAvailable),
+                            side: .moreFlexed),
             AngleDefinition(key: "bodyLineAngle", label: "Body Line",
                             startJoint: "shoulder", midJoint: "hip", endJoint: "ankle",
                             side: .bestAvailable),
@@ -1802,5 +1825,757 @@ enum ExerciseLibrary {
         minRepDuration: 0.2,
         idealAngles: ["hipFlexionAngle": 80],
         tempoRange: 0.3...1.5
+    )
+
+    // ────────────────────────────────────────────────────────────────
+    // MARK: - EXPANSION CANDIDATES
+    // ────────────────────────────────────────────────────────────────
+
+    // MARK: Romanian Deadlift
+
+    static let romanianDeadlift = ExerciseDefinition(
+        id: "romanianDeadlift",
+        displayName: "Romanian Deadlift",
+        category: .lowerBody,
+        movementType: .repetition,
+        cameraPosition: .side,
+        setupInstruction: "Stand sideways to the camera with a soft knee bend and hinge at the hips",
+        requiredJoints: [.leftShoulder, .rightShoulder,
+                         .leftHip, .rightHip,
+                         .leftKnee, .rightKnee,
+                         .leftAnkle, .rightAnkle],
+        visibilityHint: "Full body from the side — shoulder to ankle",
+        angles: [
+            AngleDefinition(key: "hipAngle", label: "Hip Hinge",
+                            startJoint: "shoulder", midJoint: "hip", endJoint: "knee",
+                            side: .bestAvailable),
+            AngleDefinition(key: "kneeAngle", label: "Knee",
+                            startJoint: "hip", midJoint: "knee", endJoint: "ankle",
+                            side: .bestAvailable),
+        ],
+        primaryAngleKey: "hipAngle",
+        downThreshold: PhaseThreshold(angleKey: "hipAngle", enterBelow: 110, enterAbove: nil),
+        upThreshold: PhaseThreshold(angleKey: "hipAngle", enterBelow: nil, enterAbove: 165),
+        qualityTarget: 95,
+        qualityTargetIsMinimum: false,
+        formRules: [
+            FormRule(id: "rdl_hinge", angleKey: "hipAngle",
+                     minAngle: nil, maxAngle: 95,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Hinge a little deeper while keeping control!",
+                     feedbackDrill: "Hinge! Push those hips back with purpose!",
+                     severity: "warning", cooldownSeconds: 8),
+            FormRule(id: "rdl_knees", angleKey: "kneeAngle",
+                     minAngle: 150, maxAngle: nil,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Keep just a soft knee bend — don't turn this into a squat.",
+                     feedbackDrill: "Stop squatting it! Soft knees, hard hinge!",
+                     severity: "info", cooldownSeconds: 10),
+        ],
+        targetMuscles: ["Hamstrings", "Glutes", "Lower Back", "Core"],
+        minRepDuration: 1.0,
+        idealAngles: ["hipAngle": 95, "kneeAngle": 160],
+        tempoRange: 2.0...5.0
+    )
+
+    // MARK: Chair Sit-to-Stand
+
+    static let chairSitToStand = ExerciseDefinition(
+        id: "chairSitToStand",
+        displayName: "Chair Sit-to-Stand",
+        category: .lowerBody,
+        movementType: .repetition,
+        cameraPosition: .side,
+        setupInstruction: "Sit on a chair sideways to the camera, then stand fully tall",
+        requiredJoints: [.leftShoulder, .rightShoulder,
+                         .leftHip, .rightHip,
+                         .leftKnee, .rightKnee,
+                         .leftAnkle, .rightAnkle],
+        visibilityHint: "Full body from the side — shoulder to ankle",
+        angles: [
+            AngleDefinition(key: "kneeAngle", label: "Knee",
+                            startJoint: "hip", midJoint: "knee", endJoint: "ankle",
+                            side: .bestAvailable),
+            AngleDefinition(key: "hipAngle", label: "Hip",
+                            startJoint: "shoulder", midJoint: "hip", endJoint: "knee",
+                            side: .bestAvailable),
+        ],
+        primaryAngleKey: "kneeAngle",
+        downThreshold: PhaseThreshold(angleKey: "kneeAngle", enterBelow: 105, enterAbove: nil),
+        upThreshold: PhaseThreshold(angleKey: "kneeAngle", enterBelow: nil, enterAbove: 160),
+        qualityTarget: 95,
+        qualityTargetIsMinimum: false,
+        formRules: [
+            FormRule(id: "chair_depth", angleKey: "kneeAngle",
+                     minAngle: nil, maxAngle: 95,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Sit all the way back to the chair before standing.",
+                     feedbackDrill: "Touch the chair! No hover reps!",
+                     severity: "warning", cooldownSeconds: 8),
+            FormRule(id: "chair_lockout", angleKey: "hipAngle",
+                     minAngle: 165, maxAngle: nil,
+                     activeDuringPhases: ["up"],
+                     feedbackGood: "Stand tall at the top before the next rep.",
+                     feedbackDrill: "Finish the rep! Stand all the way up!",
+                     severity: "info", cooldownSeconds: 8),
+        ],
+        targetMuscles: ["Quadriceps", "Glutes", "Hamstrings", "Core"],
+        minRepDuration: 1.0,
+        idealAngles: ["kneeAngle": 90, "hipAngle": 90],
+        tempoRange: 1.5...4.0
+    )
+
+    // MARK: Incline Push-Up
+
+    static let inclinePushup = ExerciseDefinition(
+        id: "inclinePushup",
+        displayName: "Incline Push-Up",
+        category: .upperBody,
+        movementType: .repetition,
+        cameraPosition: .side,
+        setupInstruction: "Place your hands on a bench or wall sideways to the camera",
+        requiredJoints: [.leftShoulder, .rightShoulder,
+                         .leftElbow, .rightElbow,
+                         .leftWrist, .rightWrist,
+                         .leftHip, .rightHip,
+                         .leftAnkle, .rightAnkle],
+        visibilityHint: "Full body from the side — wrists to ankles",
+        angles: [
+            AngleDefinition(key: "elbowAngle", label: "Elbow",
+                            startJoint: "shoulder", midJoint: "elbow", endJoint: "wrist",
+                            side: .bestAvailable),
+            AngleDefinition(key: "bodyLineAngle", label: "Body Line",
+                            startJoint: "shoulder", midJoint: "hip", endJoint: "ankle",
+                            side: .bestAvailable),
+        ],
+        primaryAngleKey: "elbowAngle",
+        downThreshold: PhaseThreshold(angleKey: "elbowAngle", enterBelow: 105, enterAbove: nil),
+        upThreshold: PhaseThreshold(angleKey: "elbowAngle", enterBelow: nil, enterAbove: 155),
+        qualityTarget: 90,
+        qualityTargetIsMinimum: false,
+        formRules: [
+            FormRule(id: "inclinepush_depth", angleKey: "elbowAngle",
+                     minAngle: nil, maxAngle: 90,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Bend a little deeper — chest toward your hands.",
+                     feedbackDrill: "Lower! Incline doesn't mean lazy!",
+                     severity: "warning", cooldownSeconds: 8),
+            FormRule(id: "inclinepush_bodyline", angleKey: "bodyLineAngle",
+                     minAngle: 160, maxAngle: 195,
+                     activeDuringPhases: ["down", "up", "idle"],
+                     feedbackGood: "Keep a straight line from shoulders to ankles.",
+                     feedbackDrill: "Brace your body! Straight line, no sagging!",
+                     severity: "warning", cooldownSeconds: 10),
+        ],
+        targetMuscles: ["Chest", "Triceps", "Shoulders", "Core"],
+        minRepDuration: 0.8,
+        idealAngles: ["elbowAngle": 85, "bodyLineAngle": 180],
+        tempoRange: 1.2...4.0
+    )
+
+    // MARK: Reverse Crunch
+
+    static let reverseCrunch = ExerciseDefinition(
+        id: "reverseCrunch",
+        displayName: "Reverse Crunch",
+        category: .fullBody,
+        movementType: .repetition,
+        cameraPosition: .side,
+        setupInstruction: "Lie on your back sideways to the camera and curl knees toward your chest",
+        requiredJoints: [.leftShoulder, .rightShoulder,
+                         .leftHip, .rightHip,
+                         .leftKnee, .rightKnee],
+        visibilityHint: "Side view — shoulders, hips, and knees",
+        angles: [
+            AngleDefinition(key: "hipFlexionAngle", label: "Hip Flexion",
+                            startJoint: "shoulder", midJoint: "hip", endJoint: "knee",
+                            side: .moreFlexed),
+        ],
+        primaryAngleKey: "hipFlexionAngle",
+        downThreshold: PhaseThreshold(angleKey: "hipFlexionAngle", enterBelow: 100, enterAbove: nil),
+        upThreshold: PhaseThreshold(angleKey: "hipFlexionAngle", enterBelow: nil, enterAbove: 145),
+        qualityTarget: 80,
+        qualityTargetIsMinimum: false,
+        formRules: [
+            FormRule(id: "reversecrunch_curl", angleKey: "hipFlexionAngle",
+                     minAngle: nil, maxAngle: 80,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Curl your knees closer toward your chest.",
+                     feedbackDrill: "Curl harder! Knees to chest!",
+                     severity: "warning", cooldownSeconds: 8),
+        ],
+        targetMuscles: ["Lower Abs", "Hip Flexors", "Core"],
+        minRepDuration: 0.8,
+        idealAngles: ["hipFlexionAngle": 75],
+        tempoRange: 1.0...3.0
+    )
+
+    // MARK: Bird Dog
+
+    static let birdDog = ExerciseDefinition(
+        id: "birdDog",
+        displayName: "Bird Dog",
+        category: .fullBody,
+        movementType: .repetition,
+        cameraPosition: .side,
+        setupInstruction: "Start on all fours sideways to the camera, then extend one arm and the opposite leg",
+        requiredJoints: [.leftShoulder, .rightShoulder,
+                         .leftElbow, .rightElbow,
+                         .leftWrist, .rightWrist,
+                         .leftHip, .rightHip,
+                         .leftKnee, .rightKnee,
+                         .leftAnkle, .rightAnkle],
+        visibilityHint: "Full body from the side — wrists to ankles",
+        angles: [
+            AngleDefinition(key: "legExtensionAngle", label: "Leg Extension",
+                            startJoint: "shoulder", midJoint: "hip", endJoint: "ankle",
+                            side: .lessFlexed),
+            AngleDefinition(key: "armExtensionAngle", label: "Arm Extension",
+                            startJoint: "hip", midJoint: "shoulder", endJoint: "wrist",
+                            side: .lessFlexed),
+        ],
+        primaryAngleKey: "legExtensionAngle",
+        downThreshold: PhaseThreshold(angleKey: "legExtensionAngle", enterBelow: nil, enterAbove: 155),
+        upThreshold: PhaseThreshold(angleKey: "legExtensionAngle", enterBelow: 120, enterAbove: nil),
+        qualityTarget: 170,
+        qualityTargetIsMinimum: true,
+        formRules: [
+            FormRule(id: "birddog_leg", angleKey: "legExtensionAngle",
+                     minAngle: 165, maxAngle: nil,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Extend your leg long behind you.",
+                     feedbackDrill: "Reach that leg! Long and strong!",
+                     severity: "warning", cooldownSeconds: 8),
+            FormRule(id: "birddog_arm", angleKey: "armExtensionAngle",
+                     minAngle: 145, maxAngle: nil,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Reach your arm forward as your leg extends.",
+                     feedbackDrill: "Arm out! Don't short-change the reach!",
+                     severity: "info", cooldownSeconds: 10),
+        ],
+        targetMuscles: ["Core", "Glutes", "Shoulders", "Back"],
+        minRepDuration: 0.8,
+        idealAngles: ["legExtensionAngle": 170, "armExtensionAngle": 155],
+        tempoRange: 1.2...4.0
+    )
+
+    // MARK: Hip Thrust
+
+    static let hipThrust = ExerciseDefinition(
+        id: "hipThrust",
+        displayName: "Hip Thrust",
+        category: .lowerBody,
+        movementType: .repetition,
+        cameraPosition: .side,
+        setupInstruction: "Set your shoulders on a bench sideways to the camera and drive hips up",
+        requiredJoints: [.leftShoulder, .rightShoulder, .leftHip, .rightHip,
+                         .leftKnee, .rightKnee, .leftAnkle, .rightAnkle],
+        visibilityHint: "Side view — shoulders, hips, knees, and ankles",
+        angles: [
+            AngleDefinition(key: "hipAngle", label: "Hip Extension",
+                            startJoint: "shoulder", midJoint: "hip", endJoint: "knee",
+                            side: .bestAvailable),
+            AngleDefinition(key: "kneeAngle", label: "Knee",
+                            startJoint: "hip", midJoint: "knee", endJoint: "ankle",
+                            side: .bestAvailable),
+        ],
+        primaryAngleKey: "hipAngle",
+        downThreshold: PhaseThreshold(angleKey: "hipAngle", enterBelow: nil, enterAbove: 165),
+        upThreshold: PhaseThreshold(angleKey: "hipAngle", enterBelow: 110, enterAbove: nil),
+        qualityTarget: 175,
+        qualityTargetIsMinimum: true,
+        formRules: [
+            FormRule(id: "hipthrust_lockout", angleKey: "hipAngle",
+                     minAngle: 175, maxAngle: nil,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Squeeze your glutes and finish the hip extension.",
+                     feedbackDrill: "Lock those hips out! Full squeeze at the top!",
+                     severity: "warning", cooldownSeconds: 8),
+            FormRule(id: "hipthrust_knee", angleKey: "kneeAngle",
+                     minAngle: 75, maxAngle: 110,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Keep your knees close to a right angle at the top.",
+                     feedbackDrill: "Fix your foot position — knees near 90 at lockout!",
+                     severity: "info", cooldownSeconds: 10),
+        ],
+        targetMuscles: ["Glutes", "Hamstrings", "Core"],
+        minRepDuration: 0.8,
+        idealAngles: ["hipAngle": 175, "kneeAngle": 90],
+        tempoRange: 1.0...3.5
+    )
+
+    // MARK: Reverse Lunge
+
+    static let reverseLunge = ExerciseDefinition(
+        id: "reverseLunge",
+        displayName: "Reverse Lunge",
+        category: .lowerBody,
+        movementType: .repetition,
+        cameraPosition: .side,
+        setupInstruction: "Stand sideways to the camera and step backward into the lunge",
+        requiredJoints: [.leftHip, .rightHip, .leftKnee, .rightKnee,
+                         .leftAnkle, .rightAnkle, .leftShoulder, .rightShoulder],
+        visibilityHint: "Full body from the side — shoulder to ankle",
+        angles: [
+            AngleDefinition(key: "frontKneeAngle", label: "Front Knee",
+                            startJoint: "hip", midJoint: "knee", endJoint: "ankle",
+                            side: .moreFlexed),
+            AngleDefinition(key: "hipAngle", label: "Torso",
+                            startJoint: "shoulder", midJoint: "hip", endJoint: "knee",
+                            side: .bestAvailable),
+        ],
+        primaryAngleKey: "frontKneeAngle",
+        downThreshold: PhaseThreshold(angleKey: "frontKneeAngle", enterBelow: 100, enterAbove: nil),
+        upThreshold: PhaseThreshold(angleKey: "frontKneeAngle", enterBelow: nil, enterAbove: 155),
+        qualityTarget: 90,
+        qualityTargetIsMinimum: false,
+        formRules: [
+            FormRule(id: "revlunge_depth", angleKey: "frontKneeAngle",
+                     minAngle: nil, maxAngle: 90,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Lower until the front knee is close to 90 degrees.",
+                     feedbackDrill: "Get down into it! Front knee to 90!",
+                     severity: "warning", cooldownSeconds: 8),
+            FormRule(id: "revlunge_torso", angleKey: "hipAngle",
+                     minAngle: 75, maxAngle: nil,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Keep your torso tall as you step back.",
+                     feedbackDrill: "Chest up! Stop collapsing forward!",
+                     severity: "warning", cooldownSeconds: 10),
+        ],
+        targetMuscles: ["Quadriceps", "Glutes", "Hamstrings", "Calves"],
+        minRepDuration: 1.0,
+        idealAngles: ["frontKneeAngle": 90, "hipAngle": 85],
+        tempoRange: 1.5...4.0
+    )
+
+    // MARK: Step-Up
+
+    static let stepUp = ExerciseDefinition(
+        id: "stepUp",
+        displayName: "Step-Up",
+        category: .lowerBody,
+        movementType: .repetition,
+        cameraPosition: .side,
+        setupInstruction: "Stand sideways to the camera with one foot on a sturdy step",
+        requiredJoints: [.leftHip, .rightHip, .leftKnee, .rightKnee,
+                         .leftAnkle, .rightAnkle, .leftShoulder, .rightShoulder],
+        visibilityHint: "Full body from the side — shoulder to ankle",
+        angles: [
+            AngleDefinition(key: "frontKneeAngle", label: "Working Knee",
+                            startJoint: "hip", midJoint: "knee", endJoint: "ankle",
+                            side: .moreFlexed),
+            AngleDefinition(key: "hipAngle", label: "Hip",
+                            startJoint: "shoulder", midJoint: "hip", endJoint: "knee",
+                            side: .bestAvailable),
+        ],
+        primaryAngleKey: "frontKneeAngle",
+        downThreshold: PhaseThreshold(angleKey: "frontKneeAngle", enterBelow: 105, enterAbove: nil),
+        upThreshold: PhaseThreshold(angleKey: "frontKneeAngle", enterBelow: nil, enterAbove: 165),
+        qualityTarget: 95,
+        qualityTargetIsMinimum: false,
+        formRules: [
+            FormRule(id: "stepup_drive", angleKey: "frontKneeAngle",
+                     minAngle: nil, maxAngle: 95,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Load the working leg before you drive up.",
+                     feedbackDrill: "Use the step leg! No lazy push-off!",
+                     severity: "warning", cooldownSeconds: 8),
+            FormRule(id: "stepup_tall", angleKey: "hipAngle",
+                     minAngle: 165, maxAngle: nil,
+                     activeDuringPhases: ["up"],
+                     feedbackGood: "Stand fully tall on the step before lowering.",
+                     feedbackDrill: "Finish tall! Own the top!",
+                     severity: "info", cooldownSeconds: 8),
+        ],
+        targetMuscles: ["Quadriceps", "Glutes", "Hamstrings", "Calves"],
+        minRepDuration: 1.0,
+        idealAngles: ["frontKneeAngle": 95, "hipAngle": 170],
+        tempoRange: 1.5...4.5
+    )
+
+    // MARK: Donkey Kick
+
+    static let donkeyKick = ExerciseDefinition(
+        id: "donkeyKick",
+        displayName: "Donkey Kick",
+        category: .lowerBody,
+        movementType: .repetition,
+        cameraPosition: .side,
+        setupInstruction: "Start on all fours sideways to the camera and drive one heel upward",
+        requiredJoints: [.leftShoulder, .rightShoulder, .leftHip, .rightHip,
+                         .leftKnee, .rightKnee, .leftAnkle, .rightAnkle],
+        visibilityHint: "Side view — shoulders, hips, knees, and ankles",
+        angles: [
+            AngleDefinition(key: "hipExtensionAngle", label: "Hip Extension",
+                            startJoint: "shoulder", midJoint: "hip", endJoint: "knee",
+                            side: .lessFlexed),
+            AngleDefinition(key: "kneeAngle", label: "Knee Bend",
+                            startJoint: "hip", midJoint: "knee", endJoint: "ankle",
+                            side: .moreFlexed),
+        ],
+        primaryAngleKey: "hipExtensionAngle",
+        downThreshold: PhaseThreshold(angleKey: "hipExtensionAngle", enterBelow: nil, enterAbove: 145),
+        upThreshold: PhaseThreshold(angleKey: "hipExtensionAngle", enterBelow: 110, enterAbove: nil),
+        qualityTarget: 155,
+        qualityTargetIsMinimum: true,
+        formRules: [
+            FormRule(id: "donkeykick_height", angleKey: "hipExtensionAngle",
+                     minAngle: 155, maxAngle: nil,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Drive your heel higher without twisting your hips.",
+                     feedbackDrill: "Kick higher! Glutes do the work!",
+                     severity: "warning", cooldownSeconds: 8),
+            FormRule(id: "donkeykick_knee", angleKey: "kneeAngle",
+                     minAngle: nil, maxAngle: 115,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Keep the working knee bent as you kick.",
+                     feedbackDrill: "Bend that knee — heel drives up!",
+                     severity: "info", cooldownSeconds: 10),
+        ],
+        targetMuscles: ["Glutes", "Hamstrings", "Core"],
+        minRepDuration: 0.8,
+        idealAngles: ["hipExtensionAngle": 155, "kneeAngle": 90],
+        tempoRange: 1.0...3.0
+    )
+
+    // MARK: Side Plank
+
+    static let sidePlank = ExerciseDefinition(
+        id: "sidePlank",
+        displayName: "Side Plank",
+        category: .fullBody,
+        movementType: .isometric,
+        cameraPosition: .front,
+        setupInstruction: "Hold a side plank facing the camera with shoulders, hips, and ankles stacked",
+        requiredJoints: [.leftShoulder, .rightShoulder, .leftHip, .rightHip,
+                         .leftAnkle, .rightAnkle],
+        visibilityHint: "Full side plank line — shoulders to ankles",
+        angles: [
+            AngleDefinition(key: "bodyLineAngle", label: "Body Line",
+                            startJoint: "shoulder", midJoint: "hip", endJoint: "ankle",
+                            side: .bestAvailable),
+        ],
+        primaryAngleKey: "bodyLineAngle",
+        downThreshold: PhaseThreshold(angleKey: "bodyLineAngle", enterBelow: nil, enterAbove: 160),
+        upThreshold: PhaseThreshold(angleKey: "bodyLineAngle", enterBelow: 145, enterAbove: nil),
+        qualityTarget: 180,
+        qualityTargetIsMinimum: true,
+        formRules: [
+            FormRule(id: "sideplank_line", angleKey: "bodyLineAngle",
+                     minAngle: 165, maxAngle: 195,
+                     activeDuringPhases: [],
+                     feedbackGood: "Lift your hips into one long line.",
+                     feedbackDrill: "Hips up! Straight line, no sagging!",
+                     severity: "critical", cooldownSeconds: 8),
+        ],
+        positionalChecks: [
+            PositionalCheck(id: "sideplank_shoulders", checkType: .shoulderLevel,
+                            threshold: 0.08, jointA: nil, jointB: nil,
+                            activeDuringPhases: [],
+                            feedbackGood: "Keep your shoulders stacked and steady.",
+                            feedbackDrill: "Stop twisting! Stack those shoulders!",
+                            severity: "info", cooldownSeconds: 10),
+        ],
+        targetMuscles: ["Obliques", "Core", "Shoulders", "Glutes"],
+        idealAngles: ["bodyLineAngle": 180],
+        holdAngleRange: 165...195
+    )
+
+    // MARK: Yoga Additions
+
+    static let chairPose = ExerciseDefinition(
+        id: "chairPose",
+        displayName: "Chair Pose",
+        category: .yoga,
+        movementType: .isometric,
+        cameraPosition: .side,
+        setupInstruction: "Stand sideways to the camera, sit hips back, and reach arms overhead",
+        requiredJoints: [.leftShoulder, .rightShoulder, .leftHip, .rightHip,
+                         .leftKnee, .rightKnee, .leftAnkle, .rightAnkle,
+                         .leftWrist, .rightWrist],
+        visibilityHint: "Full body from the side — wrists to ankles",
+        angles: [
+            AngleDefinition(key: "kneeAngle", label: "Knee",
+                            startJoint: "hip", midJoint: "knee", endJoint: "ankle",
+                            side: .bestAvailable),
+            AngleDefinition(key: "shoulderFlexionAngle", label: "Arms",
+                            startJoint: "hip", midJoint: "shoulder", endJoint: "wrist",
+                            side: .bestAvailable),
+        ],
+        primaryAngleKey: "kneeAngle",
+        downThreshold: PhaseThreshold(angleKey: "kneeAngle", enterBelow: 120, enterAbove: nil),
+        upThreshold: PhaseThreshold(angleKey: "kneeAngle", enterBelow: nil, enterAbove: 155),
+        qualityTarget: 100,
+        qualityTargetIsMinimum: false,
+        formRules: [
+            FormRule(id: "chairpose_depth", angleKey: "kneeAngle",
+                     minAngle: nil, maxAngle: 110,
+                     activeDuringPhases: [],
+                     feedbackGood: "Sit a little deeper into chair pose.",
+                     feedbackDrill: "Sink into it! This is chair, not standing!",
+                     severity: "warning", cooldownSeconds: 10),
+            FormRule(id: "chairpose_arms", angleKey: "shoulderFlexionAngle",
+                     minAngle: 140, maxAngle: nil,
+                     activeDuringPhases: [],
+                     feedbackGood: "Reach your arms longer overhead.",
+                     feedbackDrill: "Arms up! Reach like you mean it!",
+                     severity: "info", cooldownSeconds: 10),
+        ],
+        targetMuscles: ["Quadriceps", "Glutes", "Shoulders", "Core"],
+        idealAngles: ["kneeAngle": 100, "shoulderFlexionAngle": 150],
+        holdAngleRange: 85...125
+    )
+
+    static let treePose = ExerciseDefinition(
+        id: "treePose",
+        displayName: "Tree Pose",
+        category: .yoga,
+        movementType: .isometric,
+        cameraPosition: .front,
+        setupInstruction: "Stand facing the camera on one leg with the other foot against the inner leg",
+        requiredJoints: [.leftShoulder, .rightShoulder, .leftHip, .rightHip,
+                         .leftKnee, .rightKnee, .leftAnkle, .rightAnkle],
+        visibilityHint: "Full body from the front — shoulders to ankles",
+        angles: [
+            AngleDefinition(key: "standingKneeAngle", label: "Standing Leg",
+                            startJoint: "hip", midJoint: "knee", endJoint: "ankle",
+                            side: .lessFlexed),
+        ],
+        primaryAngleKey: "standingKneeAngle",
+        downThreshold: PhaseThreshold(angleKey: "standingKneeAngle", enterBelow: nil, enterAbove: 160),
+        upThreshold: PhaseThreshold(angleKey: "standingKneeAngle", enterBelow: 145, enterAbove: nil),
+        qualityTarget: 170,
+        qualityTargetIsMinimum: true,
+        formRules: [
+            FormRule(id: "tree_standleg", angleKey: "standingKneeAngle",
+                     minAngle: 165, maxAngle: nil,
+                     activeDuringPhases: [],
+                     feedbackGood: "Keep your standing leg tall and steady.",
+                     feedbackDrill: "Lock in that standing leg! No wobbling!",
+                     severity: "warning", cooldownSeconds: 10),
+        ],
+        positionalChecks: [
+            PositionalCheck(id: "tree_shoulders", checkType: .shoulderLevel,
+                            threshold: 0.05, jointA: nil, jointB: nil,
+                            activeDuringPhases: [],
+                            feedbackGood: "Level your shoulders and grow tall.",
+                            feedbackDrill: "Level shoulders! Stand like a tree, not a noodle!",
+                            severity: "info", cooldownSeconds: 12),
+        ],
+        targetMuscles: ["Glutes", "Calves", "Core", "Hip Stabilizers"],
+        idealAngles: ["standingKneeAngle": 175],
+        holdAngleRange: 160...180
+    )
+
+    static let trianglePose = ExerciseDefinition(
+        id: "trianglePose",
+        displayName: "Triangle Pose",
+        category: .yoga,
+        movementType: .isometric,
+        cameraPosition: .front,
+        setupInstruction: "Stand wide facing the camera, reach one hand down and the other up",
+        requiredJoints: [.leftShoulder, .rightShoulder, .leftHip, .rightHip,
+                         .leftKnee, .rightKnee, .leftAnkle, .rightAnkle,
+                         .leftWrist, .rightWrist],
+        visibilityHint: "Full body from the front — wrists to ankles",
+        angles: [
+            AngleDefinition(key: "kneeAngle", label: "Legs",
+                            startJoint: "hip", midJoint: "knee", endJoint: "ankle",
+                            side: .both),
+            AngleDefinition(key: "armLineAngle", label: "Arm Line",
+                            startJoint: "wrist_left", midJoint: "shoulder_center", endJoint: "wrist_right",
+                            side: .both),
+        ],
+        primaryAngleKey: "kneeAngle",
+        downThreshold: PhaseThreshold(angleKey: "kneeAngle", enterBelow: nil, enterAbove: 160),
+        upThreshold: PhaseThreshold(angleKey: "kneeAngle", enterBelow: 145, enterAbove: nil),
+        qualityTarget: 170,
+        qualityTargetIsMinimum: true,
+        formRules: [
+            FormRule(id: "triangle_legs", angleKey: "kneeAngle",
+                     minAngle: 160, maxAngle: nil,
+                     activeDuringPhases: [],
+                     feedbackGood: "Keep both legs long and strong.",
+                     feedbackDrill: "Straighten those legs! Triangle needs clean lines!",
+                     severity: "warning", cooldownSeconds: 10),
+            FormRule(id: "triangle_arms", angleKey: "armLineAngle",
+                     minAngle: 150, maxAngle: nil,
+                     activeDuringPhases: [],
+                     feedbackGood: "Reach through both arms to open the chest.",
+                     feedbackDrill: "Reach! Make one long arm line!",
+                     severity: "info", cooldownSeconds: 10),
+        ],
+        targetMuscles: ["Hamstrings", "Obliques", "Shoulders", "Hips"],
+        idealAngles: ["kneeAngle": 175, "armLineAngle": 170],
+        holdAngleRange: 155...180
+    )
+
+    static let warriorOne = ExerciseDefinition(
+        id: "warriorOne",
+        displayName: "Warrior I",
+        category: .yoga,
+        movementType: .isometric,
+        cameraPosition: .front,
+        setupInstruction: "Stand facing the camera in a lunge stance with arms reaching overhead",
+        requiredJoints: [.leftShoulder, .rightShoulder, .leftElbow, .rightElbow,
+                         .leftWrist, .rightWrist, .leftHip, .rightHip,
+                         .leftKnee, .rightKnee, .leftAnkle, .rightAnkle],
+        visibilityHint: "Full body — wrists to ankles",
+        angles: [
+            AngleDefinition(key: "frontKneeAngle", label: "Front Knee",
+                            startJoint: "hip", midJoint: "knee", endJoint: "ankle",
+                            side: .moreFlexed),
+            AngleDefinition(key: "shoulderFlexionAngle", label: "Arms",
+                            startJoint: "hip", midJoint: "shoulder", endJoint: "wrist",
+                            side: .both),
+        ],
+        primaryAngleKey: "frontKneeAngle",
+        downThreshold: PhaseThreshold(angleKey: "frontKneeAngle", enterBelow: 115, enterAbove: nil),
+        upThreshold: PhaseThreshold(angleKey: "frontKneeAngle", enterBelow: nil, enterAbove: 150),
+        qualityTarget: 95,
+        qualityTargetIsMinimum: false,
+        formRules: [
+            FormRule(id: "warrior1_knee", angleKey: "frontKneeAngle",
+                     minAngle: nil, maxAngle: 100,
+                     activeDuringPhases: [],
+                     feedbackGood: "Bend the front knee toward a strong lunge.",
+                     feedbackDrill: "Deeper front knee! Warrior stance!",
+                     severity: "warning", cooldownSeconds: 10),
+            FormRule(id: "warrior1_arms", angleKey: "shoulderFlexionAngle",
+                     minAngle: 145, maxAngle: nil,
+                     activeDuringPhases: [],
+                     feedbackGood: "Reach both arms overhead.",
+                     feedbackDrill: "Arms up! Own the pose!",
+                     severity: "info", cooldownSeconds: 10),
+        ],
+        targetMuscles: ["Quads", "Glutes", "Shoulders", "Core", "Hip Flexors"],
+        idealAngles: ["frontKneeAngle": 95, "shoulderFlexionAngle": 155],
+        holdAngleRange: 80...115
+    )
+
+    static let warriorThree = ExerciseDefinition(
+        id: "warriorThree",
+        displayName: "Warrior III",
+        category: .yoga,
+        movementType: .isometric,
+        cameraPosition: .side,
+        setupInstruction: "Stand sideways to the camera and hinge forward with one leg reaching back",
+        requiredJoints: [.leftShoulder, .rightShoulder, .leftHip, .rightHip,
+                         .leftKnee, .rightKnee, .leftAnkle, .rightAnkle],
+        visibilityHint: "Full body from the side — shoulder to ankle",
+        angles: [
+            AngleDefinition(key: "bodyLineAngle", label: "Body Line",
+                            startJoint: "shoulder", midJoint: "hip", endJoint: "ankle",
+                            side: .lessFlexed),
+        ],
+        primaryAngleKey: "bodyLineAngle",
+        downThreshold: PhaseThreshold(angleKey: "bodyLineAngle", enterBelow: nil, enterAbove: 160),
+        upThreshold: PhaseThreshold(angleKey: "bodyLineAngle", enterBelow: 130, enterAbove: nil),
+        qualityTarget: 180,
+        qualityTargetIsMinimum: true,
+        formRules: [
+            FormRule(id: "warrior3_line", angleKey: "bodyLineAngle",
+                     minAngle: 160, maxAngle: 200,
+                     activeDuringPhases: [],
+                     feedbackGood: "Reach long from shoulders through the lifted leg.",
+                     feedbackDrill: "Long line! Don't collapse the hinge!",
+                     severity: "warning", cooldownSeconds: 10),
+        ],
+        targetMuscles: ["Hamstrings", "Glutes", "Core", "Back"],
+        idealAngles: ["bodyLineAngle": 180],
+        holdAngleRange: 160...200
+    )
+
+    static let cobraPose = ExerciseDefinition(
+        id: "cobraPose",
+        displayName: "Cobra Pose",
+        category: .yoga,
+        movementType: .isometric,
+        cameraPosition: .side,
+        setupInstruction: "Lie prone sideways to the camera and lift your chest gently",
+        requiredJoints: [.leftShoulder, .rightShoulder, .leftHip, .rightHip,
+                         .leftElbow, .rightElbow, .leftWrist, .rightWrist],
+        visibilityHint: "Upper body from the side — wrists to hips",
+        angles: [
+            AngleDefinition(key: "shoulderAngle", label: "Chest Lift",
+                            startJoint: "hip", midJoint: "shoulder", endJoint: "wrist",
+                            side: .bestAvailable),
+            AngleDefinition(key: "elbowAngle", label: "Elbow",
+                            startJoint: "shoulder", midJoint: "elbow", endJoint: "wrist",
+                            side: .bestAvailable),
+        ],
+        primaryAngleKey: "shoulderAngle",
+        downThreshold: PhaseThreshold(angleKey: "shoulderAngle", enterBelow: nil, enterAbove: 70),
+        upThreshold: PhaseThreshold(angleKey: "shoulderAngle", enterBelow: 40, enterAbove: nil),
+        qualityTarget: 85,
+        qualityTargetIsMinimum: true,
+        formRules: [
+            FormRule(id: "cobra_lift", angleKey: "shoulderAngle",
+                     minAngle: 80, maxAngle: nil,
+                     activeDuringPhases: [],
+                     feedbackGood: "Lift your chest gently and keep the shoulders down.",
+                     feedbackDrill: "Chest up, shoulders down! Control it!",
+                     severity: "warning", cooldownSeconds: 10),
+            FormRule(id: "cobra_elbows", angleKey: "elbowAngle",
+                     minAngle: 120, maxAngle: nil,
+                     activeDuringPhases: [],
+                     feedbackGood: "Lengthen through the arms without locking aggressively.",
+                     feedbackDrill: "Strong arms! Don't collapse into the floor!",
+                     severity: "info", cooldownSeconds: 10),
+        ],
+        targetMuscles: ["Back", "Chest", "Shoulders", "Core"],
+        idealAngles: ["shoulderAngle": 85, "elbowAngle": 145],
+        holdAngleRange: 70...115
+    )
+
+    static let mountainPose = ExerciseDefinition(
+        id: "mountainPose",
+        displayName: "Mountain Pose",
+        category: .yoga,
+        movementType: .isometric,
+        cameraPosition: .front,
+        setupInstruction: "Stand facing the camera with feet grounded and posture tall",
+        requiredJoints: [.leftShoulder, .rightShoulder, .leftHip, .rightHip,
+                         .leftKnee, .rightKnee, .leftAnkle, .rightAnkle],
+        visibilityHint: "Full body from the front — shoulders to ankles",
+        angles: [
+            AngleDefinition(key: "kneeAngle", label: "Legs",
+                            startJoint: "hip", midJoint: "knee", endJoint: "ankle",
+                            side: .both),
+            AngleDefinition(key: "hipAngle", label: "Posture",
+                            startJoint: "shoulder", midJoint: "hip", endJoint: "knee",
+                            side: .both),
+        ],
+        primaryAngleKey: "kneeAngle",
+        downThreshold: PhaseThreshold(angleKey: "kneeAngle", enterBelow: nil, enterAbove: 165),
+        upThreshold: PhaseThreshold(angleKey: "kneeAngle", enterBelow: 150, enterAbove: nil),
+        qualityTarget: 175,
+        qualityTargetIsMinimum: true,
+        formRules: [
+            FormRule(id: "mountain_legs", angleKey: "kneeAngle",
+                     minAngle: 165, maxAngle: nil,
+                     activeDuringPhases: [],
+                     feedbackGood: "Stand tall through both legs.",
+                     feedbackDrill: "Stand tall! No soft collapsing knees!",
+                     severity: "info", cooldownSeconds: 10),
+            FormRule(id: "mountain_posture", angleKey: "hipAngle",
+                     minAngle: 160, maxAngle: nil,
+                     activeDuringPhases: [],
+                     feedbackGood: "Stack shoulders over hips and grow tall.",
+                     feedbackDrill: "Stack up! Shoulders over hips!",
+                     severity: "info", cooldownSeconds: 10),
+        ],
+        positionalChecks: [
+            PositionalCheck(id: "mountain_shoulders", checkType: .shoulderLevel,
+                            threshold: 0.04, jointA: nil, jointB: nil,
+                            activeDuringPhases: [],
+                            feedbackGood: "Level your shoulders and breathe.",
+                            feedbackDrill: "Level shoulders! Stand like you mean it!",
+                            severity: "info", cooldownSeconds: 12),
+        ],
+        targetMuscles: ["Posture", "Core", "Glutes", "Calves"],
+        idealAngles: ["kneeAngle": 175, "hipAngle": 170],
+        holdAngleRange: 165...180
     )
 }

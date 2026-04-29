@@ -13,7 +13,7 @@ enum UserProfile {
 // MARK: - Body Category
 // ────────────────────────────────────────────────────────────────────
 
-enum BodyCategory: String, CaseIterable, Identifiable {
+nonisolated enum BodyCategory: String, CaseIterable, Identifiable {
     case upperBody
     case lowerBody
     case fullBody
@@ -62,6 +62,7 @@ enum BodyCategory: String, CaseIterable, Identifiable {
                 ExerciseOption(type: .hammerCurl, available: true),
                 ExerciseOption(type: .shoulderPress, available: true),
                 ExerciseOption(type: .tricepDip, available: true),
+                ExerciseOption(type: .inclinePushup, available: true),
             ]
         case .lowerBody:
             [
@@ -75,6 +76,12 @@ enum BodyCategory: String, CaseIterable, Identifiable {
                 ExerciseOption(type: .wallSit, available: true),
                 ExerciseOption(type: .deadlift, available: true),
                 ExerciseOption(type: .calfRaise, available: true),
+                ExerciseOption(type: .romanianDeadlift, available: true),
+                ExerciseOption(type: .chairSitToStand, available: true),
+                ExerciseOption(type: .hipThrust, available: true),
+                ExerciseOption(type: .reverseLunge, available: true),
+                ExerciseOption(type: .stepUp, available: true),
+                ExerciseOption(type: .donkeyKick, available: true),
             ]
         case .fullBody:
             [
@@ -85,11 +92,21 @@ enum BodyCategory: String, CaseIterable, Identifiable {
                 ExerciseOption(type: .plank, available: true),
                 ExerciseOption(type: .highKnees, available: true),
                 ExerciseOption(type: .mountainClimber, available: true),
+                ExerciseOption(type: .reverseCrunch, available: true),
+                ExerciseOption(type: .birdDog, available: true),
+                ExerciseOption(type: .sidePlank, available: true),
             ]
         case .yoga:
             [
                 ExerciseOption(type: .downwardDog, available: true),
                 ExerciseOption(type: .warrior, available: true),
+                ExerciseOption(type: .chairPose, available: true),
+                ExerciseOption(type: .treePose, available: true),
+                ExerciseOption(type: .trianglePose, available: true),
+                ExerciseOption(type: .warriorOne, available: true),
+                ExerciseOption(type: .warriorThree, available: true),
+                ExerciseOption(type: .cobraPose, available: true),
+                ExerciseOption(type: .mountainPose, available: true),
             ]
         }
     }
@@ -99,7 +116,7 @@ enum BodyCategory: String, CaseIterable, Identifiable {
 // MARK: - Exercise Option (for bottom-sheet selection)
 // ────────────────────────────────────────────────────────────────────
 
-struct ExerciseOption: Identifiable {
+nonisolated struct ExerciseOption: Identifiable {
     let id: String
     let name: String
     let type: ExerciseType?
@@ -127,7 +144,7 @@ struct ExerciseOption: Identifiable {
 /// Every exercise the app can track with the pose estimation pipeline.
 /// Adding a new movement means adding a case here and a matching
 /// `RepCounter` implementation.
-enum ExerciseType: String, Codable, CaseIterable, Identifiable {
+nonisolated enum ExerciseType: String, Codable, CaseIterable, Identifiable {
     // Lower Body
     case squat
     case sumoSquat
@@ -139,6 +156,12 @@ enum ExerciseType: String, Codable, CaseIterable, Identifiable {
     case wallSit
     case deadlift
     case calfRaise
+    case romanianDeadlift
+    case chairSitToStand
+    case hipThrust
+    case reverseLunge
+    case stepUp
+    case donkeyKick
 
     // Upper Body
     case bicepCurl
@@ -151,6 +174,7 @@ enum ExerciseType: String, Codable, CaseIterable, Identifiable {
     case hammerCurl
     case shoulderPress
     case tricepDip
+    case inclinePushup
 
     // Full Body
     case jumpingJack
@@ -160,10 +184,20 @@ enum ExerciseType: String, Codable, CaseIterable, Identifiable {
     case plank
     case highKnees
     case mountainClimber
+    case reverseCrunch
+    case birdDog
+    case sidePlank
 
     // Yoga
     case downwardDog
     case warrior
+    case chairPose
+    case treePose
+    case trianglePose
+    case warriorOne
+    case warriorThree
+    case cobraPose
+    case mountainPose
 
     var id: String { rawValue }
 
@@ -209,7 +243,7 @@ enum ExerciseType: String, Codable, CaseIterable, Identifiable {
 // ────────────────────────────────────────────────────────────────────
 
 /// A single set within a workout (e.g., "12 squats").
-struct WorkoutSet: Identifiable, Codable {
+nonisolated struct WorkoutSet: Identifiable, Codable {
     let id: UUID
     let exerciseType: ExerciseType
     let targetReps: Int
@@ -242,7 +276,7 @@ struct WorkoutSet: Identifiable, Codable {
 // ────────────────────────────────────────────────────────────────────
 
 /// A complete workout the user picks from the home screen.
-struct WorkoutPlan: Identifiable {
+nonisolated struct WorkoutPlan: Identifiable {
     let id: UUID
     let title: String
     let subtitle: String
@@ -315,7 +349,7 @@ extension WorkoutPlan {
 
 /// Two flavours of motivational coaching.
 /// Persisted via `@AppStorage` using the raw string value.
-enum CoachPersonality: String, CaseIterable, Identifiable {
+nonisolated enum CoachPersonality: String, CaseIterable, Identifiable {
     case good
     case drill
 
@@ -349,7 +383,7 @@ enum CoachPersonality: String, CaseIterable, Identifiable {
         }
     }
 
-    var accentColor: SwiftUI.Color {
+    @MainActor var accentColor: SwiftUI.Color {
         switch self {
         case .good:  Theme.Colors.positive
         case .drill: Theme.Colors.danger
@@ -364,7 +398,7 @@ enum CoachPersonality: String, CaseIterable, Identifiable {
 /// A real-time coaching message generated by the rep counter's
 /// form-check logic. These feed into the voice engine and on-screen
 /// overlay simultaneously.
-struct CoachCue: Identifiable, Codable, Equatable {
+nonisolated struct CoachCue: Identifiable, Codable, Equatable {
     let id: UUID
     let message: String
     let severity: Severity
@@ -384,7 +418,7 @@ struct CoachCue: Identifiable, Codable, Equatable {
 
     /// How urgent the cue is — drives haptic intensity, voice tone,
     /// and overlay color.
-    enum Severity: String, Codable, Comparable {
+    nonisolated enum Severity: String, Codable, Comparable {
         case info
         case warning
         case critical

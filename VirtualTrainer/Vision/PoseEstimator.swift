@@ -72,6 +72,8 @@ final class PoseEstimator: NSObject, ObservableObject {
 
     /// Minimum per-landmark visibility to include in output.
     private let visibilityThreshold: Float = 0.5
+    private let smoother2D = LandmarkSmoother2D()
+    private let smoother3D = LandmarkSmoother3D()
 
     // MARK: - Init
 
@@ -115,7 +117,7 @@ final class PoseEstimator: NSObject, ObservableObject {
     func processFrame(_ sampleBuffer: CMSampleBuffer) {
         guard let poseLandmarker else { return }
 
-        let currentTimestamp = Int(Date().timeIntervalSince1970 * 1000)
+        let currentTimestamp = sampleTimestampMilliseconds(sampleBuffer)
         guard currentTimestamp > timestampMs else { return }
         timestampMs = currentTimestamp
 
@@ -136,7 +138,7 @@ final class PoseEstimator: NSObject, ObservableObject {
 
     // MARK: - Result Processing
 
-    private func processResult(_ result: PoseLandmarkerResult?) {
+    private func processResult(_ result: PoseLandmarkerResult?, timestampInMilliseconds: Int) {
         guard let result,
               let landmarks = result.landmarks.first,
               !landmarks.isEmpty else {
@@ -145,6 +147,8 @@ final class PoseEstimator: NSObject, ObservableObject {
                 self?.worldJoints = [:]
                 self?.confidence = 0
                 self?.segmentationMask = nil
+                self?.smoother2D.reset()
+                self?.smoother3D.reset()
             }
             return
         }
@@ -194,6 +198,10 @@ final class PoseEstimator: NSObject, ObservableObject {
             converted3D[.root] = (lh + rh) / 2
         }
 
+        let timestampSeconds = TimeInterval(timestampInMilliseconds) / 1000.0
+        let smoothed2D = smoother2D.smooth(converted2D, timestamp: timestampSeconds)
+        let smoothed3D = smoother3D.smooth(converted3D, timestamp: timestampSeconds)
+
         // --- Segmentation mask ---
         var maskData: SegmentationMaskData?
         if let firstMask = result.segmentationMasks.first {
@@ -210,11 +218,20 @@ final class PoseEstimator: NSObject, ObservableObject {
         let topConfidence = landmarks.first?.visibility?.floatValue ?? 0
 
         DispatchQueue.main.async { [weak self] in
-            self?.bodyJoints = converted2D
-            self?.worldJoints = converted3D
+            self?.bodyJoints = smoothed2D
+            self?.worldJoints = smoothed3D
             self?.confidence = topConfidence
             self?.segmentationMask = maskData
         }
+    }
+
+    private func sampleTimestampMilliseconds(_ sampleBuffer: CMSampleBuffer) -> Int {
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let seconds = CMTimeGetSeconds(pts)
+        if seconds.isFinite && seconds >= 0 {
+            return Int(seconds * 1000.0)
+        }
+        return Int(Date().timeIntervalSince1970 * 1000)
     }
 }
 
@@ -232,7 +249,7 @@ extension PoseEstimator: PoseLandmarkerLiveStreamDelegate {
         if let error {
             logger.error("Pose landmarker error: \(error.localizedDescription)")
         }
-        processResult(result)
+        processResult(result, timestampInMilliseconds: timestampInMilliseconds)
     }
 }
 

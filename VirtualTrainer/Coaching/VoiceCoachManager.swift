@@ -1,30 +1,88 @@
 import Foundation
 import Combine
+import AVFoundation
 
 // ────────────────────────────────────────────────────────────────────
 // MARK: - VoiceCoachManager
 // ────────────────────────────────────────────────────────────────────
 
-/// Placeholder for future voice coaching (TTS rep counts,
-/// motivational prompts). Currently a silent no-op so the
-/// rest of the codebase can reference it without crashing.
+/// Local baseline voice coaching for rep counts and motivation.
+///
+/// The API intentionally stays stable so remote TTS (for example
+/// ElevenLabs) can be added later behind the same non-fatal surface.
 final class VoiceCoachManager: ObservableObject {
 
     static let shared = VoiceCoachManager()
 
     @Published var voiceError: String?
 
+    private let synthesizer = AVSpeechSynthesizer()
+    private var repPhrases: [Int: AVSpeechUtterance] = [:]
+
     private init() {}
 
     func prefetchRepCounts(upTo count: Int, personality: CoachPersonality) async {
-        // Future: pre-cache TTS audio for rep counts
+        repPhrases = Dictionary(uniqueKeysWithValues: (1...count).map { value in
+            (value, makeUtterance(text: "\(value)", personality: personality, kind: .repCount))
+        })
     }
 
     func playRep(count: Int) async {
-        // Future: speak rep count aloud
+        speak(repPhrases[count] ?? makeUtterance(text: "\(count)", personality: .good, kind: .repCount))
     }
 
     func playMotivation(text: String, personality: CoachPersonality) async {
-        // Future: speak motivational message
+        speak(makeUtterance(text: text, personality: personality, kind: .motivation), interrupts: true)
+    }
+
+    func playCue(_ cue: CoachCue, personality: CoachPersonality) async {
+        speak(makeUtterance(text: cue.message, personality: personality, kind: .cue), interrupts: cue.severity >= .warning)
+    }
+
+    private enum UtteranceKind {
+        case repCount
+        case motivation
+        case cue
+    }
+
+    private func speak(_ utterance: AVSpeechUtterance, interrupts: Bool = false) {
+        if interrupts, synthesizer.isSpeaking {
+            synthesizer.stopSpeaking(at: .immediate)
+        } else if synthesizer.isSpeaking {
+            return
+        }
+
+        voiceError = nil
+        synthesizer.speak(utterance)
+    }
+
+    private func makeUtterance(
+        text: String,
+        personality: CoachPersonality,
+        kind: UtteranceKind
+    ) -> AVSpeechUtterance {
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+
+        switch (personality, kind) {
+        case (.drill, .repCount):
+            utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.08
+            utterance.pitchMultiplier = 0.9
+            utterance.volume = 0.85
+        case (.drill, _):
+            utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
+            utterance.pitchMultiplier = 0.85
+            utterance.volume = 0.95
+        case (.good, .repCount):
+            utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+            utterance.pitchMultiplier = 1.0
+            utterance.volume = 0.75
+        case (.good, _):
+            utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.95
+            utterance.pitchMultiplier = 1.05
+            utterance.volume = 0.85
+        }
+
+        return utterance
     }
 }

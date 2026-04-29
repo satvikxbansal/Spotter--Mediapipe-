@@ -9,7 +9,7 @@ import Foundation
 /// The state machine for every exercise follows the same abstract
 /// loop:  `idle → down → up → idle`  (with "up" being the moment
 /// the rep is counted).
-enum RepPhase: String, Codable {
+nonisolated enum RepPhase: String, Codable {
     /// Standing / resting — waiting for movement to begin.
     case idle
     /// Eccentric portion — the user is lowering into the rep.
@@ -28,7 +28,7 @@ enum RepPhase: String, Codable {
 /// The workout ViewModel consumes this each frame to update the UI,
 /// fire haptics, and queue voice cues — without knowing which
 /// exercise produced it.
-struct RepCounterOutput {
+nonisolated struct RepCounterOutput {
     /// Total reps completed so far in this set.
     let repCount: Int
 
@@ -72,7 +72,7 @@ struct RepCounterOutput {
 
 /// Per-rep form quality assessment combining ROM, tempo, and
 /// real-time feedback violations.
-struct FormScore {
+nonisolated struct FormScore {
     /// 0 → 100 composite quality score.
     let score: Int
 
@@ -84,7 +84,7 @@ struct FormScore {
     let tempoPenalty: Int
     let feedbackPenalty: Int
 
-    enum Grade: String, Comparable {
+    nonisolated enum Grade: String, Comparable {
         case A, B, C, D, F
 
         private var rank: Int {
@@ -138,7 +138,7 @@ struct FormScore {
 /// let counter: RepCounter = SquatRepCounter()
 /// let output = counter.process(angles: ["kneeAngle": 97.3, ...])
 /// ```
-protocol RepCounter: AnyObject {
+nonisolated protocol RepCounter: AnyObject {
 
     /// The exercise this counter is built for.
     var exerciseType: ExerciseType { get }

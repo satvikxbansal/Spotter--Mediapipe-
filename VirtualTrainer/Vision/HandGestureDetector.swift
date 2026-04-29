@@ -147,7 +147,7 @@ final class HandGestureDetector: NSObject, ObservableObject {
     // MARK: - Frame Processing
 
     func processFrame(_ sampleBuffer: CMSampleBuffer) {
-        let currentTimestamp = Int(Date().timeIntervalSince1970 * 1000)
+        let currentTimestamp = sampleTimestampMilliseconds(sampleBuffer)
         guard currentTimestamp > timestampMs else { return }
         timestampMs = currentTimestamp
 
@@ -289,8 +289,8 @@ final class HandGestureDetector: NSObject, ObservableObject {
         DispatchQueue.main.async { [weak self] in
             self?.handDetected = false
             self?.handConfidence = 0
-            if self?.currentGesture != .none {
-                self?.currentGesture = .none
+            if self?.currentGesture != HandGesture.none {
+                self?.currentGesture = HandGesture.none
             }
             self?.raisedFingerCount = 0
             self?.allHandLandmarks = []
@@ -301,7 +301,6 @@ final class HandGestureDetector: NSObject, ObservableObject {
 
     private func analyzeHandPoseFallback(_ points: [CGPoint]) -> HandGesture {
         let wrist     = points[0]
-        let thumbCMC  = points[1]
         let thumbTip  = points[4]
         let indexTip  = points[8]
         let indexMCP  = points[5]
@@ -349,6 +348,15 @@ final class HandGestureDetector: NSObject, ObservableObject {
         let dx = a.x - b.x
         let dy = a.y - b.y
         return sqrt(dx * dx + dy * dy)
+    }
+
+    private func sampleTimestampMilliseconds(_ sampleBuffer: CMSampleBuffer) -> Int {
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let seconds = CMTimeGetSeconds(pts)
+        if seconds.isFinite && seconds >= 0 {
+            return Int(seconds * 1000.0)
+        }
+        return Int(Date().timeIntervalSince1970 * 1000)
     }
 }
 
