@@ -184,6 +184,47 @@ final class AngleCalculatorTests: XCTestCase {
 
         XCTAssertGreaterThan(angle ?? 0, 180)
     }
+
+    func testSignedTrunkTwistAngleNeutralIsZero() {
+        let world = trunkTwistWorld(shoulderDegrees: 0)
+        XCTAssertEqual(AngleCalculator.signedTrunkTwistAngle(world: world) ?? 999, 0, accuracy: 2)
+    }
+
+    func testSignedTrunkTwistAngleLeftAndRightDirections() {
+        let left = AngleCalculator.signedTrunkTwistAngle(world: trunkTwistWorld(shoulderDegrees: 30))
+        let right = AngleCalculator.signedTrunkTwistAngle(world: trunkTwistWorld(shoulderDegrees: -30))
+
+        XCTAssertEqual(left ?? 0, 30, accuracy: 2)
+        XCTAssertEqual(right ?? 0, -30, accuracy: 2)
+    }
+
+    func testTrunkTwistMagnitudeIsNonNegative() {
+        let right = AngleCalculator.trunkTwistMagnitude(world: trunkTwistWorld(shoulderDegrees: -35))
+        XCTAssertEqual(right ?? 0, 35, accuracy: 2)
+        XCTAssertGreaterThanOrEqual(right ?? -1, 0)
+    }
+
+    func testLeanBackAngleForSyntheticSeatedPose() {
+        let world: [JointName: SIMD3<Float>] = [
+            .rightShoulder: SIMD3<Float>(-1, -1, 0),
+            .rightHip: SIMD3<Float>(0, 0, 0),
+            .rightKnee: SIMD3<Float>(0, 1, 0),
+        ]
+
+        let angle = AngleCalculator.leanBackAngle(joints2D: [:], world: world)
+        XCTAssertEqual(angle ?? 0, 135, accuracy: 2)
+    }
+}
+
+private func trunkTwistWorld(shoulderDegrees: Double) -> [JointName: SIMD3<Float>] {
+    let radians = Float(shoulderDegrees * .pi / 180.0)
+    let shoulderVector = SIMD3<Float>(cos(radians), 0, -sin(radians))
+    return [
+        .leftHip: SIMD3<Float>(-0.5, 0, 0),
+        .rightHip: SIMD3<Float>(0.5, 0, 0),
+        .leftShoulder: -shoulderVector / 2,
+        .rightShoulder: shoulderVector / 2,
+    ]
 }
 
 private func testDefinition(

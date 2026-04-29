@@ -19,6 +19,8 @@ nonisolated final class FormFeedbackEngine {
     private var ruleCooldowns: [String: Date] = [:]
     private var lastFeedbackTime: Date?
     private var positionalViolationFrames: [String: Int] = [:]
+    private var russianTwistMaxLeft: Double = 0
+    private var russianTwistMaxRight: Double = 0
 
     // MARK: - Feedback Types
 
@@ -108,6 +110,14 @@ nonisolated final class FormFeedbackEngine {
             feedbacks.append(contentsOf: asymmetryFeedbacks)
         }
 
+        if let twistFeedback = checkRussianTwistAsymmetry(
+            angles: angles,
+            definition: definition,
+            personality: personality
+        ) {
+            feedbacks.append(twistFeedback)
+        }
+
         guard let best = highestSeverityFeedback(feedbacks) else {
             return []
         }
@@ -136,6 +146,8 @@ nonisolated final class FormFeedbackEngine {
         ruleCooldowns.removeAll()
         positionalViolationFrames.removeAll()
         lastFeedbackTime = nil
+        russianTwistMaxLeft = 0
+        russianTwistMaxRight = 0
     }
 
     // MARK: - Body Position Check
@@ -367,6 +379,8 @@ nonisolated final class FormFeedbackEngine {
         switch check.checkType {
         case .kneeValgus, .heelRise:
             return 3
+        case .hipRotationStability:
+            return 5
         default:
             return 1
         }
@@ -421,5 +435,45 @@ nonisolated final class FormFeedbackEngine {
         }
 
         return feedbacks
+    }
+
+    private func checkRussianTwistAsymmetry(
+        angles: [String: Double],
+        definition: ExerciseDefinition,
+        personality: CoachPersonality
+    ) -> Feedback? {
+        guard definition.id == "russianTwist",
+              let signedTwist = angles["signedTrunkTwistAngle"] else { return nil }
+
+        if signedTwist > 0 {
+            russianTwistMaxLeft = max(russianTwistMaxLeft, abs(signedTwist))
+        } else if signedTwist < 0 {
+            russianTwistMaxRight = max(russianTwistMaxRight, abs(signedTwist))
+        }
+
+        guard russianTwistMaxLeft > 0, russianTwistMaxRight > 0 else { return nil }
+        let delta = abs(russianTwistMaxLeft - russianTwistMaxRight)
+        guard delta > 12 else { return nil }
+
+        let ruleId = "russiantwist_asymmetry"
+        let now = Date()
+        if let lastFired = ruleCooldowns[ruleId] {
+            guard now.timeIntervalSince(lastFired) > 10 else { return nil }
+        }
+
+        let message: String
+        switch personality {
+        case .good:
+            message = "You're rotating further to one side — try to match both"
+        case .drill:
+            message = "EVEN it out! You're favoring one side!"
+        }
+
+        return Feedback(
+            type: .exerciseRule,
+            message: message,
+            severity: .warning,
+            ruleId: ruleId
+        )
     }
 }

@@ -762,6 +762,10 @@ struct TrainerSessionView: View {
                 ?? definition.angles.first
         case .jointAboveJoint, .jointAlignedX:
             return definition.angles.first
+        case .hipRotationStability:
+            return definition.angles.first { $0.key == "trunkTwistMagnitude" }
+                ?? definition.angles.first { $0.key == "signedTrunkTwistAngle" }
+                ?? definition.angles.first
         }
     }
 

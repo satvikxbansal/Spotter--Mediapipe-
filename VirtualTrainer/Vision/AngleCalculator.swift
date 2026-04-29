@@ -420,7 +420,13 @@ nonisolated enum AngleCalculator {
         result.reserveCapacity(definition.angles.count)
 
         for angleDef in definition.angles {
-            if angleDef.key == "bodyLineAngle",
+            if angleDef.key == "signedTrunkTwistAngle",
+               let angle = signedTrunkTwistAngle(world: joints3D) {
+                result[angleDef.key] = angle
+            } else if angleDef.key == "trunkTwistMagnitude",
+                      let angle = trunkTwistMagnitude(world: joints3D) {
+                result[angleDef.key] = angle
+            } else if angleDef.key == "bodyLineAngle",
                let angle = computeSingleAngle3D(
                 angleDef,
                 joints3D: joints3D,
@@ -443,6 +449,51 @@ nonisolated enum AngleCalculator {
         }
 
         return result
+    }
+
+    static func signedTrunkTwistAngle(world joints: [JointName: SIMD3<Float>]) -> Double? {
+        guard let leftShoulder = joints[.leftShoulder],
+              let rightShoulder = joints[.rightShoulder],
+              let leftHip = joints[.leftHip],
+              let rightHip = joints[.rightHip]
+        else { return nil }
+
+        let shoulderVector = rightShoulder - leftShoulder
+        let hipVector = rightHip - leftHip
+        let shoulderXZ = SIMD3<Float>(shoulderVector.x, 0, shoulderVector.z)
+        let hipXZ = SIMD3<Float>(hipVector.x, 0, hipVector.z)
+
+        guard simd_length(shoulderXZ) > 1e-6,
+              simd_length(hipXZ) > 1e-6 else { return nil }
+
+        let shoulderNormal = simd_normalize(shoulderXZ)
+        let hipNormal = simd_normalize(hipXZ)
+        let dot = min(max(simd_dot(shoulderNormal, hipNormal), -1), 1)
+        let unsigned = acos(dot)
+        let cross = simd_cross(hipNormal, shoulderNormal)
+        let signed = cross.y >= 0 ? unsigned : -unsigned
+
+        return Double(signed) * 180.0 / .pi
+    }
+
+    static func trunkTwistMagnitude(world joints: [JointName: SIMD3<Float>]) -> Double? {
+        signedTrunkTwistAngle(world: joints).map(abs)
+    }
+
+    static func leanBackAngle(
+        joints2D: [JointName: CGPoint],
+        world joints3D: [JointName: SIMD3<Float>]
+    ) -> Double? {
+        let angleDef = AngleDefinition(
+            key: "leanBackAngle",
+            label: "Lean Back",
+            startJoint: "shoulder",
+            midJoint: "hip",
+            endJoint: "knee",
+            side: .bestAvailable
+        )
+        return computeSingleAngle3D(angleDef, joints3D: joints3D)
+            ?? computeSingleAngle(angleDef, joints: joints2D)
     }
 
     /// Interior angle at `mid` formed by vectors `start→mid` and
@@ -721,6 +772,9 @@ nonisolated enum AngleCalculator {
 
         case .shoulderLevel:
             return evaluateShoulderLevel(check, joints2D: joints2D)
+
+        case .hipRotationStability:
+            return evaluateHipRotationStability(check, joints3D: joints3D)
         }
     }
 
@@ -850,5 +904,24 @@ nonisolated enum AngleCalculator {
         let violated = diff > (check.threshold ?? 0.03)
 
         return PositionalCheckResult(key: check.id, violated: violated, value: Double(diff))
+    }
+
+    private static func evaluateHipRotationStability(
+        _ check: PositionalCheck,
+        joints3D: [JointName: SIMD3<Float>]
+    ) -> PositionalCheckResult? {
+        guard let leftHip = joints3D[.leftHip],
+              let rightHip = joints3D[.rightHip] else { return nil }
+
+        let hipVector = rightHip - leftHip
+        let projected = SIMD3<Float>(hipVector.x, 0, hipVector.z)
+        guard simd_length(projected) > 1e-6 else { return nil }
+
+        let normalized = simd_normalize(projected)
+        let degrees = abs(Double(atan2(normalized.z, normalized.x)) * 180.0 / .pi)
+        let acuteDegrees = min(degrees, 180.0 - degrees)
+        let violated = acuteDegrees > (check.threshold ?? 15)
+
+        return PositionalCheckResult(key: check.id, violated: violated, value: acuteDegrees)
     }
 }

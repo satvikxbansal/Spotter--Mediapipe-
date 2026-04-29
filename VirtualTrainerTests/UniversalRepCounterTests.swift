@@ -54,12 +54,30 @@ final class UniversalRepCounterTests: XCTestCase {
 
         XCTAssertEqual(counter.repCount, 0)
     }
+
+    func testRussianTwistMagnitudeCountsEachSideExcursion() {
+        let definition = counterDefinition(
+            down: PhaseThreshold(angleKey: "trunkTwistMagnitude", enterBelow: nil, enterAbove: 25),
+            up: PhaseThreshold(angleKey: "trunkTwistMagnitude", enterBelow: 10, enterAbove: nil),
+            primary: "trunkTwistMagnitude"
+        )
+        let counter = UniversalRepCounter(definition: definition)
+
+        feed(counter, value: 0, frames: 3)
+        feed(counter, value: 30, frames: 5)
+        feed(counter, value: 0, frames: 5)
+        feed(counter, value: 30, frames: 5)
+        feed(counter, value: 0, frames: 5)
+
+        XCTAssertEqual(counter.repCount, 2)
+    }
 }
 
 private func counterDefinition(
     movementType: MovementType = .repetition,
     down: PhaseThreshold,
     up: PhaseThreshold,
+    primary: String = "kneeAngle",
     holdRange: ClosedRange<Double>? = nil
 ) -> ExerciseDefinition {
     ExerciseDefinition(
@@ -73,7 +91,7 @@ private func counterDefinition(
         visibilityHint: "Test",
         angles: [
             AngleDefinition(
-                key: "kneeAngle",
+                key: primary,
                 label: "Knee",
                 startJoint: "hip",
                 midJoint: "knee",
@@ -81,7 +99,7 @@ private func counterDefinition(
                 side: .right
             )
         ],
-        primaryAngleKey: "kneeAngle",
+        primaryAngleKey: primary,
         downThreshold: down,
         upThreshold: up,
         qualityTarget: nil,
@@ -91,4 +109,10 @@ private func counterDefinition(
         minRepDuration: 0,
         holdAngleRange: holdRange
     )
+}
+
+private func feed(_ counter: UniversalRepCounter, value: Double, frames: Int) {
+    for _ in 0..<frames {
+        _ = counter.process(angles: ["trunkTwistMagnitude": value])
+    }
 }

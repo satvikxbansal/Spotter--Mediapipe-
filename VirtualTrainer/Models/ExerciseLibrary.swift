@@ -185,6 +185,7 @@ nonisolated struct PositionalCheck: Codable, Equatable, Identifiable {
         case jointAboveJoint
         case jointAlignedX
         case shoulderLevel
+        case hipRotationStability
     }
 }
 
@@ -338,7 +339,8 @@ nonisolated enum ExerciseLibrary {
         hammerCurl, shoulderPress, tricepDip, inclinePushup,
         // Full Body
         jumpingJacks, kneeRaisesBilateral, sitUps, vUps, plank,
-        highKnees, mountainClimber, reverseCrunch, birdDog, sidePlank,
+        highKnees, mountainClimber, reverseCrunch, russianTwist,
+        birdDog, sidePlank,
         // Yoga
         downwardDog, warrior, chairPose, treePose, trianglePose,
         warriorOne, warriorThree, cobraPose, mountainPose,
@@ -2008,6 +2010,70 @@ nonisolated enum ExerciseLibrary {
         minRepDuration: 0.8,
         idealAngles: ["hipFlexionAngle": 75],
         tempoRange: 1.0...3.0
+    )
+
+    // MARK: Russian Twist
+
+    static let russianTwist = ExerciseDefinition(
+        id: "russianTwist",
+        displayName: "Russian Twist",
+        category: .fullBody,
+        movementType: .repetition,
+        cameraPosition: .front,
+        setupInstruction: "Sit facing the camera with knees bent, lean back, and rotate your shoulders side to side",
+        requiredJoints: [.leftShoulder, .rightShoulder,
+                         .leftHip, .rightHip,
+                         .leftKnee, .rightKnee],
+        visibilityHint: "Shoulders, hips, and knees — face the camera directly so it can see your shoulders rotate",
+        angles: [
+            // Magnitude is the rep signal: center -> either side -> center counts one rep.
+            AngleDefinition(key: "trunkTwistMagnitude", label: "Twist",
+                            startJoint: "shoulder_center", midJoint: "root", endJoint: "shoulder",
+                            side: .bestAvailable),
+            AngleDefinition(key: "signedTrunkTwistAngle", label: "Twist Direction",
+                            startJoint: "shoulder_center", midJoint: "root", endJoint: "shoulder",
+                            side: .bestAvailable),
+            AngleDefinition(key: "leanBackAngle", label: "Lean Back",
+                            startJoint: "shoulder", midJoint: "hip", endJoint: "knee",
+                            side: .bestAvailable),
+        ],
+        primaryAngleKey: "trunkTwistMagnitude",
+        downThreshold: PhaseThreshold(angleKey: "trunkTwistMagnitude", enterBelow: nil, enterAbove: 25),
+        upThreshold: PhaseThreshold(angleKey: "trunkTwistMagnitude", enterBelow: 10, enterAbove: nil),
+        qualityTarget: 30,
+        qualityTargetIsMinimum: true,
+        formRules: [
+            FormRule(id: "russiantwist_lean_upright", angleKey: "leanBackAngle",
+                     minAngle: nil, maxAngle: 150,
+                     activeDuringPhases: ["down", "up"],
+                     feedbackGood: "Lean back a bit more — keep tension on your core",
+                     feedbackDrill: "LEAN BACK! You're sitting straight up!",
+                     severity: "warning", cooldownSeconds: 8),
+            FormRule(id: "russiantwist_lean_too_far", angleKey: "leanBackAngle",
+                     minAngle: 120, maxAngle: nil,
+                     activeDuringPhases: ["down", "up"],
+                     feedbackGood: "Don't lean back so far — control the movement",
+                     feedbackDrill: "Sit UP a touch — you're losing control!",
+                     severity: "warning", cooldownSeconds: 8),
+            FormRule(id: "russiantwist_rotation_depth", angleKey: "trunkTwistMagnitude",
+                     minAngle: 25, maxAngle: nil,
+                     activeDuringPhases: ["down"],
+                     feedbackGood: "Rotate further — get your shoulders past your hips",
+                     feedbackDrill: "TWIST! Get those shoulders around!",
+                     severity: "info", cooldownSeconds: 6),
+        ],
+        positionalChecks: [
+            PositionalCheck(id: "russiantwist_hips", checkType: .hipRotationStability,
+                            threshold: 15, jointA: nil, jointB: nil,
+                            activeDuringPhases: ["down", "up"],
+                            feedbackGood: "Keep your hips steady — twist from the waist, not the legs",
+                            feedbackDrill: "STOP rotating your hips! Twist from the WAIST!",
+                            severity: "warning", cooldownSeconds: 10),
+        ],
+        targetMuscles: ["Obliques", "Abs", "Hip Flexors", "Core"],
+        minRepDuration: 0.4,
+        idealAngles: ["trunkTwistMagnitude": 35, "leanBackAngle": 135],
+        tempoRange: 1.0...2.5
     )
 
     // MARK: Bird Dog

@@ -93,6 +93,7 @@ nonisolated enum BodyCategory: String, CaseIterable, Identifiable {
                 ExerciseOption(type: .highKnees, available: true),
                 ExerciseOption(type: .mountainClimber, available: true),
                 ExerciseOption(type: .reverseCrunch, available: true),
+                ExerciseOption(type: .russianTwist, available: true),
                 ExerciseOption(type: .birdDog, available: true),
                 ExerciseOption(type: .sidePlank, available: true),
             ]
@@ -185,6 +186,7 @@ nonisolated enum ExerciseType: String, Codable, CaseIterable, Identifiable {
     case highKnees
     case mountainClimber
     case reverseCrunch
+    case russianTwist
     case birdDog
     case sidePlank
 
