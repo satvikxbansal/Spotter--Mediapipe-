@@ -449,10 +449,10 @@ nonisolated final class UniversalRepCounter: RepCounter {
         let range = definition.tempoRange
         if lastDuration < range.lowerBound {
             let deficit = range.lowerBound - lastDuration
-            return Int((deficit / 0.5) * 15.0)
+            return min(Int((deficit / 0.5) * 15.0), 30)
         } else if lastDuration > range.upperBound {
             let excess = lastDuration - range.upperBound
-            return Int(excess * 10.0)
+            return min(Int(excess * 10.0), 30)
         }
         return 0
     }
