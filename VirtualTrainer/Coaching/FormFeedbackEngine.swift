@@ -8,7 +8,7 @@ import simd
 /// Real-time biomechanical form analyzer that checks joint angles
 /// against exercise-specific rules and generates coaching feedback
 /// in the selected personality style.
-final class FormFeedbackEngine {
+nonisolated final class FormFeedbackEngine {
 
     // MARK: - Configuration
 
@@ -22,14 +22,14 @@ final class FormFeedbackEngine {
 
     // MARK: - Feedback Types
 
-    enum FeedbackType: Comparable {
+    nonisolated enum FeedbackType: Comparable {
         case bodyPosition
         case framePosition
         case jointVisibility
         case exerciseRule
     }
 
-    struct Feedback: Identifiable {
+    nonisolated struct Feedback: Identifiable {
         let id = UUID()
         let type: FeedbackType
         let message: String
@@ -108,7 +108,7 @@ final class FormFeedbackEngine {
             feedbacks.append(contentsOf: asymmetryFeedbacks)
         }
 
-        guard let best = feedbacks.max(by: { $0.severity < $1.severity }) else {
+        guard let best = highestSeverityFeedback(feedbacks) else {
             return []
         }
         if let ruleId = best.ruleId {
@@ -116,6 +116,20 @@ final class FormFeedbackEngine {
         }
         lastFeedbackTime = Date()
         return [best]
+    }
+
+    private func highestSeverityFeedback(_ feedbacks: [Feedback]) -> Feedback? {
+        var best: Feedback?
+        for feedback in feedbacks {
+            if let currentBest = best {
+                if currentBest.severity < feedback.severity {
+                    best = feedback
+                }
+            } else {
+                best = feedback
+            }
+        }
+        return best
     }
 
     func reset() {
@@ -229,7 +243,7 @@ final class FormFeedbackEngine {
         personality: CoachPersonality
     ) -> [Feedback] {
         let now = Date()
-        var feedbacks: [Feedback] = []
+        var bestFeedback: Feedback?
 
         for rule in definition.formRules {
             if !rule.activeDuringPhases.isEmpty {
@@ -261,23 +275,25 @@ final class FormFeedbackEngine {
             }
 
             let severity: CoachCue.Severity
-            switch rule.severity {
-            case "critical": severity = .critical
-            case "warning":  severity = .warning
-            default:         severity = .info
-            }
+            severity = coachCueSeverity(from: rule.severity)
 
-            feedbacks.append(Feedback(
+            let feedback = Feedback(
                 type: .exerciseRule,
                 message: message,
                 severity: severity,
                 ruleId: rule.id
-            ))
+            )
 
-            break
+            if let currentBest = bestFeedback {
+                if currentBest.severity < feedback.severity {
+                    bestFeedback = feedback
+                }
+            } else {
+                bestFeedback = feedback
+            }
         }
 
-        return feedbacks
+        return bestFeedback.map { [$0] } ?? []
     }
 
     // MARK: - Positional Rules Check
@@ -320,11 +336,7 @@ final class FormFeedbackEngine {
             }
 
             let severity: CoachCue.Severity
-            switch check.severity {
-            case "critical": severity = .critical
-            case "warning":  severity = .warning
-            default:         severity = .info
-            }
+            severity = coachCueSeverity(from: check.severity)
 
             feedbacks.append(Feedback(
                 type: .exerciseRule,
@@ -341,6 +353,14 @@ final class FormFeedbackEngine {
         }
 
         return feedbacks
+    }
+
+    private func coachCueSeverity(from rawSeverity: String) -> CoachCue.Severity {
+        switch rawSeverity {
+        case "critical": .critical
+        case "warning": .warning
+        default: .info
+        }
     }
 
     private func requiredPersistenceFrames(for check: PositionalCheck) -> Int {

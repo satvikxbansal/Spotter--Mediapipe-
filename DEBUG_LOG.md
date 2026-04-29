@@ -118,3 +118,113 @@ Published the camera image aspect ratio from `PoseEstimator`, passed it into `Tr
 Whenever camera preview uses `.resizeAspectFill`, overlay coordinates must be mapped through the same aspect-fill displayed image rect; never map normalized camera coordinates directly to the full SwiftUI view bounds.
 
 **Pattern Tags:** #ui-layout #camera-pipeline #overlay #coordinate-mapping
+
+---
+
+### [DL-006] Choose Best-Available Side By Landmark Visibility
+**Date:** 2026-04-29  
+**Severity:** warning  
+**Category:** angle-math  
+**File(s):** `VirtualTrainer/Vision/PoseEstimator.swift`, `VirtualTrainer/Vision/AngleCalculator.swift`, `VirtualTrainer/RepCounting/UniversalRepCounter.swift`, `VirtualTrainer/UI/TrainerSessionView.swift`, `VirtualTrainerTests/AngleCalculatorTests.swift`
+
+**Error:**
+`.bestAvailable` angle resolution preferred the right side whenever both left and right triples existed, even if the left-side landmarks had higher MediaPipe visibility.
+
+**Root Cause:**
+`AngleCalculator` had no access to per-joint visibility scores, so `.bestAvailable` could only choose based on whether a side's joint triple existed. When both existed it used a fixed right-side fallback, which could prefer a noisier side.
+
+**Fix Applied:**
+Published `jointVisibility` from `PoseEstimator`, passed it through `UniversalRepCounter` and `TrainerSessionView`, and updated `AngleCalculator` to choose the visible side with the stronger landmark triple score. Overlay side selection now uses the same visibility-aware logic. Added a unit test covering left-higher-visibility selection.
+
+**Prevention Rule:**
+Any side-selection strategy named “best available” must consider landmark confidence or visibility when both sides are geometrically available.
+
+**Pattern Tags:** #angle-math #mediapipe-integration #visibility #side-selection
+
+---
+
+### [DL-007] Add 3D Biomechanics Paths For Valgus And Body Line
+**Date:** 2026-04-29  
+**Severity:** warning  
+**Category:** angle-math  
+**File(s):** `VirtualTrainer/Vision/AngleCalculator.swift`, `VirtualTrainerTests/AngleCalculatorTests.swift`
+
+**Error:**
+Knee valgus and signed body-line checks were 2D-only even when MediaPipe world landmarks were available.
+
+**Root Cause:**
+`evaluateKneeValgus` ignored `joints3D`, and `computeAngles3D` forced `bodyLineAngle` through the 2D signed body-line path. This made frontal and sag/pike cues more sensitive to camera tilt and viewpoint than necessary.
+
+**Fix Applied:**
+Added a 3D knee-valgus approximation using hip-width-normalized lateral knee displacement along the user's hip axis, with the existing 2D FPPA-style check as fallback. Added 3D signed body-line measurement using hip displacement from the shoulder-to-ankle line, again preserving 2D fallback. Added tests for both 3D paths.
+
+**Prevention Rule:**
+If a form metric uses body geometry and `worldJoints` are available, implement the 3D path first and keep the 2D version only as a fallback.
+
+**Pattern Tags:** #angle-math #biomechanics #3d-landmarks #form-feedback
+
+---
+
+### [DL-008] Remove Extra Segmentation Mask Pass
+**Date:** 2026-04-29  
+**Severity:** warning  
+**Category:** camera-pipeline  
+**File(s):** `VirtualTrainer/Vision/FramePositionAnalyzer.swift`
+
+**Error:**
+`FramePositionAnalyzer.analyze(_:)` iterated all mask pixels once to compute body count and weighted sums, then iterated the mask again with `reduce` to compute `totalWeight`.
+
+**Root Cause:**
+The total weight was calculated after the main pixel loop even though each foreground mask value was already being read and converted in that loop.
+
+**Fix Applied:**
+Accumulated `totalWeight` inside the existing foreground-pixel loop and removed the second full-mask reduce pass. Existing frame-position output and tests remain unchanged.
+
+**Prevention Rule:**
+When scanning camera masks or frame buffers, compute all per-pixel aggregate values in the same pass unless there is a correctness reason to do otherwise.
+
+**Pattern Tags:** #camera-pipeline #performance #segmentation-mask
+
+---
+
+### [DL-009] Cap Tempo Penalty Component
+**Date:** 2026-04-29  
+**Severity:** warning  
+**Category:** state-management  
+**File(s):** `VirtualTrainer/RepCounting/UniversalRepCounter.swift`
+
+**Error:**
+Very slow reps could produce an unbounded tempo penalty component before the final form score cap was applied, making per-component debugging misleading.
+
+**Root Cause:**
+`calculateTempoPenalty()` multiplied slow-rep excess duration by `10.0` and returned the raw integer. Although the final score capped tempo penalty at 30, the component function itself could return much larger values.
+
+**Fix Applied:**
+Capped both fast and slow tempo penalty components at 30 inside `calculateTempoPenalty()` so the returned component matches the public scoring budget.
+
+**Prevention Rule:**
+Score component functions should return values within their documented component budget, not rely on downstream callers to cap them.
+
+**Pattern Tags:** #state-management #rep-counter #form-score #tempo
+
+---
+
+### [DL-010] Prioritize Highest Severity Form Rule
+**Date:** 2026-04-29  
+**Severity:** warning  
+**Category:** state-management  
+**File(s):** `VirtualTrainer/Coaching/FormFeedbackEngine.swift`, `VirtualTrainerTests/FormFeedbackEngineTests.swift`
+
+**Error:**
+`FormFeedbackEngine.checkFormRules` stopped at the first violated form rule, so a lower-severity rule listed earlier could mask a later critical rule in the same evaluation frame.
+
+**Root Cause:**
+The form-rule loop used `break` immediately after appending the first violation. Rule order was acting as implicit priority, which is fragile as compound exercise rules grow.
+
+**Fix Applied:**
+Changed form-rule evaluation to scan all eligible violated form rules and keep the highest-severity feedback. Ties preserve first-listed order. Added regression tests for critical-over-warning priority and equal-severity first-rule tie behavior. Marked `FormFeedbackEngine` and nested feedback value types as nonisolated to avoid Swift 6.2 simulator deallocation crashes in pure logic tests.
+
+**Prevention Rule:**
+When multiple coaching rules can trigger in one frame, choose by explicit priority/severity rather than by array ordering unless the ordering is intentionally documented and tested.
+
+**Pattern Tags:** #state-management #form-feedback #severity #tests
