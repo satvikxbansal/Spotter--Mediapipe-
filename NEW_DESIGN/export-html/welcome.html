@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Welcome</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100;200;300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@100;200;300;400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://code.iconify.design/iconify-icon/3.0.0/iconify-icon.min.js"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-background: var(--background);
+        --color-foreground: var(--foreground);
+        --color-primary: var(--primary);
+        --color-primary-foreground: var(--primary-foreground);
+        --color-secondary: var(--secondary);
+        --color-secondary-foreground: var(--secondary-foreground);
+        --color-muted: var(--muted);
+        --color-muted-foreground: var(--muted-foreground);
+        --color-accent: var(--accent);
+        --color-accent-foreground: var(--accent-foreground);
+        --color-destructive: var(--destructive);
+        --color-card: var(--card);
+        --color-card-foreground: var(--card-foreground);
+        --color-popover: var(--popover);
+        --color-popover-foreground: var(--popover-foreground);
+        --color-border: var(--border);
+        --color-input: var(--input);
+        --color-ring: var(--ring);
+        --color-chart-1: var(--chart-1);
+        --color-chart-2: var(--chart-2);
+        --color-chart-3: var(--chart-3);
+        --color-chart-4: var(--chart-4);
+        --color-chart-5: var(--chart-5);
+
+        --font-font-sans: var(--font-sans);
+        --font-font-heading: var(--font-heading);
+        --font-font-serif: var(--font-serif);
+        --font-font-mono: var(--font-mono);
+      }
+
+      @theme {
+        --radius-xs: calc(var(--radius) - 8px);
+        --radius-sm: calc(var(--radius) - 4px);
+        --radius-md: calc(var(--radius) - 2px);
+        --radius-lg: var(--radius);
+        --radius-xl: calc(var(--radius) + 4px);
+        --radius-2xl: calc(var(--radius) + 8px);
+        --radius-3xl: calc(var(--radius) + 16px);
+        --radius-4xl: calc(var(--radius) + 24px);
+      }
+
+      * {
+        corner-shape: var(--shape, round);
+      }
+
+      .rounded-full, .rounded-none,
+      .rounded-t-full, .rounded-t-none,
+      .rounded-r-full, .rounded-r-none,
+      .rounded-b-full, .rounded-b-none,
+      .rounded-l-full, .rounded-l-none,
+      .rounded-s-full, .rounded-s-none,
+      .rounded-e-full, .rounded-e-none,
+      .rounded-tl-full, .rounded-tl-none,
+      .rounded-tr-full, .rounded-tr-none,
+      .rounded-bl-full, .rounded-bl-none,
+      .rounded-br-full, .rounded-br-none,
+      .rounded-ss-full, .rounded-ss-none,
+      .rounded-se-full, .rounded-se-none,
+      .rounded-es-full, .rounded-es-none,
+      .rounded-ee-full, .rounded-ee-none {
+        corner-shape: round;
+      }
+
+      @utility rounded-* {
+        border-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-t-* {
+        border-top-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-top-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-r-* {
+        border-top-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-bottom-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-b-* {
+        border-bottom-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-bottom-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-l-* {
+        border-top-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-bottom-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-tl-* {
+        border-top-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-tr-* {
+        border-top-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-bl-* {
+        border-bottom-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-br-* {
+        border-bottom-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-s-* {
+        border-start-start-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-end-start-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-e-* {
+        border-start-end-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-end-end-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-ss-* {
+        border-start-start-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-se-* {
+        border-start-end-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-es-* {
+        border-end-start-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-ee-* {
+        border-end-end-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+
+      :root {
+        --shape: round;
+        --shape-multiplier: 1;
+
+          --background: #0D0D0D;
+        --foreground: #F2F0EB;
+        --primary: #B8E600;
+        --primary-foreground: #000000;
+        --secondary: #262626;
+        --secondary-foreground: #F2F0EB;
+        --muted: #262626;
+        --muted-foreground: #A3A3A3;
+        --accent: #C8FF00;
+        --accent-foreground: #000000;
+        --destructive: #FF5C3A;
+        --card: #0D0D0D;
+        --card-foreground: #F2F0EB;
+        --popover: #0D0D0D;
+        --popover-foreground: #F2F0EB;
+        --border: #F2F0EB;
+        --input: #0D0D0D;
+        --ring: #C8FF00;
+        --chart-1: #00D1FF;
+        --chart-2: #C8FF00;
+        --chart-3: #FF5C3A;
+        --chart-4: #525252;
+        --chart-5: #262626;
+
+        --font-sans: "DM Sans";
+        --font-heading: "Space Grotesk";
+        --font-serif: "Playfair Display";
+        --font-mono: "JetBrains Mono";
+
+        --radius: 1rem;
+      }
+
+      /* Prevent layout shift for icons without explicit dimensions */
+      iconify-icon:not([width]):not([height]) {
+        display: inline-block;
+        width: 1em;
+        height: 1em;
+      }
+
+      /* Hide scrollbars */
+      *,
+      *::before,
+      *::after {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+      *::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="min-h-[100dvh] bg-background text-foreground flex flex-col p-5 font-sans">
+      <div class="mt-10 mb-8 flex-shrink-0">
+        <div class="flex items-center gap-2 mb-6">
+          <iconify-icon icon="ph:scan-body-duotone" class="text-primary text-2xl"></iconify-icon
+          ><span
+            class="font-heading font-bold uppercase tracking-widest text-sm text-muted-foreground"
+            >Spotter AI</span
+          >
+        </div>
+        <h1 class="font-heading text-6xl font-black uppercase leading-[0.9] tracking-tighter">
+          Your <br />AI Form <br /><span class="text-primary">Coach</span>
+        </h1>
+        <p class="mt-6 text-muted-foreground text-lg max-w-[280px] font-medium leading-snug">
+          Never train alone again.
+        </p>
+      </div>
+      <div class="grid grid-cols-2 gap-3 mb-10 flex-1 content-start">
+        <div
+          class="col-span-2 border-2 border-border rounded-2xl p-5 bg-card overflow-hidden relative min-h-[140px]"
+        >
+          <img
+            src="https://ggrhecslgdflloszjkwl.supabase.co/storage/v1/object/public/user-assets/jboVeCYRrx9/components/4TeBMAGgWdP.png"
+            class="absolute inset-0 w-full h-full object-cover opacity-30 mix-blend-luminosity grayscale"
+          />
+          <div
+            class="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent z-10"
+          ></div>
+          <div class="relative z-20 h-full flex flex-col justify-end">
+            <iconify-icon icon="ph:target-bold" class="text-primary text-3xl mb-3"></iconify-icon>
+            <h3 class="font-heading font-bold text-xl uppercase tracking-wide">
+              EYES ON the form &amp; EVERY REP<br />
+            </h3>
+          </div>
+        </div>
+        <div
+          class="border-2 border-border rounded-2xl p-4 bg-card flex flex-col justify-between aspect-square"
+        >
+          <iconify-icon icon="ph:barbell-bold" class="text-foreground text-3xl mb-2"></iconify-icon>
+          <h3 class="font-heading font-bold uppercase text-lg leading-tight">
+            NO SHORTCUTS <br />Bodyweight
+          </h3>
+        </div>
+        <div
+          class="border-2 border-border rounded-2xl p-4 bg-card flex flex-col justify-between aspect-square"
+        >
+          <iconify-icon
+            icon="ph:house-line-bold"
+            class="text-foreground text-3xl mb-2"
+          ></iconify-icon>
+          <h3 class="font-heading font-bold uppercase text-lg leading-tight">
+            PICK YOUR COACH<br />
+          </h3>
+        </div>
+      </div>
+      <div class="mt-auto pb-6 pt-2 flex-shrink-0">
+        <button
+          class="w-full bg-primary text-primary-foreground font-heading font-bold uppercase text-xl h-[64px] rounded-[24px] flex items-center justify-center gap-2 active:scale-95 transition-transform"
+        >
+          Get Started<iconify-icon icon="ph:arrow-right-bold" class="text-2xl"></iconify-icon>
+        </button>
+        <p class="text-center text-muted-foreground text-sm mt-5 font-medium">
+          Already have an account?
+          <a
+            href="#"
+            class="text-foreground underline underline-offset-4 decoration-border font-bold"
+            >Log in</a
+          >
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

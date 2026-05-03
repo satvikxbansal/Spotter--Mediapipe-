@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LiveWorkoutCopy</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100;200;300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@100;200;300;400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://code.iconify.design/iconify-icon/3.0.0/iconify-icon.min.js"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-background: var(--background);
+        --color-foreground: var(--foreground);
+        --color-primary: var(--primary);
+        --color-primary-foreground: var(--primary-foreground);
+        --color-secondary: var(--secondary);
+        --color-secondary-foreground: var(--secondary-foreground);
+        --color-muted: var(--muted);
+        --color-muted-foreground: var(--muted-foreground);
+        --color-accent: var(--accent);
+        --color-accent-foreground: var(--accent-foreground);
+        --color-destructive: var(--destructive);
+        --color-card: var(--card);
+        --color-card-foreground: var(--card-foreground);
+        --color-popover: var(--popover);
+        --color-popover-foreground: var(--popover-foreground);
+        --color-border: var(--border);
+        --color-input: var(--input);
+        --color-ring: var(--ring);
+        --color-chart-1: var(--chart-1);
+        --color-chart-2: var(--chart-2);
+        --color-chart-3: var(--chart-3);
+        --color-chart-4: var(--chart-4);
+        --color-chart-5: var(--chart-5);
+
+        --font-font-sans: var(--font-sans);
+        --font-font-heading: var(--font-heading);
+        --font-font-serif: var(--font-serif);
+        --font-font-mono: var(--font-mono);
+      }
+
+      @theme {
+        --radius-xs: calc(var(--radius) - 8px);
+        --radius-sm: calc(var(--radius) - 4px);
+        --radius-md: calc(var(--radius) - 2px);
+        --radius-lg: var(--radius);
+        --radius-xl: calc(var(--radius) + 4px);
+        --radius-2xl: calc(var(--radius) + 8px);
+        --radius-3xl: calc(var(--radius) + 16px);
+        --radius-4xl: calc(var(--radius) + 24px);
+      }
+
+      * {
+        corner-shape: var(--shape, round);
+      }
+
+      .rounded-full, .rounded-none,
+      .rounded-t-full, .rounded-t-none,
+      .rounded-r-full, .rounded-r-none,
+      .rounded-b-full, .rounded-b-none,
+      .rounded-l-full, .rounded-l-none,
+      .rounded-s-full, .rounded-s-none,
+      .rounded-e-full, .rounded-e-none,
+      .rounded-tl-full, .rounded-tl-none,
+      .rounded-tr-full, .rounded-tr-none,
+      .rounded-bl-full, .rounded-bl-none,
+      .rounded-br-full, .rounded-br-none,
+      .rounded-ss-full, .rounded-ss-none,
+      .rounded-se-full, .rounded-se-none,
+      .rounded-es-full, .rounded-es-none,
+      .rounded-ee-full, .rounded-ee-none {
+        corner-shape: round;
+      }
+
+      @utility rounded-* {
+        border-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-t-* {
+        border-top-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-top-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-r-* {
+        border-top-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-bottom-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-b-* {
+        border-bottom-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-bottom-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-l-* {
+        border-top-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-bottom-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-tl-* {
+        border-top-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-tr-* {
+        border-top-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-bl-* {
+        border-bottom-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-br-* {
+        border-bottom-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-s-* {
+        border-start-start-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-end-start-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-e-* {
+        border-start-end-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-end-end-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-ss-* {
+        border-start-start-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-se-* {
+        border-start-end-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-es-* {
+        border-end-start-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-ee-* {
+        border-end-end-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+
+      :root {
+        --shape: round;
+        --shape-multiplier: 1;
+
+          --background: #0D0D0D;
+        --foreground: #F2F0EB;
+        --primary: #B8E600;
+        --primary-foreground: #000000;
+        --secondary: #262626;
+        --secondary-foreground: #F2F0EB;
+        --muted: #262626;
+        --muted-foreground: #A3A3A3;
+        --accent: #C8FF00;
+        --accent-foreground: #000000;
+        --destructive: #FF5C3A;
+        --card: #0D0D0D;
+        --card-foreground: #F2F0EB;
+        --popover: #0D0D0D;
+        --popover-foreground: #F2F0EB;
+        --border: #F2F0EB;
+        --input: #0D0D0D;
+        --ring: #C8FF00;
+        --chart-1: #00D1FF;
+        --chart-2: #C8FF00;
+        --chart-3: #FF5C3A;
+        --chart-4: #525252;
+        --chart-5: #262626;
+
+        --font-sans: "DM Sans";
+        --font-heading: "Space Grotesk";
+        --font-serif: "Playfair Display";
+        --font-mono: "JetBrains Mono";
+
+        --radius: 1rem;
+      }
+
+      /* Prevent layout shift for icons without explicit dimensions */
+      iconify-icon:not([width]):not([height]) {
+        display: inline-block;
+        width: 1em;
+        height: 1em;
+      }
+
+      /* Hide scrollbars */
+      *,
+      *::before,
+      *::after {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+      *::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      class="relative w-full h-[100dvh] bg-black overflow-hidden font-sans text-white select-none"
+    >
+      <div class="absolute inset-0 z-0">
+        <img
+          alt="Workout feed"
+          src="placeholder:img-workout-man-squat"
+          class="w-full h-full object-cover"
+        />
+        <div class="absolute inset-0 bg-black/15 pointer-events-none"></div>
+        <div
+          class="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-black/40 to-transparent"
+        ></div>
+        <div
+          class="absolute bottom-0 inset-x-0 h-40 bg-gradient-to-t from-black/40 to-transparent"
+        ></div>
+      </div>
+      <div class="absolute inset-x-0 top-0 pt-[env(safe-area-inset-top,44px)] px-6 z-50">
+        <div class="flex items-center justify-between h-[84px] pt-2">
+          <div class="flex items-center gap-4">
+            <button
+              onclick="window.history.back()"
+              class="flex items-center justify-center p-1 -ml-1 hover:opacity-70 transition-opacity"
+            >
+              <iconify-icon icon="ph:caret-left-bold" class="text-[26px] text-white"></iconify-icon>
+            </button>
+            <div class="flex flex-col">
+              <h2
+                class="font-heading text-[26px] font-black uppercase tracking-tight leading-none text-white italic"
+              >
+                Air Squats
+              </h2>
+              <p
+                class="font-mono text-[13px] uppercase text-white/60 tracking-[0.2em] mt-2 font-black"
+              >
+                Set 2 of 3
+              </p>
+            </div>
+          </div>
+          <button
+            onclick="window.location.hash=&#39;#CJvZu5u8q5X&#39;"
+            class="text-[14px] font-black uppercase tracking-widest text-white/60 hover:text-white transition-colors"
+          >
+            Skip
+          </button>
+        </div>
+        <div class="flex gap-[6px] px-1 mt-1">
+          <div class="h-1 flex-1 bg-accent rounded-full shadow-[0_0_12px_#C8FF00]"></div>
+          <div class="h-1 flex-1 bg-accent rounded-full shadow-[0_0_12px_#C8FF00]"></div>
+          <div class="h-1 flex-1 bg-accent rounded-full shadow-[0_0_12px_#C8FF00]"></div>
+          <div class="h-1 flex-1 bg-accent rounded-full shadow-[0_0_12px_#C8FF00]"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+        </div>
+      </div>
+      <div
+        class="absolute top-[28%] left-1/2 -translate-x-1/2 z-40 pointer-events-none animate-bounce"
+      >
+        <div
+          class="bg-accent text-black border-2 border-black font-heading font-black text-[22px] px-10 h-14 rounded-full shadow-[0_0_40px_rgba(200,255,0,0.6)] flex items-center justify-center"
+        >
+          <span class="uppercase tracking-tight">Go Deeper</span>
+        </div>
+      </div>
+      <div class="absolute inset-0 z-10 pointer-events-none overflow-hidden">
+        <svg viewBox="0 0 400 800" class="w-full h-full opacity-100">
+          <g stroke="#C8FF00" stroke-width="3" stroke-linecap="round" stroke-opacity="0.7">
+            <line x1="200" x2="200" y1="320" y2="440" />
+            <line x1="140" x2="260" y1="380" y2="380" />
+            <line x1="140" x2="100" y1="380" y2="380" />
+            <line x1="260" x2="300" y1="380" y2="380" />
+            <line x1="140" x2="160" y1="380" y2="540" />
+            <line x1="260" x2="240" y1="380" y2="540" />
+            <line x1="160" x2="120" y1="540" y2="540" />
+            <line x1="240" x2="280" y1="540" y2="540" />
+            <line x1="120" x2="140" y1="540" y2="720" />
+            <line x1="280" x2="260" y1="540" y2="720" />
+          </g>
+          <g fill="#C8FF00" fill-opacity="0.9">
+            <circle r="4" cx="200" cy="320" class="blur-[2px]" />
+            <circle r="4" cx="200" cy="320" />
+            <circle r="4" cx="140" cy="380" class="blur-[2px]" />
+            <circle r="4" cx="140" cy="380" />
+            <circle r="4" cx="260" cy="380" class="blur-[2px]" />
+            <circle r="4" cx="260" cy="380" />
+            <circle r="4" cx="100" cy="380" />
+            <circle r="4" cx="300" cy="380" />
+            <circle r="4" cx="160" cy="540" />
+            <circle r="4" cx="240" cy="540" />
+            <circle r="4" cx="120" cy="540" />
+            <circle r="4" cx="280" cy="540" />
+            <circle r="4" cx="140" cy="720" />
+            <circle r="4" cx="260" cy="720" />
+          </g>
+        </svg>
+      </div>
+      <div class="absolute bottom-10 left-6 z-50 space-y-3">
+        <div
+          class="h-8 bg-black border-2 border-white rounded-full px-4 flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(0,209,255,0.3)]"
+        >
+          <div class="size-1.5 rounded-full bg-[#00D1FF]"></div>
+          <p class="font-heading text-[10px] font-black text-white uppercase tracking-widest">
+            Effort <span class="text-[#00D1FF]">Rising</span>
+          </p>
+        </div>
+        <div
+          class="h-8 bg-black border-2 border-white rounded-full px-4 flex items-center gap-3 shadow-[4px_4px_0px_0px_rgba(200,255,0,0.3)]"
+        >
+          <div class="flex gap-1">
+            <div class="w-[1.5px] h-2.5 bg-[#C8FF00]"></div>
+            <div class="w-[1.5px] h-2.5 bg-[#C8FF00]"></div>
+            <div class="w-[1.5px] h-2.5 bg-[#C8FF00]"></div>
+            <div class="w-[1.5px] h-2.5 bg-[#C8FF00]"></div>
+            <div class="w-[1.5px] h-2.5 bg-white"></div>
+          </div>
+          <p class="font-heading text-[10px] font-black text-white uppercase tracking-widest">
+            Form
+          </p>
+          <p class="font-heading text-[13px] font-black text-[#C8FF00] tracking-tighter">92%</p>
+        </div>
+      </div>
+      <div class="absolute bottom-10 right-6 z-50">
+        <div
+          class="bg-black border-2 border-white rounded-[24px] p-5 w-fit shadow-[8px_8px_0px_0px_rgba(200,255,0,1)]"
+        >
+          <div class="flex flex-col">
+            <p
+              class="font-heading text-[11px] font-black uppercase text-white/40 tracking-[0.2em] mb-0 ml-1"
+            >
+              REPS
+            </p>
+            <div class="flex items-baseline gap-1.5">
+              <span
+                class="font-heading text-[92px] font-black text-accent leading-[0.8] tracking-tighter italic"
+                >07</span
+              ><span class="font-heading text-2xl font-black text-white/30 leading-none">/12</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
