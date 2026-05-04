@@ -57,6 +57,8 @@ nonisolated final class FormFeedbackEngine {
         personality: CoachPersonality,
         bilateralAngles: [String: AngleCalculator.BilateralAngle] = [:],
         worldJoints: [JointName: SIMD3<Float>] = [:],
+        jointVisibility: [JointName: Float] = [:],
+        activeSide: String? = nil,
         frameMask: SegmentationMaskData? = nil
     ) -> [Feedback] {
         var feedbacks: [Feedback] = []
@@ -85,7 +87,9 @@ nonisolated final class FormFeedbackEngine {
             angles: angles,
             phase: phase,
             definition: definition,
-            personality: personality
+            personality: personality,
+            jointVisibility: jointVisibility,
+            activeSide: activeSide
         )
         feedbacks.append(contentsOf: formFeedbacks)
 
@@ -95,7 +99,8 @@ nonisolated final class FormFeedbackEngine {
                 joints3D: worldJoints,
                 phase: phase,
                 definition: definition,
-                personality: personality
+                personality: personality,
+                jointVisibility: jointVisibility
             )
             feedbacks.append(contentsOf: positionalFeedbacks)
         }
@@ -252,7 +257,9 @@ nonisolated final class FormFeedbackEngine {
         angles: [String: Double],
         phase: RepPhase,
         definition: ExerciseDefinition,
-        personality: CoachPersonality
+        personality: CoachPersonality,
+        jointVisibility: [JointName: Float],
+        activeSide: String?
     ) -> [Feedback] {
         let now = Date()
         var bestFeedback: Feedback?
@@ -268,6 +275,12 @@ nonisolated final class FormFeedbackEngine {
             }
 
             guard let angleValue = angles[rule.angleKey] else { continue }
+            guard hasSufficientConfidence(
+                for: rule,
+                definition: definition,
+                jointVisibility: jointVisibility,
+                activeSide: activeSide
+            ) else { continue }
 
             var violated = false
 
@@ -315,7 +328,8 @@ nonisolated final class FormFeedbackEngine {
         joints3D: [JointName: SIMD3<Float>],
         phase: RepPhase,
         definition: ExerciseDefinition,
-        personality: CoachPersonality
+        personality: CoachPersonality,
+        jointVisibility: [JointName: Float]
     ) -> [Feedback] {
         let now = Date()
         var feedbacks: [Feedback] = []
@@ -335,6 +349,7 @@ nonisolated final class FormFeedbackEngine {
             if let lastFired = ruleCooldowns[check.id] {
                 guard now.timeIntervalSince(lastFired) > check.cooldownSeconds else { continue }
             }
+            guard hasSufficientConfidence(for: check, jointVisibility: jointVisibility) else { continue }
             guard let result = results[check.id], result.violated else { continue }
             positionalViolationFrames[check.id, default: 0] += 1
             guard positionalViolationFrames[check.id, default: 0] >= requiredPersistenceFrames(for: check) else {
@@ -377,13 +392,136 @@ nonisolated final class FormFeedbackEngine {
 
     private func requiredPersistenceFrames(for check: PositionalCheck) -> Int {
         switch check.checkType {
-        case .kneeValgus, .heelRise:
+        case .kneeValgus, .heelRise, .kneeOverFootLine, .footPlanted, .pelvisLevel:
             return 3
-        case .hipRotationStability:
+        case .hipRotationStability, .hipHeightRelativeToLine:
             return 5
         default:
             return 1
         }
+    }
+
+    private func hasSufficientConfidence(
+        for rule: FormRule,
+        definition: ExerciseDefinition,
+        jointVisibility: [JointName: Float],
+        activeSide: String?
+    ) -> Bool {
+        guard !jointVisibility.isEmpty,
+              let angleDef = definition.angles.first(where: { $0.key == rule.angleKey })
+        else { return true }
+
+        let threshold = confidenceThreshold(for: angleDef)
+        switch angleDef.side {
+        case .left:
+            return sideHasConfidence("left", for: angleDef, threshold: threshold, jointVisibility: jointVisibility)
+        case .right:
+            return sideHasConfidence("right", for: angleDef, threshold: threshold, jointVisibility: jointVisibility)
+        case .both:
+            return ["left", "right"].allSatisfy {
+                sideHasConfidence($0, for: angleDef, threshold: threshold, jointVisibility: jointVisibility)
+            }
+        case .bestAvailable:
+            return ["left", "right"].contains {
+                sideHasConfidence($0, for: angleDef, threshold: threshold, jointVisibility: jointVisibility)
+            }
+        case .moreFlexed, .lessFlexed:
+            if let activeSide {
+                return sideHasConfidence(activeSide, for: angleDef, threshold: threshold, jointVisibility: jointVisibility)
+            }
+            return ["left", "right"].contains {
+                sideHasConfidence($0, for: angleDef, threshold: threshold, jointVisibility: jointVisibility)
+            }
+        }
+    }
+
+    private func sideHasConfidence(
+        _ side: String,
+        for angleDef: AngleDefinition,
+        threshold: Float,
+        jointVisibility: [JointName: Float]
+    ) -> Bool {
+        guard let confidence = AngleCalculator.minimumVisibility(
+            for: angleDef,
+            side: side,
+            jointVisibility: jointVisibility
+        ) else { return false }
+        return confidence >= threshold
+    }
+
+    private func allJointsVisible(_ joints: [JointName], threshold: Float, jointVisibility: [JointName: Float]) -> Bool {
+        joints.allSatisfy { (jointVisibility[$0] ?? 0) >= threshold }
+    }
+
+    private func anyJointGroupVisible(_ groups: [[JointName]], threshold: Float, jointVisibility: [JointName: Float]) -> Bool {
+        groups.contains { allJointsVisible($0, threshold: threshold, jointVisibility: jointVisibility) }
+    }
+
+    private func positionalConfidenceGroups(for check: PositionalCheck) -> [[JointName]] {
+        switch check.checkType {
+        case .heelRise, .footPlanted:
+            return [
+                [.leftHeel, .leftFootIndex],
+                [.rightHeel, .rightFootIndex],
+            ]
+        case .kneeValgus, .kneeOverFootLine:
+            return [[.leftHip, .rightHip, .leftKnee, .rightKnee, .leftAnkle, .rightAnkle]]
+        case .kneeOverAnkle:
+            return [
+                [.leftHip, .leftKnee, .leftAnkle],
+                [.rightHip, .rightKnee, .rightAnkle],
+            ]
+        case .wristOverElbow:
+            return [[.leftWrist, .rightWrist, .leftElbow, .rightElbow, .leftShoulder, .rightShoulder]]
+        case .stanceWidth:
+            return [[.leftAnkle, .rightAnkle, .leftHip, .rightHip]]
+        case .hipBetweenKnees, .pelvisLevel:
+            return [[.leftHip, .rightHip]]
+        case .hipHeightRelativeToLine:
+            return [[.leftShoulder, .rightShoulder, .leftHip, .rightHip, .leftKnee, .rightKnee]]
+        case .shoulderOverSupport:
+            return [
+                [.leftShoulder, .rightShoulder, .leftWrist, .rightWrist],
+                [.leftShoulder, .rightShoulder, .leftElbow, .rightElbow],
+            ]
+        case .trunkLean:
+            return [[.leftShoulder, .rightShoulder, .leftHip, .rightHip]]
+        case .shoulderLevel:
+            return [[.leftShoulder, .rightShoulder]]
+        case .hipRotationStability:
+            return [[.leftHip, .rightHip]]
+        case .jointAboveJoint, .jointAlignedX:
+            guard let jointA = check.jointA, let jointB = check.jointB else { return [] }
+            return [[jointA, jointB]]
+        case .controlledLower, .pauseAtTop:
+            return []
+        }
+    }
+
+    private func hasSufficientConfidence(
+        for check: PositionalCheck,
+        jointVisibility: [JointName: Float]
+    ) -> Bool {
+        guard !jointVisibility.isEmpty else { return true }
+
+        let threshold: Float = switch check.checkType {
+        case .heelRise, .footPlanted:
+            0.65
+        case .kneeOverFootLine, .kneeOverAnkle, .kneeValgus, .wristOverElbow:
+            0.60
+        default:
+            0.50
+        }
+
+        let groups = positionalConfidenceGroups(for: check)
+        guard !groups.isEmpty else { return true }
+        return anyJointGroupVisible(groups, threshold: threshold, jointVisibility: jointVisibility)
+    }
+
+    private func confidenceThreshold(for angleDef: AngleDefinition) -> Float {
+        let joints = ["wrist", "ankle", "heel", "footIndex"]
+        let key = "\(angleDef.startJoint) \(angleDef.midJoint) \(angleDef.endJoint)"
+        return joints.contains { key.contains($0) } ? 0.60 : 0.50
     }
 
     // MARK: - Bilateral Asymmetry Check

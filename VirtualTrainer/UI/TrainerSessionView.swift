@@ -159,6 +159,8 @@ struct TrainerSessionView: View {
                 personality: coachPersonality,
                 bilateralAngles: counter.lastBilateralAngles,
                 worldJoints: poseEstimator.worldJoints,
+                jointVisibility: poseEstimator.jointVisibility,
+                activeSide: counter.lastActiveSide,
                 frameMask: poseEstimator.segmentationMask
             )
 
@@ -181,7 +183,8 @@ struct TrainerSessionView: View {
                 definition: exerciseDefinition,
                 joints: joints,
                 worldJoints: poseEstimator.worldJoints,
-                jointVisibility: poseEstimator.jointVisibility
+                jointVisibility: poseEstimator.jointVisibility,
+                activeSide: counter.lastActiveSide
             )
 
             violatedJoints = buildViolatedJoints(
@@ -693,13 +696,20 @@ struct TrainerSessionView: View {
         definition: ExerciseDefinition,
         joints: [JointName: CGPoint],
         worldJoints: [JointName: SIMD3<Float>],
-        jointVisibility: [JointName: Float]
+        jointVisibility: [JointName: Float],
+        activeSide: String?
     ) -> [TrainerOverlayView.AngleOverlayData] {
         var result: [TrainerOverlayView.AngleOverlayData] = []
         for angleDef in definition.angles {
             guard let degrees = angles[angleDef.key] else { continue }
 
-            if let side = AngleCalculator.preferredOverlaySide(
+            let lockedSide = lockedOverlaySide(
+                for: angleDef,
+                definition: definition,
+                activeSide: activeSide
+            )
+
+            if let side = lockedSide ?? AngleCalculator.preferredOverlaySide(
                 for: angleDef,
                 joints2D: joints,
                 joints3D: worldJoints,
@@ -715,6 +725,20 @@ struct TrainerSessionView: View {
             }
         }
         return result
+    }
+
+    private func lockedOverlaySide(
+        for angleDef: AngleDefinition,
+        definition: ExerciseDefinition,
+        activeSide: String?
+    ) -> String? {
+        guard angleDef.key == definition.primaryAngleKey,
+              (angleDef.side == .moreFlexed || angleDef.side == .lessFlexed),
+              let activeSide,
+              AngleCalculator.resolveJointTriple(for: angleDef, side: activeSide) != nil
+        else { return nil }
+
+        return activeSide
     }
 
     private func buildViolatedJoints(
@@ -757,6 +781,23 @@ struct TrainerSessionView: View {
         switch check.checkType {
         case .kneeValgus, .heelRise:
             return definition.angles.first { $0.key.lowercased().contains("knee") }
+        case .kneeOverFootLine, .kneeOverAnkle:
+            return definition.angles.first { $0.key.lowercased().contains("knee") }
+                ?? definition.angles.first
+        case .stanceWidth, .hipBetweenKnees, .pelvisLevel:
+            return definition.angles.first { $0.key.lowercased().contains("hip") || $0.key.lowercased().contains("knee") }
+                ?? definition.angles.first
+        case .hipHeightRelativeToLine, .trunkLean:
+            return definition.angles.first { $0.key.lowercased().contains("hip") || $0.key == "bodyLineAngle" }
+                ?? definition.angles.first
+        case .shoulderOverSupport, .wristOverElbow:
+            return definition.angles.first { $0.key.lowercased().contains("shoulder") || $0.key.lowercased().contains("elbow") }
+                ?? definition.angles.first
+        case .footPlanted:
+            return definition.angles.first { $0.key.lowercased().contains("ankle") || $0.key.lowercased().contains("knee") }
+                ?? definition.angles.first
+        case .controlledLower, .pauseAtTop:
+            return definition.angles.first
         case .shoulderLevel:
             return definition.angles.first { $0.startJoint.contains("shoulder") || $0.midJoint.contains("shoulder") }
                 ?? definition.angles.first

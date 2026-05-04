@@ -31,10 +31,14 @@ nonisolated final class UniversalRepCounter: RepCounter {
     private let qualityCueCooldown: TimeInterval = 8.0
 
     private var holdStartTime: Date?
+    private var pendingActiveSide: String?
+    private var lockedActiveSide: String?
 
     private(set) var lastPrimaryAngle: Double?
     private(set) var lastAngles: [String: Double] = [:]
     private(set) var lastBilateralAngles: [String: AngleCalculator.BilateralAngle] = [:]
+    private(set) var lastActiveSide: String?
+    private(set) var lastPeakAngularVelocity: Double = 0
 
     /// Most recent per-rep form score. Published for the UI.
     private(set) var lastFormScore: FormScore?
@@ -60,6 +64,8 @@ nonisolated final class UniversalRepCounter: RepCounter {
 
     // Tempo tracking for form score
     private var repStartTime: Date?
+    private var lastAngleSample: (angle: Double, timestamp: Date)?
+    private var peakAngularVelocityDuringRep: Double = 0
     private var repDurations: [TimeInterval] = []
 
     // Feedback accumulator for current rep
@@ -72,6 +78,8 @@ nonisolated final class UniversalRepCounter: RepCounter {
         let peakAngles: [String: Double]
         let formScore: FormScore
         let feedbackCount: Int
+        let activeSide: String?
+        let peakAngularVelocity: Double
     }
 
     // MARK: - Init
@@ -102,7 +110,7 @@ nonisolated final class UniversalRepCounter: RepCounter {
         personality: CoachPersonality = .good,
         formEngine: FormFeedbackEngine? = nil
     ) -> RepCounterOutput {
-        let angles: [String: Double]
+        var angles: [String: Double]
         if worldJoints.isEmpty {
             angles = AngleCalculator.computeAngles(
                 joints: joints,
@@ -125,9 +133,29 @@ nonisolated final class UniversalRepCounter: RepCounter {
                 for: definition
             )
         }
+        updateActiveSideCandidateAndAngles(&angles)
         let output = process(angles: angles)
 
         return output
+    }
+
+    private func updateActiveSideCandidateAndAngles(_ angles: inout [String: Double]) {
+        guard let primaryDef = definition.angles.first(where: { $0.key == definition.primaryAngleKey }),
+              primaryDef.side == .moreFlexed || primaryDef.side == .lessFlexed,
+              let bilateral = lastBilateralAngles[primaryDef.key]
+        else {
+            pendingActiveSide = nil
+            return
+        }
+
+        let preferSmaller = primaryDef.side == .moreFlexed
+        let selectedSide = lockedActiveSide ?? bilateral.selectedSide(preferSmaller: preferSmaller)
+        pendingActiveSide = selectedSide
+        lastActiveSide = selectedSide
+
+        if let selectedValue = bilateral.value(for: selectedSide) {
+            angles[primaryDef.key] = selectedValue
+        }
     }
 
     // MARK: - Process (Angle Dictionary)
@@ -145,6 +173,7 @@ nonisolated final class UniversalRepCounter: RepCounter {
         }
 
         lastPrimaryAngle = primaryAngle
+        updateVelocityTelemetry(primaryAngle)
 
         if definition.movementType == .isometric {
             return processIsometric(primaryAngle: primaryAngle, angles: smoothed)
@@ -184,6 +213,10 @@ nonisolated final class UniversalRepCounter: RepCounter {
                     extremeAngleDuringDown = primaryAngle
                     extremeAnglesDuringDown = angles
                     repStartTime = Date()
+                    lockedActiveSide = pendingActiveSide
+                    lastActiveSide = lockedActiveSide
+                    peakAngularVelocityDuringRep = 0
+                    lastPeakAngularVelocity = 0
                     currentRepFeedbackCount = 0
                     consecutiveDownFrames = 0
                 }
@@ -233,7 +266,9 @@ nonisolated final class UniversalRepCounter: RepCounter {
                             duration: duration,
                             peakAngles: extremeAnglesDuringDown,
                             formScore: completedFormScore,
-                            feedbackCount: currentRepFeedbackCount
+                            feedbackCount: currentRepFeedbackCount,
+                            activeSide: lockedActiveSide,
+                            peakAngularVelocity: peakAngularVelocityDuringRep
                         ))
                     }
 
@@ -251,6 +286,8 @@ nonisolated final class UniversalRepCounter: RepCounter {
                 upPhaseFramesRemaining -= 1
             } else {
                 currentPhase = .idle
+                lockedActiveSide = nil
+                lastActiveSide = nil
             }
         }
 
@@ -367,6 +404,21 @@ nonisolated final class UniversalRepCounter: RepCounter {
         }
     }
 
+    private func updateVelocityTelemetry(_ primaryAngle: Double) {
+        let now = Date()
+        defer { lastAngleSample = (primaryAngle, now) }
+
+        guard let previous = lastAngleSample else { return }
+        let dt = now.timeIntervalSince(previous.timestamp)
+        guard dt > 0.001 else { return }
+
+        let velocity = abs(primaryAngle - previous.angle) / dt
+        if currentPhase == .down {
+            peakAngularVelocityDuringRep = max(peakAngularVelocityDuringRep, velocity)
+            lastPeakAngularVelocity = peakAngularVelocityDuringRep
+        }
+    }
+
     private func checkQuality() -> CoachCue? {
         if let lastCue = lastQualityCueTime {
             guard Date().timeIntervalSince(lastCue) > qualityCueCooldown else { return nil }
@@ -470,12 +522,18 @@ nonisolated final class UniversalRepCounter: RepCounter {
         lastPrimaryAngle = nil
         lastAngles = [:]
         lastBilateralAngles = [:]
+        lastActiveSide = nil
+        pendingActiveSide = nil
+        lockedActiveSide = nil
         emaAngles = [:]
         consecutiveDownFrames = 0
         consecutiveUpFrames = 0
         upPhaseFramesRemaining = 0
         lastRepTime = nil
         repStartTime = nil
+        lastAngleSample = nil
+        peakAngularVelocityDuringRep = 0
+        lastPeakAngularVelocity = 0
         repDurations = []
         currentRepFeedbackCount = 0
         lastFormScore = nil

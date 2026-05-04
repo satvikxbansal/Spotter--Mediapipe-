@@ -1,6 +1,17 @@
 import Foundation
 import simd
 
+private extension AngleDefinition {
+    var supportsBilateralTelemetry: Bool {
+        switch side {
+        case .both, .bestAvailable, .moreFlexed, .lessFlexed:
+            return true
+        case .left, .right:
+            return false
+        }
+    }
+}
+
 // ────────────────────────────────────────────────────────────────────
 // MARK: - AngleCalculator
 // ────────────────────────────────────────────────────────────────────
@@ -367,9 +378,30 @@ nonisolated enum AngleCalculator {
             guard let l = left, let r = right else { return nil }
             return abs(l - r)
         }
+
+        func value(for side: String?) -> Double? {
+            switch side {
+            case "left": return left
+            case "right": return right
+            default: return nil
+            }
+        }
+
+        func selectedSide(preferSmaller: Bool) -> String? {
+            switch (left, right) {
+            case let (l?, r?):
+                return preferSmaller ? (l <= r ? "left" : "right") : (l >= r ? "left" : "right")
+            case (_?, nil):
+                return "left"
+            case (nil, _?):
+                return "right"
+            case (nil, nil):
+                return nil
+            }
+        }
     }
 
-    /// For each `.both` or `.bestAvailable` angle definition, returns
+    /// For each multi-side angle definition, returns
     /// separate left/right measurements (instead of the averaged value).
     static func computeBilateralAngles(
         joints: [JointName: CGPoint],
@@ -377,7 +409,7 @@ nonisolated enum AngleCalculator {
     ) -> [String: BilateralAngle] {
         var result: [String: BilateralAngle] = [:]
         for angleDef in definition.angles {
-            guard angleDef.side == .both || angleDef.side == .bestAvailable else { continue }
+            guard angleDef.supportsBilateralTelemetry else { continue }
             let left = resolveAndMeasure(angleDef, joints: joints, side: "left")
             let right = resolveAndMeasure(angleDef, joints: joints, side: "right")
             result[angleDef.key] = BilateralAngle(left: left, right: right)
@@ -393,7 +425,7 @@ nonisolated enum AngleCalculator {
     ) -> [String: BilateralAngle] {
         var result: [String: BilateralAngle] = [:]
         for angleDef in definition.angles {
-            guard angleDef.side == .both || angleDef.side == .bestAvailable else { continue }
+            guard angleDef.supportsBilateralTelemetry else { continue }
             let left3D = resolveAndMeasure3D(angleDef, joints: joints3D, side: "left")
             let right3D = resolveAndMeasure3D(angleDef, joints: joints3D, side: "right")
             let left = left3D ?? resolveAndMeasure(angleDef, joints: joints2D, side: "left")
@@ -725,6 +757,20 @@ nonisolated enum AngleCalculator {
         return (start + mid + end) / 3.0
     }
 
+    static func minimumVisibility(
+        for def: AngleDefinition,
+        side: String,
+        jointVisibility: [JointName: Float]
+    ) -> Float? {
+        guard let triple = resolveJointTriple(for: def, side: side),
+              let start = jointVisibility[triple.start],
+              let mid = jointVisibility[triple.mid],
+              let end = jointVisibility[triple.end]
+        else { return nil }
+
+        return min(start, mid, end)
+    }
+
     // ────────────────────────────────────────────────────────────────
     // MARK: - Positional Checks
     // ────────────────────────────────────────────────────────────────
@@ -775,6 +821,30 @@ nonisolated enum AngleCalculator {
 
         case .hipRotationStability:
             return evaluateHipRotationStability(check, joints3D: joints3D)
+        case .stanceWidth:
+            return evaluateStanceWidth(check, joints2D: joints2D)
+        case .kneeOverFootLine:
+            return evaluateKneeOverFootLine(check, joints2D: joints2D)
+        case .kneeOverAnkle:
+            return evaluateKneeOverAnkle(check, joints2D: joints2D)
+        case .hipBetweenKnees:
+            return evaluateHipBetweenKnees(check, joints2D: joints2D)
+        case .hipHeightRelativeToLine:
+            return evaluateHipHeightRelativeToLine(check, joints2D: joints2D)
+        case .pelvisLevel:
+            return evaluatePelvisLevel(check, joints2D: joints2D)
+        case .shoulderOverSupport:
+            return evaluateShoulderOverSupport(check, joints2D: joints2D)
+        case .footPlanted:
+            return evaluateFootPlanted(check, joints2D: joints2D)
+        case .trunkLean:
+            return evaluateTrunkLean(check, joints2D: joints2D)
+        case .wristOverElbow:
+            return evaluateWristOverElbow(check, joints2D: joints2D)
+        case .controlledLower, .pauseAtTop:
+            // Temporal checks are sourced from rep telemetry rather than a
+            // stateless landmark snapshot.
+            return nil
         }
     }
 
@@ -923,5 +993,189 @@ nonisolated enum AngleCalculator {
         let violated = acuteDegrees > (check.threshold ?? 15)
 
         return PositionalCheckResult(key: check.id, violated: violated, value: acuteDegrees)
+    }
+
+    private static func evaluateStanceWidth(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        guard let lAnkle = joints2D[.leftAnkle], let rAnkle = joints2D[.rightAnkle],
+              let lHip = joints2D[.leftHip], let rHip = joints2D[.rightHip] else { return nil }
+
+        let hipWidth = abs(lHip.x - rHip.x)
+        guard hipWidth > 0.01 else { return nil }
+        let ratio = abs(lAnkle.x - rAnkle.x) / hipWidth
+        let violated = ratio < (check.threshold ?? 1.4)
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(ratio))
+    }
+
+    private static func evaluateKneeOverFootLine(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        guard let lHip = joints2D[.leftHip], let rHip = joints2D[.rightHip],
+              let lKnee = joints2D[.leftKnee], let rKnee = joints2D[.rightKnee],
+              let lFoot = joints2D[.leftFootIndex] ?? joints2D[.leftAnkle],
+              let rFoot = joints2D[.rightFootIndex] ?? joints2D[.rightAnkle] else { return nil }
+
+        let hipWidth = abs(lHip.x - rHip.x)
+        guard hipWidth > 0.01 else { return nil }
+        let leftDrift = abs(lKnee.x - lFoot.x) / hipWidth
+        let rightDrift = abs(rKnee.x - rFoot.x) / hipWidth
+        let maxDrift = max(leftDrift, rightDrift)
+        let violated = maxDrift > (check.threshold ?? 0.35)
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(maxDrift))
+    }
+
+    private static func evaluateKneeOverAnkle(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        guard let lKnee = joints2D[.leftKnee], let rKnee = joints2D[.rightKnee],
+              let lAnkle = joints2D[.leftAnkle], let rAnkle = joints2D[.rightAnkle],
+              let lHip = joints2D[.leftHip], let rHip = joints2D[.rightHip] else { return nil }
+
+        let leftLeg = distance(lHip, lAnkle)
+        let rightLeg = distance(rHip, rAnkle)
+        let scale = max(max(leftLeg, rightLeg), 0.01)
+        let leftDrift = abs(lKnee.x - lAnkle.x) / scale
+        let rightDrift = abs(rKnee.x - rAnkle.x) / scale
+        let leftKneeAngle = angle(start: lHip, mid: lKnee, end: lAnkle)
+        let rightKneeAngle = angle(start: rHip, mid: rKnee, end: rAnkle)
+        let drift: CGFloat
+        if abs(leftKneeAngle - rightKneeAngle) < 8 {
+            drift = max(leftDrift, rightDrift)
+        } else {
+            drift = leftKneeAngle < rightKneeAngle ? leftDrift : rightDrift
+        }
+        let violated = drift > (check.threshold ?? 0.18)
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(drift))
+    }
+
+    private static func evaluateHipBetweenKnees(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        guard let root = joints2D[.root],
+              let lKnee = joints2D[.leftKnee], let rKnee = joints2D[.rightKnee] else { return nil }
+
+        let minX = min(lKnee.x, rKnee.x)
+        let maxX = max(lKnee.x, rKnee.x)
+        let kneeWidth = max(maxX - minX, 0.01)
+        let outside = max(minX - root.x, root.x - maxX, 0) / kneeWidth
+        let violated = outside > (check.threshold ?? 0.08)
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(outside))
+    }
+
+    private static func evaluateHipHeightRelativeToLine(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        guard let hip = joints2D[.root],
+              let shoulder = joints2D[.neck] ?? midpoint(joints2D[.leftShoulder], joints2D[.rightShoulder]),
+              let knee = midpoint(joints2D[.leftKnee], joints2D[.rightKnee]) else { return nil }
+
+        let lineLength = max(distance(shoulder, knee), 0.01)
+        let normalizedDistance = perpendicularDistance(from: hip, toLineStart: shoulder, end: knee) / lineLength
+        let violated = normalizedDistance > (check.threshold ?? 0.12)
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(normalizedDistance))
+    }
+
+    private static func evaluatePelvisLevel(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        guard let lHip = joints2D[.leftHip], let rHip = joints2D[.rightHip] else { return nil }
+
+        let shoulderWidth: CGFloat
+        if let lShoulder = joints2D[.leftShoulder], let rShoulder = joints2D[.rightShoulder] {
+            shoulderWidth = abs(lShoulder.x - rShoulder.x)
+        } else {
+            shoulderWidth = 0
+        }
+        let shoulderCenterY = (joints2D[.neck] ?? midpoint(joints2D[.leftShoulder], joints2D[.rightShoulder]))?.y ?? lHip.y
+        let hipCenterY = (joints2D[.root] ?? midpoint(lHip, rHip))?.y ?? rHip.y
+        let torsoHeight = abs(shoulderCenterY - hipCenterY)
+        let scale = max(max(abs(lHip.x - rHip.x), shoulderWidth), max(torsoHeight * 0.5, 0.12))
+        let normalizedDrop = abs(lHip.y - rHip.y) / scale
+        let violated = normalizedDrop > (check.threshold ?? 0.12)
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(normalizedDrop))
+    }
+
+    private static func evaluateShoulderOverSupport(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        guard let shoulder = joints2D[.neck] ?? midpoint(joints2D[.leftShoulder], joints2D[.rightShoulder]) else { return nil }
+        let support = midpoint(joints2D[.leftWrist], joints2D[.rightWrist])
+            ?? midpoint(joints2D[.leftElbow], joints2D[.rightElbow])
+        guard let support else { return nil }
+
+        let drift = abs(shoulder.x - support.x)
+        let violated = drift > (check.threshold ?? 0.08)
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(drift))
+    }
+
+    private static func evaluateFootPlanted(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        let leftSpan = footSpan(heel: joints2D[.leftHeel], toe: joints2D[.leftFootIndex])
+        let rightSpan = footSpan(heel: joints2D[.rightHeel], toe: joints2D[.rightFootIndex])
+        guard leftSpan > 0 || rightSpan > 0 else { return nil }
+
+        let maxSpan = max(leftSpan, rightSpan)
+        let violated = maxSpan < (check.threshold ?? 0.025)
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(maxSpan))
+    }
+
+    private static func evaluateTrunkLean(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        guard let shoulder = joints2D[.neck] ?? midpoint(joints2D[.leftShoulder], joints2D[.rightShoulder]),
+              let hip = joints2D[.root] ?? midpoint(joints2D[.leftHip], joints2D[.rightHip]) else { return nil }
+
+        let vertical = max(abs(shoulder.y - hip.y), 0.01)
+        let leanRatio = abs(shoulder.x - hip.x) / vertical
+        let violated = leanRatio > (check.threshold ?? 0.25)
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(leanRatio))
+    }
+
+    private static func evaluateWristOverElbow(
+        _ check: PositionalCheck,
+        joints2D: [JointName: CGPoint]
+    ) -> PositionalCheckResult? {
+        guard let lWrist = joints2D[.leftWrist], let rWrist = joints2D[.rightWrist],
+              let lElbow = joints2D[.leftElbow], let rElbow = joints2D[.rightElbow],
+              let lShoulder = joints2D[.leftShoulder], let rShoulder = joints2D[.rightShoulder] else { return nil }
+
+        let shoulderWidth = max(abs(lShoulder.x - rShoulder.x), 0.01)
+        let leftDrift = abs(lWrist.x - lElbow.x) / shoulderWidth
+        let rightDrift = abs(rWrist.x - rElbow.x) / shoulderWidth
+        let maxDrift = max(leftDrift, rightDrift)
+        let violated = maxDrift > (check.threshold ?? 0.35)
+        return PositionalCheckResult(key: check.id, violated: violated, value: Double(maxDrift))
+    }
+
+    private static func midpoint(_ a: CGPoint?, _ b: CGPoint?) -> CGPoint? {
+        guard let a, let b else { return nil }
+        return CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+    }
+
+    private static func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        hypot(a.x - b.x, a.y - b.y)
+    }
+
+    private static func perpendicularDistance(from point: CGPoint, toLineStart start: CGPoint, end: CGPoint) -> CGFloat {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let denominator = max(hypot(dx, dy), 0.0001)
+        return abs(dy * point.x - dx * point.y + end.x * start.y - end.y * start.x) / denominator
+    }
+
+    private static func footSpan(heel: CGPoint?, toe: CGPoint?) -> CGFloat {
+        guard let heel, let toe else { return 0 }
+        return distance(heel, toe)
     }
 }
