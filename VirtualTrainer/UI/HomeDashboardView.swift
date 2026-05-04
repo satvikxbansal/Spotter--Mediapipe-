@@ -5,6 +5,7 @@ import SwiftUI
 // ────────────────────────────────────────────────────────────────────
 
 struct HomeDashboardView: View {
+    @EnvironmentObject private var onboardingStore: OnboardingStore
 
     // MARK: - Splash Animation State
 
@@ -183,7 +184,7 @@ struct HomeDashboardView: View {
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
 
-                    Text("Hey, \(UserProfile.firstName)")
+                    Text("Hey, \(onboardingStore.profile?.firstName ?? "Athlete")")
                         .font(.system(size: 28, weight: .heavy))
                         .tracking(-0.5)
                         .foregroundStyle(Theme.Colors.textPrimary)
@@ -564,4 +565,5 @@ private struct CardPressStyle: ButtonStyle {
 
 #Preview {
     HomeDashboardView()
+        .environmentObject(OnboardingStore())
 }

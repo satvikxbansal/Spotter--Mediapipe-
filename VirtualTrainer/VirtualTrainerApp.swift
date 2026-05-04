@@ -8,9 +8,18 @@ import SwiftUI
 
 @main
 struct VirtualTrainerApp: App {
+    @StateObject private var onboardingStore = OnboardingStore()
+
     var body: some Scene {
         WindowGroup {
-            HomeDashboardView()
+            Group {
+                if onboardingStore.hasCompletedOnboarding {
+                    MainTabView()
+                } else {
+                    OnboardingFlowView()
+                }
+            }
+            .environmentObject(onboardingStore)
         }
     }
 }
