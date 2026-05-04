@@ -24,7 +24,7 @@ nonisolated final class ElevenLabsService: Sendable {
 
     /// Replace with your actual ElevenLabs API key.
     /// In production, load from Keychain or a secure config — never ship in source.
-    private let apiKey = "sk_78ebb615180b759740ad51b08e8a950b3b9dfee9e0e90935"
+    private let apiKey = "your_api_key_here"
 
     /// Turbo v2 gives the lowest latency for real-time coaching.
     private let modelID = "eleven_turbo_v2_5"

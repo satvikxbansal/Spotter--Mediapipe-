@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import simd
 
 // ────────────────────────────────────────────────────────────────────
@@ -15,8 +16,10 @@ import simd
 ///   5. Ready-check overlay (positioning → thumbs up → countdown)
 struct TrainerSessionView: View {
 
-    let workout: WorkoutPlan
-    var coachPersonality: CoachPersonality = .good
+    @Environment(\.dismiss) private var dismiss
+
+    private let context: LiveSessionContext
+    private let onFreeAnalysisEnded: ((FreeAnalysisSummary) -> Void)?
 
     @StateObject private var cameraManager = CameraManager()
     @StateObject private var poseEstimator = PoseEstimator()
@@ -37,6 +40,9 @@ struct TrainerSessionView: View {
     @State private var holdDuration: TimeInterval = 0
     @State private var isHolding: Bool = false
     @State private var lastFormScore: FormScore?
+    @State private var sessionStartedAt: Date?
+    @State private var elapsedSeconds: TimeInterval = 0
+    @State private var peakEffort: Double = 0
     @State private var visibilityResult = BodyVisibilityChecker.Result(
         isReady: false,
         visibility: 0,
@@ -46,8 +52,28 @@ struct TrainerSessionView: View {
 
     private let formEngine = FormFeedbackEngine()
 
+    init(workout: WorkoutPlan, coachPersonality: CoachPersonality = .good) {
+        self.context = LiveSessionContext.plannedWorkout(
+            workout: workout,
+            coach: coachPersonality
+        )
+        self.onFreeAnalysisEnded = nil
+    }
+
+    init(
+        context: LiveSessionContext,
+        onFreeAnalysisEnded: ((FreeAnalysisSummary) -> Void)? = nil
+    ) {
+        self.context = context
+        self.onFreeAnalysisEnded = onFreeAnalysisEnded
+    }
+
+    private var coachPersonality: CoachPersonality {
+        context.coach
+    }
+
     private var exerciseType: ExerciseType {
-        workout.exercises.first?.exerciseType ?? .squat
+        context.exerciseType
     }
 
     private var exerciseDefinition: ExerciseDefinition {
@@ -83,9 +109,13 @@ struct TrainerSessionView: View {
         .preferredColorScheme(.dark)
         .statusBarHidden()
         .onAppear {
+            sessionStartedAt = Date()
             repCounter = UniversalRepCounter(exerciseType: exerciseType)
             motivationEngine.personality = coachPersonality
             readyCoordinator.setPersonality(coachPersonality)
+            if context.startsActive {
+                readyCoordinator.activateImmediately()
+            }
 
             cameraManager.onFrame = { [weak poseEstimator, weak handGesture, weak faceLandmarker] sampleBuffer in
                 poseEstimator?.processFrame(sampleBuffer)
@@ -116,12 +146,11 @@ struct TrainerSessionView: View {
         }
         .onChange(of: poseEstimator.bodyJoints) {
             let joints = poseEstimator.bodyJoints
-            let exercise = workout.exercises.first?.exerciseType ?? .squat
 
             visibilityResult = BodyVisibilityChecker.evaluateFrame(
                 mask: poseEstimator.segmentationMask,
                 joints: joints,
-                for: exercise,
+                for: exerciseType,
                 personality: coachPersonality
             )
 
@@ -216,6 +245,12 @@ struct TrainerSessionView: View {
         .onChange(of: faceLandmarker.blendshapes) {
             guard readyCoordinator.state == .exerciseActive else { return }
             exertionAnalyzer.update(blendshapes: faceLandmarker.blendshapes)
+            peakEffort = max(peakEffort, exertionAnalyzer.effortScore)
+        }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
+            guard readyCoordinator.state == .exerciseActive,
+                  let sessionStartedAt else { return }
+            elapsedSeconds = now.timeIntervalSince(sessionStartedAt)
         }
     }
 
@@ -426,7 +461,12 @@ struct TrainerSessionView: View {
             HStack(alignment: .top) {
                 workoutTitleLabel
                 Spacer()
-                repCounterBadge
+                HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+                    if context.isFreeAnalysis {
+                        endFreeAnalysisButton
+                    }
+                    repCounterBadge
+                }
             }
             .padding(.top, 60)
             .padding(.horizontal, Theme.Spacing.lg)
@@ -452,6 +492,9 @@ struct TrainerSessionView: View {
 
                 if readyCoordinator.state == .exerciseActive {
                     HStack(spacing: Theme.Spacing.sm) {
+                        if context.isFreeAnalysis {
+                            elapsedTimeBadge
+                        }
                         if let angle = debugAngle {
                             debugAngleBadge(angle)
                         }
@@ -477,7 +520,7 @@ struct TrainerSessionView: View {
 
     private var workoutTitleLabel: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-            Text(workout.title.uppercased())
+            Text(context.title.uppercased())
                 .font(.system(size: 14, weight: .heavy))
                 .tracking(1.5)
                 .foregroundStyle(Theme.Colors.accent)
@@ -488,9 +531,37 @@ struct TrainerSessionView: View {
                     y: dropShadow.y
                 )
 
+            if context.isFreeAnalysis {
+                Text("Free analysis")
+                    .font(.system(size: 11, weight: .heavy))
+                    .tracking(1.0)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            } else if let setIndex = context.setIndex,
+                      let totalSets = context.totalSets {
+                Text("Set \(setIndex + 1) of \(totalSets)")
+                    .font(.system(size: 11, weight: .heavy))
+                    .tracking(1.0)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            }
+
             if exerciseDefinition.cameraPosition == .side {
                 activeSideViewBanner
             }
+        }
+    }
+
+    private var endFreeAnalysisButton: some View {
+        Button {
+            endFreeAnalysis()
+        } label: {
+            Text("Done")
+                .font(.system(size: 12, weight: .heavy))
+                .tracking(0.8)
+                .foregroundStyle(Theme.Colors.background)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Theme.Colors.accent)
+                .clipShape(Capsule())
         }
     }
 
@@ -541,8 +612,8 @@ struct TrainerSessionView: View {
     }
 
     private var holdTargetSeconds: Double {
-        guard let target = workout.exercises.first else { return 60 }
-        return Double(target.targetReps)
+        guard case .seconds(let seconds) = context.target else { return 0 }
+        return Double(seconds)
     }
 
     private var holdProgress: Double {
@@ -561,14 +632,16 @@ struct TrainerSessionView: View {
                     )
 
                 // Progress arc
-                Circle()
-                    .trim(from: 0, to: holdProgress)
-                    .stroke(
-                        isHolding ? Theme.Colors.accent : Theme.Colors.textSecondary.opacity(0.5),
-                        style: StrokeStyle(lineWidth: 6, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 0.25), value: holdProgress)
+                if holdTargetSeconds > 0 {
+                    Circle()
+                        .trim(from: 0, to: holdProgress)
+                        .stroke(
+                            isHolding ? Theme.Colors.accent : Theme.Colors.textSecondary.opacity(0.5),
+                            style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                        .animation(.linear(duration: 0.25), value: holdProgress)
+                }
 
                 // Timer digits
                 Text(holdTimerText)
@@ -597,6 +670,27 @@ struct TrainerSessionView: View {
                 )
                 .animation(.easeInOut(duration: 0.2), value: isHolding)
         }
+    }
+
+    private var elapsedTimeBadge: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "timer")
+                .font(.system(size: 10, weight: .bold))
+            Text(elapsedTimeText)
+                .font(.system(size: 12, weight: .heavy, design: .monospaced))
+        }
+        .foregroundStyle(Theme.Colors.textSecondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(Color.black.opacity(0.5))
+        )
+    }
+
+    private var elapsedTimeText: String {
+        let seconds = max(Int(elapsedSeconds), 0)
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
     private var phaseLabel: some View {
@@ -808,6 +902,19 @@ struct TrainerSessionView: View {
                 ?? definition.angles.first { $0.key == "signedTrunkTwistAngle" }
                 ?? definition.angles.first
         }
+    }
+
+    private func endFreeAnalysis() {
+        let summary = FreeAnalysisSummary(
+            exerciseType: exerciseType,
+            duration: elapsedSeconds,
+            reps: repCount,
+            latestFormScore: lastFormScore,
+            peakEffort: peakEffort,
+            lastCue: coachCues.first
+        )
+        onFreeAnalysisEnded?(summary)
+        dismiss()
     }
 
     // MARK: - Debug Angle

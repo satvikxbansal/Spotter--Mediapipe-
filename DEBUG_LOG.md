@@ -250,3 +250,25 @@ Added `signedTrunkTwistAngle`, `trunkTwistMagnitude`, and `leanBackAngle` metric
 When adding a new `PositionalCheck.CheckType`, update every switch over `checkType`, including UI highlighting helpers, in the same change.
 
 **Pattern Tags:** #exercise-definitions #angle-math #form-feedback #tests
+
+---
+
+### [DL-012] Remove Unneeded Codable From Live Session Context
+**Date:** 2026-05-04  
+**Severity:** build-breaking  
+**Category:** swift-types  
+**File(s):** `VirtualTrainer/Models/LiveSessionContext.swift`
+
+**Error:**
+`Type 'LiveSessionContext' does not conform to protocol 'Decodable'` and `Type 'LiveSessionContext' does not conform to protocol 'Encodable'` because `CoachPersonality` did not conform to `Codable`.
+
+**Root Cause:**
+`LiveSessionContext` was introduced as transient runtime state for planned and free-analysis sessions, but it was marked `Codable`. Automatic Codable synthesis failed because the stored `coach: CoachPersonality` property was not Codable, and the context did not need persistence.
+
+**Fix Applied:**
+Removed `Codable` conformance from `SessionMode`, `SessionTarget`, and `LiveSessionContext`, keeping them as runtime-only `Equatable` values. Persisted onboarding/profile data remains in the dedicated Codable `UserProfile` model.
+
+**Prevention Rule:**
+Only mark new state models as `Codable` when they are actually persisted or serialized, and verify every stored property already conforms before relying on synthesized Codable.
+
+**Pattern Tags:** #swift-types #state-management #session-context #tests

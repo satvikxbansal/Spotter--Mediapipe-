@@ -212,6 +212,15 @@ final class WorkoutReadyCoordinator: ObservableObject {
         coachMessage = ""
     }
 
+    /// Bypass the pre-session flow after another surface has already
+    /// completed camera readiness.
+    func activateImmediately() {
+        countdownTimer?.invalidate()
+        countdownTimer = nil
+        coachMessage = ""
+        state = .exerciseActive
+    }
+
     // MARK: - State Transitions
 
     private func transitionTo(_ newState: WorkoutReadyState) {

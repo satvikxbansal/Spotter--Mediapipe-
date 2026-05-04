@@ -8,7 +8,7 @@ struct MainTabView: View {
                     Label("Dashboard", systemImage: "square.grid.2x2.fill")
                 }
 
-            CameraFreeAnalysisPlaceholderView()
+            CameraTabView()
                 .tabItem {
                     Label("Camera", systemImage: "camera.fill")
                 }
@@ -20,22 +20,6 @@ struct MainTabView: View {
         }
         .tint(Theme.Colors.accent)
         .preferredColorScheme(.dark)
-    }
-}
-
-private struct CameraFreeAnalysisPlaceholderView: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            Text("Camera")
-                .header(size: 36)
-            Text("Free analysis will reuse the live Spotter session pipeline in a later phase.")
-                .bodyText()
-                .foregroundStyle(Theme.Colors.textSecondary)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Theme.Spacing.lg)
-        .background(Theme.Colors.background)
     }
 }
 

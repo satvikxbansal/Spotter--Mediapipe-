@@ -1,0 +1,335 @@
+import SwiftUI
+
+struct CameraTabView: View {
+    @State private var summary: FreeAnalysisSummary?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                    Text("Camera")
+                        .header(size: 36)
+
+                    Text("Run an open-ended form check without plans, sets, or target reps.")
+                        .bodyText()
+                        .foregroundStyle(Theme.Colors.textSecondary)
+
+                    NavigationLink {
+                        FormCheckSelectionView { summary = $0 }
+                    } label: {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                            Image(systemName: "camera.viewfinder")
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(Theme.Colors.accent)
+                            Text("Form Check / Free Analysis")
+                                .font(.system(size: 22, weight: .heavy))
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Text("Select an exercise, pass readiness, then train until you tap Done.")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(Theme.Spacing.lg)
+                        .background(Theme.Colors.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer(minLength: Theme.Spacing.xxl)
+                }
+                .padding(Theme.Spacing.lg)
+            }
+            .background(Theme.Colors.background)
+            .navigationTitle("Camera")
+            .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $summary) { summary in
+                FreeAnalysisSummaryView(summary: summary)
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+            }
+        }
+    }
+}
+
+struct FormCheckSelectionView: View {
+    let onSummary: (FreeAnalysisSummary) -> Void
+    @EnvironmentObject private var onboardingStore: OnboardingStore
+    @State private var searchText = ""
+
+    var body: some View {
+        List {
+            Section {
+                TextField("Search exercises", text: $searchText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+            .listRowBackground(Theme.Colors.surface)
+
+            ForEach(BodyCategory.allCases) { category in
+                let exercises = filteredExercises(in: category)
+                if !exercises.isEmpty {
+                    Section(category.freeAnalysisTitle) {
+                        ForEach(exercises) { option in
+                            if let exerciseType = option.type {
+                                NavigationLink {
+                                    CameraReadinessView(
+                                        exerciseType: exerciseType,
+                                        coach: onboardingStore.profile?.preferredCoach.coachPersonality ?? .good,
+                                        onSummary: onSummary
+                                    )
+                                } label: {
+                                    VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
+                                        Text(option.name)
+                                            .font(.system(size: 16, weight: .bold))
+                                        Text(exerciseType.visibilityHint)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(Theme.Colors.textSecondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .listRowBackground(Theme.Colors.surface)
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.Colors.background)
+        .navigationTitle("Select Exercise")
+    }
+
+    private func filteredExercises(in category: BodyCategory) -> [ExerciseOption] {
+        let options = category.exercises.filter(\.available)
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return options }
+        return options.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+}
+
+struct CameraReadinessView: View {
+    let exerciseType: ExerciseType
+    let coach: CoachPersonality
+    let onSummary: (FreeAnalysisSummary) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var cameraManager = CameraManager()
+    @StateObject private var poseEstimator = PoseEstimator()
+    @StateObject private var handGesture = HandGestureDetector()
+    @StateObject private var readyCoordinator = WorkoutReadyCoordinator()
+
+    @State private var visibilityResult = BodyVisibilityChecker.Result(
+        isReady: false,
+        visibility: 0,
+        message: "Step into the frame so the camera can see you",
+        missingJoints: []
+    )
+    @State private var activeContext: LiveSessionContext?
+
+    private var exerciseDefinition: ExerciseDefinition {
+        exerciseType.definition ?? ExerciseLibrary.squats
+    }
+
+    var body: some View {
+        ZStack {
+            CameraPreviewView(session: cameraManager.session)
+                .ignoresSafeArea()
+
+            TrainerOverlayView(
+                bodyJoints: poseEstimator.overlayBodyJoints,
+                allHandLandmarks: handGesture.allHandLandmarks,
+                imageAspectRatio: poseEstimator.imageAspectRatio
+            )
+            .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                readinessHeader
+                Spacer()
+                readinessCard
+            }
+            .padding(Theme.Spacing.lg)
+        }
+        .preferredColorScheme(.dark)
+        .navigationTitle("Readiness")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            readyCoordinator.setPersonality(coach)
+            cameraManager.onFrame = { [weak poseEstimator, weak handGesture] sampleBuffer in
+                poseEstimator?.processFrame(sampleBuffer)
+                handGesture?.processFrame(sampleBuffer)
+            }
+            cameraManager.start()
+        }
+        .onDisappear {
+            cameraManager.stop()
+            handGesture.reset()
+            readyCoordinator.reset()
+        }
+        .onChange(of: poseEstimator.bodyJoints) {
+            visibilityResult = BodyVisibilityChecker.evaluateFrame(
+                mask: poseEstimator.segmentationMask,
+                joints: poseEstimator.bodyJoints,
+                for: exerciseType,
+                personality: coach
+            )
+
+            if visibilityResult.isReady {
+                readyCoordinator.bodyIsVisible()
+            } else {
+                readyCoordinator.bodyLost()
+            }
+        }
+        .onChange(of: handGesture.currentGesture) {
+            switch handGesture.currentGesture {
+            case .thumbsUp:
+                readyCoordinator.thumbsUpDetected()
+            case .thumbsDown:
+                readyCoordinator.thumbsDownDetected()
+            default:
+                break
+            }
+        }
+        .fullScreenCover(item: $activeContext) { context in
+            TrainerSessionView(context: context) { summary in
+                activeContext = nil
+                onSummary(summary)
+                dismiss()
+            }
+        }
+    }
+
+    private var readinessHeader: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            Text(exerciseType.displayName.uppercased())
+                .font(.system(size: 13, weight: .heavy))
+                .tracking(1.4)
+                .foregroundStyle(Theme.Colors.accent)
+            Text("Get camera ready")
+                .header(size: 32)
+            Text(exerciseDefinition.setupInstruction)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Theme.Colors.textSecondary)
+        }
+        .padding(Theme.Spacing.md)
+        .background(Color.black.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+    }
+
+    private var readinessCard: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
+                    Text(cameraOrientationText)
+                        .font(.system(size: 12, weight: .heavy))
+                        .tracking(1.2)
+                        .foregroundStyle(Theme.Colors.accent)
+                    Text(readyCoordinator.state.displayMessage)
+                        .font(.system(size: 24, weight: .heavy))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                }
+                Spacer()
+                Text("\(Int(visibilityResult.visibility * 100))%")
+                    .font(.system(size: 20, weight: .black, design: .rounded))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+            }
+
+            ProgressView(value: visibilityResult.visibility)
+                .tint(Theme.Colors.accent)
+
+            if let message = visibilityResult.message {
+                Text(message)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            }
+
+            if readyCoordinator.state == .askingReady {
+                Text("Thumbs up to start, thumbs down if you need more time.")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+            }
+
+            Button(readyCoordinator.state == .exerciseActive ? "Start free analysis" : "Skip readiness for debug") {
+                startSession()
+            }
+            .buttonStyle(PrimaryCTAStyle())
+        }
+        .padding(Theme.Spacing.md)
+        .background(Color.black.opacity(0.7))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+    }
+
+    private var cameraOrientationText: String {
+        switch exerciseDefinition.cameraPosition {
+        case .front:
+            "FRONT VIEW"
+        case .side:
+            "SIDE VIEW REQUIRED"
+        }
+    }
+
+    private func startSession() {
+        cameraManager.stop()
+        activeContext = LiveSessionContext.freeAnalysis(
+            exerciseType: exerciseType,
+            coach: coach,
+            startsActive: true
+        )
+    }
+}
+
+struct FreeAnalysisSummaryView: View {
+    let summary: FreeAnalysisSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            Text("Free Analysis Summary")
+                .header(size: 28)
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                SummaryRow(label: "Exercise", value: summary.exerciseType.displayName)
+                SummaryRow(label: "Duration", value: summary.durationText)
+                SummaryRow(label: "Reps", value: "\(summary.reps)")
+                SummaryRow(label: "Form", value: summary.latestFormScore.map { "\($0.grade.rawValue) \($0.score)" } ?? "No completed rep yet")
+                SummaryRow(label: "Peak effort", value: "\(Int(summary.peakEffort * 100))%")
+                SummaryRow(label: "Last cue", value: summary.lastCue?.message ?? "None")
+            }
+
+            Spacer()
+        }
+        .padding(Theme.Spacing.lg)
+        .background(Theme.Colors.background)
+        .preferredColorScheme(.dark)
+    }
+}
+
+private struct SummaryRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .top) {
+            Text(label.uppercased())
+                .caption()
+                .frame(width: 100, alignment: .leading)
+            Text(value)
+                .bodyText()
+            Spacer()
+        }
+        .padding(.vertical, Theme.Spacing.xs)
+    }
+}
+
+private extension BodyCategory {
+    var freeAnalysisTitle: String {
+        switch self {
+        case .upperBody: "Upper Body"
+        case .lowerBody: "Lower Body"
+        case .fullBody: "Full Body / Core"
+        case .yoga: "Yoga / Mobility"
+        }
+    }
+}
+
+#Preview {
+    CameraTabView()
+        .environmentObject(OnboardingStore())
+}
