@@ -520,8 +520,8 @@ struct TrainerSessionView: View {
 
     private var workoutTitleLabel: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-            Text(context.title.uppercased())
-                .font(.system(size: 14, weight: .heavy))
+            Text(sessionEyebrow.uppercased())
+                .font(.system(size: 12, weight: .heavy))
                 .tracking(1.5)
                 .foregroundStyle(Theme.Colors.accent)
                 .shadow(
@@ -531,22 +531,65 @@ struct TrainerSessionView: View {
                     y: dropShadow.y
                 )
 
-            if context.isFreeAnalysis {
-                Text("Free analysis")
+            Text(exerciseType.displayName.uppercased())
+                .font(.system(size: 24, weight: .heavy))
+                .tracking(0.2)
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .shadow(
+                    color: dropShadow.color,
+                    radius: dropShadow.radius,
+                    x: dropShadow.x,
+                    y: dropShadow.y
+                )
+
+            if let sessionDetailText {
+                Text(sessionDetailText)
                     .font(.system(size: 11, weight: .heavy))
                     .tracking(1.0)
                     .foregroundStyle(Theme.Colors.textSecondary)
-            } else if let setIndex = context.setIndex,
-                      let totalSets = context.totalSets {
-                Text("Set \(setIndex + 1) of \(totalSets)")
-                    .font(.system(size: 11, weight: .heavy))
-                    .tracking(1.0)
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .shadow(
+                        color: dropShadow.color,
+                        radius: dropShadow.radius,
+                        x: dropShadow.x,
+                        y: dropShadow.y
+                    )
             }
 
             if exerciseDefinition.cameraPosition == .side {
                 activeSideViewBanner
             }
+        }
+    }
+
+    private var sessionEyebrow: String {
+        context.isFreeAnalysis ? "Free analysis" : context.title
+    }
+
+    private var sessionDetailText: String? {
+        if context.isFreeAnalysis {
+            return "Open practice"
+        }
+
+        var details: [String] = []
+        if let setIndex = context.setIndex,
+           let totalSets = context.totalSets {
+            details.append("Set \(setIndex + 1) of \(totalSets)")
+        }
+        if let targetText {
+            details.append(targetText)
+        }
+        return details.isEmpty ? nil : details.joined(separator: " • ")
+    }
+
+    private var targetText: String? {
+        guard let target = context.target else { return nil }
+        switch target {
+        case .open:
+            return "Open target"
+        case .reps(let reps):
+            return "\(reps) \(reps == 1 ? "rep" : "reps")"
+        case .seconds(let seconds):
+            return "\(max(seconds, 0)) sec"
         }
     }
 

@@ -272,3 +272,25 @@ Removed `Codable` conformance from `SessionMode`, `SessionTarget`, and `LiveSess
 Only mark new state models as `Codable` when they are actually persisted or serialized, and verify every stored property already conforms before relying on synthesized Codable.
 
 **Pattern Tags:** #swift-types #state-management #session-context #tests
+
+---
+
+### [DL-013] Show Current Exercise In Live Session HUD
+**Date:** 2026-05-05
+**Severity:** cosmetic
+**Category:** ui-layout
+**File(s):** `VirtualTrainer/UI/TrainerSessionView.swift`
+
+**Error:**
+Planned workout sessions showed the plan title in the camera HUD, but not the current exercise name, making it hard to remember which movement to perform after tapping Start Session.
+
+**Root Cause:**
+`TrainerSessionView.workoutTitleLabel` rendered `context.title` as the primary HUD label. For planned sessions, `LiveSessionContext` sets `context.title` to the plan title, while the active exercise is stored separately in `context.exerciseType`.
+
+**Fix Applied:**
+Updated `TrainerSessionView.workoutTitleLabel` so the smaller eyebrow shows the plan/mode label, the prominent HUD line shows `exerciseType.displayName`, and the secondary detail line shows free-practice status or planned set/target information.
+
+**Prevention Rule:**
+When live-session context contains both a plan title and an active exercise, always render the active exercise as the most prominent camera HUD label.
+
+**Pattern Tags:** #ui-layout #planned-workout #session-context #hud
