@@ -76,6 +76,11 @@ final class HandGestureDetector: NSObject, ObservableObject {
     private var handLandmarker: HandLandmarker?
     private var usingGestureRecognizer = false
     private var timestampMs: Int = 0
+    private var isProcessingFrame = false
+    private var activeFrameTimestampMs: Int?
+    private let stateLock = NSLock()
+    private let minimumFrameIntervalMs = 125
+    private let frameTimeoutSeconds: TimeInterval = 1.0
 
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "VirtualTrainer",
@@ -148,23 +153,41 @@ final class HandGestureDetector: NSObject, ObservableObject {
 
     func processFrame(_ sampleBuffer: CMSampleBuffer) {
         let currentTimestamp = sampleTimestampMilliseconds(sampleBuffer)
-        guard currentTimestamp > timestampMs else { return }
-        timestampMs = currentTimestamp
+        guard reserveFrame(timestampInMilliseconds: currentTimestamp) else { return }
 
-        guard let mpImage = try? MPImage(sampleBuffer: sampleBuffer) else { return }
+        guard let mpImage = try? MPImage(sampleBuffer: sampleBuffer) else {
+            completeFrame()
+            return
+        }
 
         do {
             if usingGestureRecognizer, let gr = gestureRecognizer {
-                try gr.recognizeAsync(image: mpImage, timestampInMilliseconds: timestampMs)
+                try gr.recognizeAsync(
+                    image: mpImage,
+                    timestampInMilliseconds: currentTimestamp
+                )
             } else if let hl = handLandmarker {
-                try hl.detectAsync(image: mpImage, timestampInMilliseconds: timestampMs)
+                try hl.detectAsync(
+                    image: mpImage,
+                    timestampInMilliseconds: currentTimestamp
+                )
+            } else {
+                completeFrame()
+                return
             }
         } catch {
+            completeFrame(timestampInMilliseconds: currentTimestamp)
             logger.error("Hand/gesture detection async failed: \(error.localizedDescription)")
         }
     }
 
     func reset() {
+        stateLock.lock()
+        timestampMs = 0
+        isProcessingFrame = false
+        activeFrameTimestampMs = nil
+        stateLock.unlock()
+
         candidateGesture = .none
         candidateCount = 0
         DispatchQueue.main.async { [weak self] in
@@ -358,6 +381,65 @@ final class HandGestureDetector: NSObject, ObservableObject {
         }
         return Int(Date().timeIntervalSince1970 * 1000)
     }
+
+    private func reserveFrame(timestampInMilliseconds currentTimestamp: Int) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        guard !isProcessingFrame else { return false }
+        guard currentTimestamp > timestampMs else { return false }
+        guard currentTimestamp - timestampMs >= minimumFrameIntervalMs else { return false }
+
+        isProcessingFrame = true
+        activeFrameTimestampMs = currentTimestamp
+        timestampMs = currentTimestamp
+        scheduleFrameTimeout(timestampInMilliseconds: currentTimestamp)
+        return true
+    }
+
+    private func completeFrame(timestampInMilliseconds completedTimestamp: Int? = nil) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        if let completedTimestamp,
+           activeFrameTimestampMs != completedTimestamp {
+            return
+        }
+
+        isProcessingFrame = false
+        activeFrameTimestampMs = nil
+    }
+
+    private func finishFrame(timestampInMilliseconds completedTimestamp: Int) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        guard activeFrameTimestampMs == completedTimestamp else { return false }
+        isProcessingFrame = false
+        activeFrameTimestampMs = nil
+        return true
+    }
+
+    private func scheduleFrameTimeout(timestampInMilliseconds submittedTimestamp: Int) {
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + frameTimeoutSeconds) { [weak self] in
+            self?.expireFrameIfNeeded(timestampInMilliseconds: submittedTimestamp)
+        }
+    }
+
+    private func expireFrameIfNeeded(timestampInMilliseconds expiredTimestamp: Int) {
+        stateLock.lock()
+        let didExpire = isProcessingFrame && activeFrameTimestampMs == expiredTimestamp
+        if didExpire {
+            isProcessingFrame = false
+            activeFrameTimestampMs = nil
+        }
+        stateLock.unlock()
+
+        if didExpire {
+            logger.warning("Hand detection timed out for frame \(expiredTimestamp); clearing stale hand overlay")
+            clearDetection()
+        }
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -371,6 +453,8 @@ extension HandGestureDetector: GestureRecognizerLiveStreamDelegate {
         timestampInMilliseconds: Int,
         error: Error?
     ) {
+        guard finishFrame(timestampInMilliseconds: timestampInMilliseconds) else { return }
+
         if let error {
             logger.error("Gesture recognizer error: \(error.localizedDescription)")
         }
@@ -389,6 +473,8 @@ extension HandGestureDetector: HandLandmarkerLiveStreamDelegate {
         timestampInMilliseconds: Int,
         error: Error?
     ) {
+        guard finishFrame(timestampInMilliseconds: timestampInMilliseconds) else { return }
+
         if let error {
             logger.error("Hand landmarker error: \(error.localizedDescription)")
         }

@@ -2,7 +2,7 @@ import Foundation
 import simd
 
 private extension AngleDefinition {
-    var supportsBilateralTelemetry: Bool {
+    nonisolated var supportsBilateralTelemetry: Bool {
         switch side {
         case .both, .bestAvailable, .moreFlexed, .lessFlexed:
             return true

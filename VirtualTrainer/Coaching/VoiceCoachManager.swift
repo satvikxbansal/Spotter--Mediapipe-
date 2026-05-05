@@ -19,6 +19,7 @@ final class VoiceCoachManager: ObservableObject {
 
     private let synthesizer = AVSpeechSynthesizer()
     private var repPhrases: [Int: AVSpeechUtterance] = [:]
+    private var lastCueSpokenAt: [String: Date] = [:]
 
     private init() {}
 
@@ -37,6 +38,13 @@ final class VoiceCoachManager: ObservableObject {
     }
 
     func playCue(_ cue: CoachCue, personality: CoachPersonality) {
+        let now = Date()
+        if let lastSpoken = lastCueSpokenAt[cue.message],
+           now.timeIntervalSince(lastSpoken) < cue.cooldownSeconds {
+            return
+        }
+
+        lastCueSpokenAt[cue.message] = now
         speak(makeUtterance(text: cue.message, personality: personality, kind: .cue), interrupts: cue.severity >= .warning)
     }
 

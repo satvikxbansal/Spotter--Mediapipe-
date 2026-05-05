@@ -39,6 +39,11 @@ final class FaceLandmarkerService: NSObject, ObservableObject {
 
     private var faceLandmarker: FaceLandmarker?
     private var timestampMs: Int = 0
+    private var isProcessingFrame = false
+    private var activeFrameTimestampMs: Int?
+    private let stateLock = NSLock()
+    private let minimumFrameIntervalMs = 250
+    private let frameTimeoutSeconds: TimeInterval = 1.0
 
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "VirtualTrainer",
@@ -86,17 +91,20 @@ final class FaceLandmarkerService: NSObject, ObservableObject {
         guard let faceLandmarker else { return }
 
         let currentTimestamp = sampleTimestampMilliseconds(sampleBuffer)
-        guard currentTimestamp > timestampMs else { return }
-        timestampMs = currentTimestamp
+        guard reserveFrame(timestampInMilliseconds: currentTimestamp) else { return }
 
-        guard let mpImage = try? MPImage(sampleBuffer: sampleBuffer) else { return }
+        guard let mpImage = try? MPImage(sampleBuffer: sampleBuffer) else {
+            completeFrame()
+            return
+        }
 
         do {
             try faceLandmarker.detectAsync(
                 image: mpImage,
-                timestampInMilliseconds: timestampMs
+                timestampInMilliseconds: currentTimestamp
             )
         } catch {
+            completeFrame(timestampInMilliseconds: currentTimestamp)
             logger.error("Face detection async failed: \(error.localizedDescription)")
         }
     }
@@ -137,6 +145,68 @@ final class FaceLandmarkerService: NSObject, ObservableObject {
         }
         return Int(Date().timeIntervalSince1970 * 1000)
     }
+
+    private func reserveFrame(timestampInMilliseconds currentTimestamp: Int) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        guard !isProcessingFrame else { return false }
+        guard currentTimestamp > timestampMs else { return false }
+        guard currentTimestamp - timestampMs >= minimumFrameIntervalMs else { return false }
+
+        isProcessingFrame = true
+        activeFrameTimestampMs = currentTimestamp
+        timestampMs = currentTimestamp
+        scheduleFrameTimeout(timestampInMilliseconds: currentTimestamp)
+        return true
+    }
+
+    private func completeFrame(timestampInMilliseconds completedTimestamp: Int? = nil) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        if let completedTimestamp,
+           activeFrameTimestampMs != completedTimestamp {
+            return
+        }
+
+        isProcessingFrame = false
+        activeFrameTimestampMs = nil
+    }
+
+    private func finishFrame(timestampInMilliseconds completedTimestamp: Int) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        guard activeFrameTimestampMs == completedTimestamp else { return false }
+        isProcessingFrame = false
+        activeFrameTimestampMs = nil
+        return true
+    }
+
+    private func scheduleFrameTimeout(timestampInMilliseconds submittedTimestamp: Int) {
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + frameTimeoutSeconds) { [weak self] in
+            self?.expireFrameIfNeeded(timestampInMilliseconds: submittedTimestamp)
+        }
+    }
+
+    private func expireFrameIfNeeded(timestampInMilliseconds expiredTimestamp: Int) {
+        stateLock.lock()
+        let didExpire = isProcessingFrame && activeFrameTimestampMs == expiredTimestamp
+        if didExpire {
+            isProcessingFrame = false
+            activeFrameTimestampMs = nil
+        }
+        stateLock.unlock()
+
+        if didExpire {
+            logger.warning("Face detection timed out for frame \(expiredTimestamp); clearing stale effort state")
+            DispatchQueue.main.async { [weak self] in
+                self?.blendshapes = [:]
+                self?.faceDetected = false
+            }
+        }
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -150,6 +220,8 @@ extension FaceLandmarkerService: FaceLandmarkerLiveStreamDelegate {
         timestampInMilliseconds: Int,
         error: Error?
     ) {
+        guard finishFrame(timestampInMilliseconds: timestampInMilliseconds) else { return }
+
         if let error {
             logger.error("Face landmarker error: \(error.localizedDescription)")
         }

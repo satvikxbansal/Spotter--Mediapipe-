@@ -75,6 +75,10 @@ final class PoseEstimator: NSObject, ObservableObject {
 
     private var poseLandmarker: PoseLandmarker?
     private var timestampMs: Int = 0
+    private var isProcessingFrame = false
+    private var activeFrameTimestampMs: Int?
+    private let stateLock = NSLock()
+    private let frameTimeoutSeconds: TimeInterval = 1.5
 
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "VirtualTrainer",
@@ -130,10 +134,10 @@ final class PoseEstimator: NSObject, ObservableObject {
         publishImageAspectRatio(from: sampleBuffer)
 
         let currentTimestamp = sampleTimestampMilliseconds(sampleBuffer)
-        guard currentTimestamp > timestampMs else { return }
-        timestampMs = currentTimestamp
+        guard reserveFrame(timestampInMilliseconds: currentTimestamp) else { return }
 
         guard let mpImage = try? MPImage(sampleBuffer: sampleBuffer) else {
+            completeFrame()
             logger.error("Failed to create MPImage from sample buffer")
             return
         }
@@ -141,9 +145,10 @@ final class PoseEstimator: NSObject, ObservableObject {
         do {
             try poseLandmarker.detectAsync(
                 image: mpImage,
-                timestampInMilliseconds: timestampMs
+                timestampInMilliseconds: currentTimestamp
             )
         } catch {
+            completeFrame(timestampInMilliseconds: currentTimestamp)
             logger.error("Pose detection async failed: \(error.localizedDescription)")
         }
     }
@@ -258,6 +263,76 @@ final class PoseEstimator: NSObject, ObservableObject {
         return Int(Date().timeIntervalSince1970 * 1000)
     }
 
+    private func reserveFrame(timestampInMilliseconds currentTimestamp: Int) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        guard !isProcessingFrame else { return false }
+        guard currentTimestamp > timestampMs else { return false }
+
+        isProcessingFrame = true
+        activeFrameTimestampMs = currentTimestamp
+        timestampMs = currentTimestamp
+        scheduleFrameTimeout(timestampInMilliseconds: currentTimestamp)
+        return true
+    }
+
+    private func completeFrame(timestampInMilliseconds completedTimestamp: Int? = nil) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        if let completedTimestamp,
+           activeFrameTimestampMs != completedTimestamp {
+            return
+        }
+
+        isProcessingFrame = false
+        activeFrameTimestampMs = nil
+    }
+
+    private func finishFrame(timestampInMilliseconds completedTimestamp: Int) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        guard activeFrameTimestampMs == completedTimestamp else { return false }
+        isProcessingFrame = false
+        activeFrameTimestampMs = nil
+        return true
+    }
+
+    private func scheduleFrameTimeout(timestampInMilliseconds submittedTimestamp: Int) {
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + frameTimeoutSeconds) { [weak self] in
+            self?.expireFrameIfNeeded(timestampInMilliseconds: submittedTimestamp)
+        }
+    }
+
+    private func expireFrameIfNeeded(timestampInMilliseconds expiredTimestamp: Int) {
+        stateLock.lock()
+        let didExpire = isProcessingFrame && activeFrameTimestampMs == expiredTimestamp
+        if didExpire {
+            isProcessingFrame = false
+            activeFrameTimestampMs = nil
+        }
+        stateLock.unlock()
+
+        if didExpire {
+            logger.warning("Pose detection timed out for frame \(expiredTimestamp); clearing stale pose overlay")
+            clearPoseDetection()
+        }
+    }
+
+    private func clearPoseDetection() {
+        DispatchQueue.main.async { [weak self] in
+            self?.bodyJoints = [:]
+            self?.jointVisibility = [:]
+            self?.overlayBodyJoints = [:]
+            self?.worldJoints = [:]
+            self?.confidence = 0
+            self?.segmentationMask = nil
+            self?.overlaySmoother.reset()
+        }
+    }
+
     private func publishImageAspectRatio(from sampleBuffer: CMSampleBuffer) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
@@ -285,6 +360,8 @@ extension PoseEstimator: PoseLandmarkerLiveStreamDelegate {
         timestampInMilliseconds: Int,
         error: Error?
     ) {
+        guard finishFrame(timestampInMilliseconds: timestampInMilliseconds) else { return }
+
         if let error {
             logger.error("Pose landmarker error: \(error.localizedDescription)")
         }
