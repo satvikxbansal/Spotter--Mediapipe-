@@ -173,22 +173,18 @@ struct CameraReadinessView: View {
             )
 
             if visibilityResult.isReady {
-                readyCoordinator.bodyIsVisible()
+                readyCoordinator.bodyIsVisible(currentGesture: handGesture.currentGesture)
             } else {
                 readyCoordinator.bodyLost()
             }
         }
         .onChange(of: handGesture.currentGesture) {
-            switch handGesture.currentGesture {
-            case .thumbsUp:
-                readyCoordinator.thumbsUpDetected()
-            case .thumbsDown:
-                readyCoordinator.thumbsDownDetected()
-            default:
-                break
-            }
+            readyCoordinator.handleGesture(handGesture.currentGesture)
         }
         .onChange(of: readyCoordinator.state) { _, state in
+            if state == .askingReady {
+                readyCoordinator.handleGesture(handGesture.currentGesture)
+            }
             if state == .exerciseActive {
                 startSession()
             }

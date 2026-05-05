@@ -31,4 +31,24 @@ final class WorkoutReadyCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.state, .positioning)
     }
+
+    func testHeldThumbsUpStartsCountdownWhenBodyBecomesVisible() {
+        let coordinator = WorkoutReadyCoordinator()
+
+        coordinator.bodyIsVisible(currentGesture: .thumbsUp)
+
+        guard case .countdown = coordinator.state else {
+            return XCTFail("Expected held thumbs up to start countdown")
+        }
+    }
+
+    func testHeldThumbsDownStartsRetryWhenBodyBecomesVisible() {
+        let coordinator = WorkoutReadyCoordinator()
+
+        coordinator.bodyIsVisible(currentGesture: .thumbsDown)
+
+        guard case .waitingToRetry = coordinator.state else {
+            return XCTFail("Expected held thumbs down to start retry wait")
+        }
+    }
 }

@@ -382,3 +382,25 @@ Added confidence gates for gesture recognition, preserved coach personality for 
 When adding or retiring a live pipeline component, update runtime code, scripts, docs, tests, and fallback behavior in the same pass.
 
 **Pattern Tags:** #gesture-detection #voice-coach #mediapipe #rep-counter #dependencies
+
+---
+
+### [DL-018] Recheck Gesture Ordering And Face Effort Staleness
+**Date:** 2026-05-05
+**Severity:** warning
+**Category:** state-management
+**File(s):** `VirtualTrainer/Coaching/WorkoutReadyCoordinator.swift`, `VirtualTrainer/UI/CameraTabView.swift`, `VirtualTrainer/UI/TrainerSessionView.swift`, `VirtualTrainerTests/WorkoutReadyCoordinatorTests.swift`
+
+**Error:**
+If a user held thumbs up before the readiness coordinator entered `askingReady`, the app could miss the gesture because the views only reacted to gesture value changes. Separately, if face detection disappeared after a high-effort frame, the current effort state could remain stale until blendshapes changed again.
+
+**Root Cause:**
+The readiness flow depended on event ordering between body visibility and gesture detection. The face-effort UI copied analyzer output into SwiftUI state, but only reset on blendshape updates, not on the explicit face-lost signal.
+
+**Fix Applied:**
+Centralized readiness gesture handling in `WorkoutReadyCoordinator.handleGesture(_:)`, passed the current gesture when the body first becomes visible, and rechecks the current gesture when the `askingReady` prompt appears. Reset the live effort score when `FaceLandmarkerService.faceDetected` becomes false. Added regression tests for held thumbs up/down as the body becomes visible.
+
+**Prevention Rule:**
+For live camera state machines, validate both value changes and ordering changes. A correct current value can still be missed if no new change event fires.
+
+**Pattern Tags:** #gesture-detection #emotion-detection #readiness #state-management #tests

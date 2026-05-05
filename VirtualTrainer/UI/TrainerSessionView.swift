@@ -139,6 +139,9 @@ struct TrainerSessionView: View {
             )
         }
         .onChange(of: readyCoordinator.state) { _, state in
+            if state == .askingReady {
+                readyCoordinator.handleGesture(handGesture.currentGesture)
+            }
             guard state == .exerciseActive, sessionStartedAt == nil else { return }
             sessionStartedAt = Date()
             elapsedSeconds = 0
@@ -164,7 +167,7 @@ struct TrainerSessionView: View {
 
             // Feed visibility into ready coordinator
             if visibilityResult.isReady {
-                readyCoordinator.bodyIsVisible()
+                readyCoordinator.bodyIsVisible(currentGesture: handGesture.currentGesture)
             } else {
                 readyCoordinator.bodyLost()
             }
@@ -241,20 +244,18 @@ struct TrainerSessionView: View {
             }
         }
         .onChange(of: handGesture.currentGesture) {
-            switch handGesture.currentGesture {
-            case .thumbsUp:
-                readyCoordinator.thumbsUpDetected()
-            case .thumbsDown:
-                readyCoordinator.thumbsDownDetected()
-            default:
-                break
-            }
+            readyCoordinator.handleGesture(handGesture.currentGesture)
         }
         .onChange(of: faceLandmarker.blendshapes) {
             guard readyCoordinator.state == .exerciseActive else { return }
             exertionAnalyzer.update(blendshapes: faceLandmarker.blendshapes)
             currentEffortScore = exertionAnalyzer.effortScore
             peakEffort = max(peakEffort, currentEffortScore)
+        }
+        .onChange(of: faceLandmarker.faceDetected) { _, detected in
+            guard !detected else { return }
+            exertionAnalyzer.reset()
+            currentEffortScore = 0
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
             guard readyCoordinator.state == .exerciseActive,

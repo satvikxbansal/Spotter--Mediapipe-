@@ -176,9 +176,10 @@ final class WorkoutReadyCoordinator: ObservableObject {
     // MARK: - Public API
 
     /// Call when the body becomes fully visible in camera.
-    func bodyIsVisible() {
+    func bodyIsVisible(currentGesture: HandGesture = .none) {
         guard state == .positioning else { return }
         transitionTo(.askingReady)
+        handleGesture(currentGesture)
     }
 
     /// Call when the body is no longer visible.
@@ -207,6 +208,20 @@ final class WorkoutReadyCoordinator: ObservableObject {
         guard state == .askingReady else { return }
         declineCount += 1
         startRetryWait()
+    }
+
+    /// Call when the current hand gesture should be evaluated against the
+    /// readiness prompt. Useful both when a gesture changes and when the prompt
+    /// first appears while the gesture is already being held.
+    func handleGesture(_ gesture: HandGesture) {
+        switch gesture {
+        case .thumbsUp:
+            thumbsUpDetected()
+        case .thumbsDown:
+            thumbsDownDetected()
+        default:
+            break
+        }
     }
 
     /// Update the coach personality (call before starting).
