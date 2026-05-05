@@ -32,7 +32,10 @@ struct HomeDashboardView: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(isPresented: $isShowingPlanPreview) {
                 if let previewPlan {
-                    WorkoutPreviewView(plan: previewPlan)
+                    WorkoutPreviewView(
+                        plan: previewPlan,
+                        profile: onboardingStore.profile
+                    )
                 }
             }
             .navigationDestination(isPresented: $isShowingFormCheckSelection) {

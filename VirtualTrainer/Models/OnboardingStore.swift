@@ -179,6 +179,19 @@ final class OnboardingStore: ObservableObject {
         }
     }
 
+    func updatePreferredCoach(_ coach: CoachPreference) {
+        guard var profile else {
+            persistenceError = "No profile exists yet."
+            return
+        }
+
+        guard profile.preferredCoach != coach else { return }
+
+        profile.preferredCoach = coach
+        profile.updatedAt = Date()
+        save(profile)
+    }
+
     private var canCompleteProfile: Bool {
         canContinue(from: .identity)
             && canContinue(from: .stats)

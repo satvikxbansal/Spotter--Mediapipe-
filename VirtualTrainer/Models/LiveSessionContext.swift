@@ -89,6 +89,53 @@ nonisolated struct LiveSessionContext: Identifiable, Equatable {
             coach: coach
         )
     }
+
+    static func plannedWorkout(
+        plan: WorkoutPlanV2,
+        exerciseIndex: Int = 0,
+        setIndex: Int = 0,
+        coach: CoachPersonality? = nil,
+        startsActive: Bool = false
+    ) -> LiveSessionContext? {
+        let exercises = plan.blocks.flatMap(\.exercises)
+        guard !exercises.isEmpty else { return nil }
+
+        let safeExerciseIndex = exercises.indices.contains(exerciseIndex) ? exerciseIndex : 0
+        let exercise = exercises[safeExerciseIndex]
+        let safeSetIndex = exercise.sets.indices.contains(setIndex) ? setIndex : 0
+        let plannedSet = exercise.sets.isEmpty ? nil : exercise.sets[safeSetIndex]
+
+        return LiveSessionContext(
+            mode: .plannedWorkout,
+            exerciseType: exercise.exerciseType,
+            target: plannedSet.map { SessionTarget(workoutTarget: $0.target) } ?? .open,
+            setIndex: plannedSet.map { _ in safeSetIndex },
+            totalSets: exercise.sets.isEmpty ? nil : exercise.sets.count,
+            planId: plan.id,
+            title: plan.title,
+            coach: coach ?? plan.coach,
+            startsActive: startsActive
+        )
+    }
+}
+
+nonisolated private extension SessionTarget {
+    init(workoutTarget: WorkoutTarget) {
+        switch workoutTarget {
+        case .reps(let reps):
+            self = .reps(reps)
+        case .hold(let seconds), .timed(let seconds):
+            self = .seconds(seconds)
+        case .amrap(let seconds):
+            if let seconds {
+                self = .seconds(seconds)
+            } else {
+                self = .open
+            }
+        case .open:
+            self = .open
+        }
+    }
 }
 
 nonisolated struct FreeAnalysisSummary: Identifiable {

@@ -475,6 +475,22 @@ nonisolated struct WorkoutPlanV2: Identifiable, Codable, Equatable {
         )
     }
 
+    func replacingCoach(_ coach: CoachPersonality) -> WorkoutPlanV2 {
+        WorkoutPlanV2(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            goal: goal,
+            estimatedMinutes: estimatedMinutes,
+            difficulty: difficulty,
+            coach: coach,
+            blocks: blocks,
+            generatedAt: generatedAt,
+            planReason: planReason,
+            source: source
+        )
+    }
+
     private static func convertLegacySets(_ sets: [WorkoutSet]) -> [PlannedExercise] {
         var plannedExercises: [PlannedExercise] = []
         var currentExerciseType: ExerciseType?

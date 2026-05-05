@@ -94,6 +94,15 @@ nonisolated enum CoachPreference: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    init(coachPersonality: CoachPersonality) {
+        switch coachPersonality {
+        case .good:
+            self = .bennett
+        case .drill:
+            self = .fletcher
+        }
+    }
+
     var displayName: String {
         switch self {
         case .bennett: "Bennett"

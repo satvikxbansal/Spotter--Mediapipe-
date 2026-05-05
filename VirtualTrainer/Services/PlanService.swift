@@ -59,4 +59,26 @@ nonisolated final class PlanService {
             input: input
         )
     }
+
+    func swapAll(
+        in plan: WorkoutPlanV2,
+        reason: PlanSwapReason,
+        input: PlanGenerationInput? = nil
+    ) -> WorkoutPlanV2 {
+        var updatedPlan = plan
+        let originalExerciseIds = plan.blocks.flatMap(\.exercises)
+            .filter(\.allowSwap)
+            .map(\.exerciseType)
+
+        for exerciseId in originalExerciseIds {
+            updatedPlan = swapService.swapExercise(
+                in: updatedPlan,
+                exerciseId: exerciseId,
+                reason: reason,
+                input: input
+            )
+        }
+
+        return updatedPlan
+    }
 }
