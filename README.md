@@ -10,7 +10,7 @@ Do not just count reps. Understand the session.
 
 That means Spotter should know what the user is trying to do, what the camera can see, whether the rep was clean, when form starts breaking down, what kind of workout makes sense next, and how to explain all of that in simple language.
 
-This repository is the SwiftUI + MediaPipe version of Spotter. It has moved beyond the original camera demo and is now becoming a local-first training product with onboarding, free camera analysis, generated plans, a raw dashboard, and the foundations for planned workouts.
+This repository is the SwiftUI + MediaPipe version of Spotter. It has moved beyond the original camera demo and is now becoming a local-first training product with onboarding, free camera analysis, generated plans, a raw dashboard, editable workout previews, and the first bridge into planned workout sessions.
 
 ## Current Product State
 
@@ -26,8 +26,11 @@ The latest code includes:
 - A deterministic local plan generator.
 - Smart Start and Daily Plan generation from the user's profile.
 - Dashboard V0 with generated plan cards, quick actions, trophy teaser, and running-analysis placeholder.
-- A raw workout preview screen that shows generated plan blocks, targets, camera orientation, coach, and plan reason.
-- Unit tests for onboarding, exercise metadata, plan generation, dashboard content, workout plan V2, angle math, form feedback, and rep counting.
+- Workout Preview V0 with coach selection, save-as-default coach, safe exercise swaps, swap-all, camera-switch visibility, plan insight placeholder, and Start Session.
+- Planned workout launch into the first exercise/set using the existing live trainer.
+- Live session HUD updates that make the active exercise name and target visible in camera view.
+- Camera pipeline stability guards for pose, hand, and face processing so stale frames do not hang the app.
+- Unit tests for onboarding, exercise metadata, plan generation, dashboard content, workout preview, workout plan V2, angle math, form feedback, and rep counting.
 
 Some screens are intentionally raw. The goal right now is to make the product logic real before spending too much time polishing UI.
 
@@ -193,7 +196,7 @@ This matters because a technically correct plan can still feel bad if the user h
 
 ### 5. Workout Preview
 
-Generated plans can be previewed from the dashboard.
+Generated plans can be previewed and edited from the dashboard.
 
 The current preview shows:
 
@@ -208,8 +211,20 @@ The current preview shows:
 - Coaching focus
 - Sets and targets
 - Camera orientation
+- Rest timing
+- Camera-switch count and sequence
+- Plan insight placeholder
 
-This screen is still a raw preview. Full coach switching, exercise swaps from UI, start session, and planned workout coordination are upcoming.
+The preview is now interactive:
+
+- Pick Coach Bennett or Coach Fletcher for this plan.
+- Save the selected coach as the user's new default.
+- Swap one exercise safely.
+- Swap all swappable exercises where safe alternatives exist.
+- Keep swaps within equipment, difficulty, movement-pattern, and camera-switch constraints.
+- Start the planned session.
+
+Starting a plan currently opens the first planned exercise/set inside the existing live trainer. The full planned workout coordinator, rest screen, and multi-set lifecycle are still upcoming.
 
 ## Built So Far By Phase
 
@@ -326,7 +341,7 @@ Built:
 - Running Analysis coming-soon placeholder
 - Trophy teaser
 - Recent workout placeholder
-- Raw `WorkoutPreviewView`
+- Dashboard route into generated plan preview
 - Dashboard tests
 
 Important files:
@@ -335,6 +350,47 @@ Important files:
 - `VirtualTrainer/UI/HomeDashboardView.swift`
 - `VirtualTrainer/UI/WorkoutPreviewView.swift`
 - `VirtualTrainerTests/DashboardContentTests.swift`
+
+### Phase 8: Workout Preview V0
+
+Built:
+
+- `WorkoutPreviewState`
+- Coach selection for a generated plan
+- Save selected coach as the profile default
+- Per-exercise safe swap button
+- Swap-all action
+- Plan insight placeholder
+- Camera setup card with switch count and sequence
+- Start Session button
+- Workout Plan V2 to `LiveSessionContext` bridge
+- Active exercise name and target in the live camera HUD
+- Preview tests for rendering, coach changes, profile coach persistence, safe swaps, swap-all, and planned-session context creation
+
+Important files:
+
+- `VirtualTrainer/Models/WorkoutPreviewState.swift`
+- `VirtualTrainer/Models/LiveSessionContext.swift`
+- `VirtualTrainer/UI/WorkoutPreviewView.swift`
+- `VirtualTrainer/UI/TrainerSessionView.swift`
+- `VirtualTrainerTests/WorkoutPreviewTests.swift`
+
+### Camera Stability Pass
+
+Recent fixes made the live camera stack more resilient:
+
+- Pose, hand, and face processors now reserve one frame at a time instead of piling up async work.
+- Hand and face processing are throttled so they do not steal too much frame budget.
+- Frame timeouts clear stale pose, hand, and face state instead of leaving the app stuck.
+- Voice and motivation paths were adjusted to reduce session hangs.
+
+Important files:
+
+- `VirtualTrainer/Vision/PoseEstimator.swift`
+- `VirtualTrainer/Vision/HandGestureDetector.swift`
+- `VirtualTrainer/Vision/FaceLandmarkerService.swift`
+- `VirtualTrainer/Coaching/VoiceCoachManager.swift`
+- `VirtualTrainer/Coaching/MotivationEngine.swift`
 
 ## Exercise Library
 
@@ -424,6 +480,9 @@ PlanGenerator + PlanService
 
 DashboardContentFactory
   -> how generated plans become dashboard content
+
+WorkoutPreviewState
+  -> how a generated plan is edited before launch
 ```
 
 The camera stack should stay shared between free analysis and planned workouts.
@@ -431,6 +490,7 @@ The camera stack should stay shared between free analysis and planned workouts.
 Do not create a second pose pipeline for plans.
 Do not duplicate rep counting for plans.
 Do not put planning rules inside `TrainerSessionView`.
+Do not let plan editing violate equipment, difficulty, movement-pattern, or camera-switch constraints.
 
 ## Project Structure
 
@@ -463,6 +523,7 @@ VirtualTrainer/
     PlanGenerationRules.swift
     UserProfile.swift
     WorkoutData.swift
+    WorkoutPreviewState.swift
 
   RepCounting/
     RepCounterProtocol.swift
@@ -496,7 +557,7 @@ VirtualTrainer/
 
 VirtualTrainerTests/
   Unit tests for planning, dashboard content, onboarding, metadata,
-  angle math, form feedback, visibility, and rep counting.
+  workout preview, angle math, form feedback, visibility, and rep counting.
 
 NEW_DESIGN/
   HTML and screenshots for the future visual design system.
@@ -529,20 +590,7 @@ They are stored today. Full runtime theming is still upcoming.
 
 ## Roadmap From Here
 
-### Next: Phase 8
-
-Workout Preview should become interactive.
-
-Planned work:
-
-- Start Session button.
-- Coach selector.
-- Exercise swap UI.
-- Save-as-default coach option if useful.
-- Plan-specific insight placeholder.
-- Safer preview state handling.
-
-### Then: Phase 9A
+### Next: Phase 9A
 
 Build the planned workout coordinator.
 
@@ -550,7 +598,7 @@ Planned work:
 
 - Own current block, exercise, and set.
 - Feed each planned set into the existing live trainer.
-- Show planned target in the live HUD.
+- Keep the current active exercise and planned target visible in the live HUD.
 - Advance after target completion or manual Complete Set.
 - Keep free analysis untouched.
 
