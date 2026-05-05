@@ -161,20 +161,29 @@ struct OnboardingStatsView: View {
                     TextField("Years", text: $store.draft.age)
                         .keyboardType(.numberPad)
                         .spotterTextField()
+                    ValidationMessage(store.ageValidationMessage)
                 }
 
                 MeasurementInput(
                     title: "Height",
                     value: $store.draft.height,
-                    unit: $store.draft.heightUnit,
-                    label: store.draft.heightUnit.heightLabel
+                    unit: Binding(
+                        get: { store.draft.heightUnit },
+                        set: { store.updateHeightUnit($0) }
+                    ),
+                    label: store.draft.heightUnit.heightLabel,
+                    validationMessage: store.heightValidationMessage
                 )
 
                 MeasurementInput(
                     title: "Weight",
                     value: $store.draft.weight,
-                    unit: $store.draft.weightUnit,
-                    label: store.draft.weightUnit.weightLabel
+                    unit: Binding(
+                        get: { store.draft.weightUnit },
+                        set: { store.updateWeightUnit($0) }
+                    ),
+                    label: store.draft.weightUnit.weightLabel,
+                    validationMessage: store.weightValidationMessage
                 )
             }
         }
@@ -395,6 +404,7 @@ private struct MeasurementInput: View {
     @Binding var value: String
     @Binding var unit: UnitPreference
     let label: String
+    let validationMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
@@ -418,6 +428,23 @@ private struct MeasurementInput: View {
                     .foregroundStyle(Theme.Colors.accent)
                     .frame(width: 32)
             }
+            ValidationMessage(validationMessage)
+        }
+    }
+}
+
+private struct ValidationMessage: View {
+    let message: String?
+
+    init(_ message: String?) {
+        self.message = message
+    }
+
+    var body: some View {
+        if let message {
+            Text(message)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.Colors.danger)
         }
     }
 }
