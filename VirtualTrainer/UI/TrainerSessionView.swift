@@ -129,12 +129,10 @@ struct TrainerSessionView: View {
                 glowPulse = true
             }
 
-            Task {
-                await voiceCoach.prefetchRepCounts(
-                    upTo: 20,
-                    personality: coachPersonality
-                )
-            }
+            voiceCoach.prefetchRepCounts(
+                upTo: 20,
+                personality: coachPersonality
+            )
         }
         .onDisappear {
             cameraManager.stop()
@@ -197,7 +195,7 @@ struct TrainerSessionView: View {
                 coachCues = formFeedbacks.map { $0.asCoachCue }
                 counter.recordFeedbackDuringRep()
                 if let cue = coachCues.first, cue.severity >= .warning {
-                    Task { await voiceCoach.playCue(cue, personality: coachPersonality) }
+                    voiceCoach.playCue(cue, personality: coachPersonality)
                 }
             } else {
                 coachCues = output.cues
@@ -229,7 +227,7 @@ struct TrainerSessionView: View {
                     faceEffortScore: exertionAnalyzer.effortScore
                 )
 
-                Task { await voiceCoach.playRep(count: repCount) }
+                voiceCoach.playRep(count: repCount)
             }
         }
         .onChange(of: handGesture.currentGesture) {

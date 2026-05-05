@@ -10,6 +10,7 @@ import AVFoundation
 ///
 /// The API intentionally stays stable so remote TTS (for example
 /// ElevenLabs) can be added later behind the same non-fatal surface.
+@MainActor
 final class VoiceCoachManager: ObservableObject {
 
     static let shared = VoiceCoachManager()
@@ -21,21 +22,21 @@ final class VoiceCoachManager: ObservableObject {
 
     private init() {}
 
-    func prefetchRepCounts(upTo count: Int, personality: CoachPersonality) async {
+    func prefetchRepCounts(upTo count: Int, personality: CoachPersonality) {
         repPhrases = Dictionary(uniqueKeysWithValues: (1...count).map { value in
             (value, makeUtterance(text: "\(value)", personality: personality, kind: .repCount))
         })
     }
 
-    func playRep(count: Int) async {
+    func playRep(count: Int) {
         speak(repPhrases[count] ?? makeUtterance(text: "\(count)", personality: .good, kind: .repCount))
     }
 
-    func playMotivation(text: String, personality: CoachPersonality) async {
+    func playMotivation(text: String, personality: CoachPersonality) {
         speak(makeUtterance(text: text, personality: personality, kind: .motivation), interrupts: true)
     }
 
-    func playCue(_ cue: CoachCue, personality: CoachPersonality) async {
+    func playCue(_ cue: CoachCue, personality: CoachPersonality) {
         speak(makeUtterance(text: cue.message, personality: personality, kind: .cue), interrupts: cue.severity >= .warning)
     }
 
