@@ -426,3 +426,25 @@ Converted `PlannedWorkoutCoordinator` to a `nonisolated struct`, stored it in `P
 Keep pure workout/session sequencing logic value-based unless reference identity or independent observation is required. When changing a coordinator from reference semantics to value semantics, update tests and callers to make state mutation explicit.
 
 **Pattern Tags:** #planned-workout #state-management #tests #concurrency
+
+---
+
+### [DL-020] Import Combine For Rest Timer Publisher
+**Date:** 2026-05-05
+**Severity:** build-breaking
+**Category:** swiftui-views
+**File(s):** `VirtualTrainer/UI/RestScreenView.swift`
+
+**Error:**
+`Instance method 'autoconnect()' is not available due to missing import of defining module 'Combine'`.
+
+**Root Cause:**
+`RestScreenView` used `Timer.publish(every:on:in:).autoconnect()` for the rest countdown while only importing SwiftUI. The `autoconnect()` publisher helper is defined by Combine, so the new view failed to compile during the planned-workout test build.
+
+**Fix Applied:**
+Added `import Combine` to `VirtualTrainer/UI/RestScreenView.swift` so the timer publisher chain resolves correctly.
+
+**Prevention Rule:**
+When a SwiftUI view uses `Timer.publish(...).autoconnect()` or other publisher operators directly, import `Combine` in that file instead of relying on transitive imports.
+
+**Pattern Tags:** #swiftui-views #combine #build

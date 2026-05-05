@@ -12,6 +12,7 @@ final class PlannedWorkoutCoordinatorTests: XCTestCase {
         let context = try XCTUnwrap(coordinator.currentContext)
 
         XCTAssertEqual(coordinator.plan.id, plan.id)
+        XCTAssertEqual(coordinator.sessionState, .ready)
         XCTAssertEqual(coordinator.currentBlockIndex, 0)
         XCTAssertEqual(coordinator.currentExerciseIndex, 0)
         XCTAssertEqual(coordinator.currentSetIndex, 0)
@@ -29,19 +30,28 @@ final class PlannedWorkoutCoordinatorTests: XCTestCase {
 
     func testCompletingSetWaitsForContinueBeforeAdvancing() throws {
         var coordinator = PlannedWorkoutCoordinator(plan: makePlan())
+        coordinator.startSession()
         let firstContext = try XCTUnwrap(coordinator.currentContext)
 
         XCTAssertTrue(
             coordinator.completeCurrentSet(with: makeSummary(from: firstContext, reps: 8))
         )
 
+        let restContext = try XCTUnwrap(coordinator.restContext)
+        XCTAssertEqual(coordinator.sessionState, .rest)
         XCTAssertTrue(coordinator.isAwaitingContinue)
         XCTAssertEqual(coordinator.completedSetSummaries.count, 1)
         XCTAssertEqual(coordinator.currentSetIndex, 0)
+        XCTAssertNil(coordinator.currentContext)
+        XCTAssertEqual(restContext.restSeconds, 60)
+        XCTAssertEqual(restContext.lastSummary.reps, 8)
+        XCTAssertEqual(restContext.upNextContext.exerciseType, .squat)
+        XCTAssertEqual(restContext.upNextContext.target, .reps(9))
 
         coordinator.continueToNextSet()
 
         let nextContext = try XCTUnwrap(coordinator.currentContext)
+        XCTAssertEqual(coordinator.sessionState, .activeSet)
         XCTAssertFalse(coordinator.isAwaitingContinue)
         XCTAssertFalse(coordinator.isSessionComplete)
         XCTAssertEqual(coordinator.currentSetIndex, 1)
@@ -52,6 +62,7 @@ final class PlannedWorkoutCoordinatorTests: XCTestCase {
 
     func testCoordinatorAdvancesAcrossExercisesAndCompletesPlan() throws {
         var coordinator = PlannedWorkoutCoordinator(plan: makePlan())
+        coordinator.startSession()
 
         let firstContext = try XCTUnwrap(coordinator.currentContext)
         _ = coordinator.completeCurrentSet(with: makeSummary(from: firstContext, reps: 8))
@@ -59,6 +70,12 @@ final class PlannedWorkoutCoordinatorTests: XCTestCase {
 
         let secondContext = try XCTUnwrap(coordinator.currentContext)
         _ = coordinator.completeCurrentSet(with: makeSummary(from: secondContext, reps: 9))
+
+        let secondRestContext = try XCTUnwrap(coordinator.restContext)
+        XCTAssertEqual(secondRestContext.upNextContext.exerciseType, .pushup)
+        XCTAssertEqual(secondRestContext.upNextContext.exerciseIndex, 1)
+        XCTAssertEqual(secondRestContext.upNextContext.setIndex, 0)
+
         coordinator.continueToNextSet()
 
         let thirdContext = try XCTUnwrap(coordinator.currentContext)
@@ -68,7 +85,8 @@ final class PlannedWorkoutCoordinatorTests: XCTestCase {
         XCTAssertEqual(thirdContext.target, .reps(6))
 
         _ = coordinator.completeCurrentSet(with: makeSummary(from: thirdContext, reps: 6))
-        XCTAssertFalse(coordinator.isSessionComplete)
+        XCTAssertEqual(coordinator.sessionState, .completed)
+        XCTAssertTrue(coordinator.isSessionComplete)
         XCTAssertFalse(coordinator.hasNextSet)
 
         coordinator.continueToNextSet()
@@ -76,6 +94,77 @@ final class PlannedWorkoutCoordinatorTests: XCTestCase {
         XCTAssertTrue(coordinator.isSessionComplete)
         XCTAssertNil(coordinator.currentContext)
         XCTAssertEqual(coordinator.completedSetSummaries.count, 3)
+    }
+
+    func testWorkoutSummaryBuilderAggregatesCompletedSets() throws {
+        var coordinator = PlannedWorkoutCoordinator(
+            plan: makePlan(),
+            startedAt: Date(timeIntervalSince1970: 1_776_100_000)
+        )
+        coordinator.startSession()
+
+        let firstContext = try XCTUnwrap(coordinator.currentContext)
+        _ = coordinator.completeCurrentSet(
+            with: makeSummary(
+                from: firstContext,
+                reps: 8,
+                duration: 30,
+                formScore: formScore(90)
+            )
+        )
+        coordinator.continueToNextSet()
+
+        let secondContext = try XCTUnwrap(coordinator.currentContext)
+        _ = coordinator.completeCurrentSet(
+            with: makeSummary(
+                from: secondContext,
+                reps: 9,
+                duration: 35,
+                formScore: formScore(80)
+            )
+        )
+        coordinator.continueToNextSet()
+
+        let thirdContext = try XCTUnwrap(coordinator.currentContext)
+        _ = coordinator.completeCurrentSet(
+            with: makeSummary(
+                from: thirdContext,
+                reps: 6,
+                duration: 40,
+                holdDuration: 12,
+                formScore: nil
+            )
+        )
+
+        let summary = coordinator.workoutSummary(
+            completedAt: Date(timeIntervalSince1970: 1_776_100_200)
+        )
+
+        XCTAssertEqual(summary.planId, coordinator.plan.id)
+        XCTAssertEqual(summary.planTitle, "Phase 9A Strength")
+        XCTAssertEqual(summary.completedSets, 3)
+        XCTAssertEqual(summary.totalSets, 3)
+        XCTAssertEqual(summary.exercisesCompleted, 2)
+        XCTAssertEqual(summary.totalExercises, 2)
+        XCTAssertEqual(summary.totalReps, 23)
+        XCTAssertEqual(summary.totalHoldSeconds, 12)
+        XCTAssertEqual(try XCTUnwrap(summary.averageFormScore), 85, accuracy: 0.001)
+        XCTAssertEqual(summary.completionPercentage, 1)
+        XCTAssertEqual(summary.exerciseSummaries.count, 2)
+        XCTAssertEqual(summary.exerciseSummaries.first?.exerciseType, .squat)
+        XCTAssertEqual(summary.exerciseSummaries.first?.setsCompleted, 2)
+    }
+
+    func testCoordinatorCanCancelSession() {
+        var coordinator = PlannedWorkoutCoordinator(plan: makePlan())
+        coordinator.startSession()
+
+        coordinator.cancelSession(at: Date(timeIntervalSince1970: 1_776_100_050))
+
+        XCTAssertEqual(coordinator.sessionState, .cancelled)
+        XCTAssertFalse(coordinator.isSessionComplete)
+        XCTAssertNil(coordinator.currentContext)
+        XCTAssertNotNil(coordinator.completedAt)
     }
 
     func testWorkoutSessionContextBridgesToLiveSessionContext() {
@@ -104,6 +193,31 @@ final class PlannedWorkoutCoordinatorTests: XCTestCase {
         XCTAssertEqual(liveContext.totalSets, 1)
         XCTAssertEqual(liveContext.coach, .good)
         XCTAssertTrue(liveContext.startsActive)
+    }
+
+    func testWorkoutSessionContextBridgesTargetVariants() {
+        let planId = UUID(uuidString: "00000000-0000-0000-0000-0000000009B0") ?? UUID()
+
+        XCTAssertEqual(
+            makeContext(planId: planId, target: .reps(12)).liveSessionContext.target,
+            .reps(12)
+        )
+        XCTAssertEqual(
+            makeContext(planId: planId, target: .timed(seconds: 45)).liveSessionContext.target,
+            .seconds(45)
+        )
+        XCTAssertEqual(
+            makeContext(planId: planId, target: .amrap(seconds: 60)).liveSessionContext.target,
+            .seconds(60)
+        )
+        XCTAssertEqual(
+            makeContext(planId: planId, target: .amrap(seconds: nil)).liveSessionContext.target,
+            .open
+        )
+        XCTAssertEqual(
+            makeContext(planId: planId, target: .open).liveSessionContext.target,
+            .open
+        )
     }
 }
 
@@ -154,7 +268,10 @@ private extension PlannedWorkoutCoordinatorTests {
 
     func makeSummary(
         from context: WorkoutSessionContext,
-        reps: Int
+        reps: Int,
+        duration: TimeInterval = 32,
+        holdDuration: TimeInterval = 0,
+        formScore: FormScore? = nil
     ) -> PlannedWorkoutSetSummary {
         PlannedWorkoutSetSummary(
             planId: context.planId,
@@ -165,13 +282,41 @@ private extension PlannedWorkoutCoordinatorTests {
             exerciseIndex: context.exerciseIndex,
             totalExercises: context.totalExercises,
             completedAt: Date(timeIntervalSince1970: 1_776_100_100),
-            duration: 32,
+            duration: duration,
             reps: reps,
-            holdDuration: 0,
-            latestFormScore: nil,
+            holdDuration: holdDuration,
+            latestFormScore: formScore,
             peakEffort: 0.4,
             lastCue: nil,
             completionSource: .targetMet
+        )
+    }
+
+    func formScore(_ score: Int) -> FormScore {
+        FormScore(
+            score: score,
+            grade: FormScore.Grade.from(score: score),
+            romPenalty: 0,
+            tempoPenalty: 0,
+            feedbackPenalty: 0
+        )
+    }
+
+    func makeContext(
+        planId: UUID,
+        target: WorkoutTarget
+    ) -> WorkoutSessionContext {
+        WorkoutSessionContext(
+            planId: planId,
+            planTitle: "Target Bridge",
+            exerciseType: .squat,
+            target: target,
+            setIndex: 0,
+            totalSets: 1,
+            exerciseIndex: 0,
+            totalExercises: 1,
+            coach: .good,
+            startsActive: false
         )
     }
 }
