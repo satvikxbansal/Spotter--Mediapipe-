@@ -22,6 +22,7 @@ struct TrainerSessionView: View {
     private let workoutSessionContext: WorkoutSessionContext?
     private let onFreeAnalysisEnded: ((FreeAnalysisSummary) -> Void)?
     private let onPlannedSetCompleted: ((PlannedWorkoutSetSummary) -> Void)?
+    private let onPlannedSessionCancelled: (() -> Void)?
 
     @StateObject private var cameraManager = CameraManager()
     @StateObject private var poseEstimator = PoseEstimator()
@@ -37,6 +38,7 @@ struct TrainerSessionView: View {
     @State private var previousRepCount: Int = 0
     @State private var currentPhase: RepPhase = .idle
     @State private var coachCues: [CoachCue] = []
+    @State private var cueHistory: [CoachCue] = []
     @State private var debugAngle: Double?
     @State private var motivationScale: CGFloat = 0.3
     @State private var holdDuration: TimeInterval = 0
@@ -64,6 +66,7 @@ struct TrainerSessionView: View {
         self.workoutSessionContext = nil
         self.onFreeAnalysisEnded = nil
         self.onPlannedSetCompleted = nil
+        self.onPlannedSessionCancelled = nil
     }
 
     init(
@@ -74,16 +77,19 @@ struct TrainerSessionView: View {
         self.workoutSessionContext = nil
         self.onFreeAnalysisEnded = onFreeAnalysisEnded
         self.onPlannedSetCompleted = nil
+        self.onPlannedSessionCancelled = nil
     }
 
     init(
         context: WorkoutSessionContext,
-        onPlannedSetCompleted: ((PlannedWorkoutSetSummary) -> Void)? = nil
+        onPlannedSetCompleted: ((PlannedWorkoutSetSummary) -> Void)? = nil,
+        onPlannedSessionCancelled: (() -> Void)? = nil
     ) {
         self.context = context.liveSessionContext
         self.workoutSessionContext = context
         self.onFreeAnalysisEnded = nil
         self.onPlannedSetCompleted = onPlannedSetCompleted
+        self.onPlannedSessionCancelled = onPlannedSessionCancelled
     }
 
     private var coachPersonality: CoachPersonality {
@@ -132,6 +138,7 @@ struct TrainerSessionView: View {
             elapsedSeconds = 0
             currentEffortScore = 0
             peakEffort = 0
+            cueHistory = []
             repCounter = UniversalRepCounter(exerciseType: exerciseType)
             motivationEngine.personality = coachPersonality
             readyCoordinator.setPersonality(coachPersonality)
@@ -166,6 +173,7 @@ struct TrainerSessionView: View {
         }
         .onDisappear {
             cameraManager.stop()
+            cameraManager.onFrame = nil
             handGesture.reset()
             readyCoordinator.reset()
             exertionAnalyzer.reset()
@@ -231,6 +239,7 @@ struct TrainerSessionView: View {
             } else {
                 coachCues = output.cues
             }
+            recordCues(coachCues)
 
             if let score = output.formScore {
                 lastFormScore = score
@@ -496,6 +505,9 @@ struct TrainerSessionView: View {
                     if context.isFreeAnalysis {
                         endFreeAnalysisButton
                     }
+                    if onPlannedSessionCancelled != nil {
+                        cancelPlannedSessionButton
+                    }
                     if shouldShowCompleteSetButton {
                         completeSetButton
                     }
@@ -526,7 +538,7 @@ struct TrainerSessionView: View {
 
                 if readyCoordinator.state == .exerciseActive {
                     HStack(spacing: Theme.Spacing.sm) {
-                        if context.isFreeAnalysis {
+                        if shouldShowElapsedTimeBadge {
                             elapsedTimeBadge
                         }
                         if let angle = debugAngle {
@@ -645,6 +657,18 @@ struct TrainerSessionView: View {
             !didCompletePlannedSet
     }
 
+    private var shouldShowElapsedTimeBadge: Bool {
+        if context.isFreeAnalysis { return true }
+
+        guard let target = workoutSessionContext?.target else { return false }
+        switch target {
+        case .timed, .amrap, .open:
+            return true
+        case .reps, .hold:
+            return false
+        }
+    }
+
     private var endFreeAnalysisButton: some View {
         Button {
             endFreeAnalysis()
@@ -658,6 +682,21 @@ struct TrainerSessionView: View {
                 .background(Theme.Colors.accent)
                 .clipShape(Capsule())
         }
+    }
+
+    private var cancelPlannedSessionButton: some View {
+        Button {
+            HapticsEngine.shared.warningPulse()
+            onPlannedSessionCancelled?()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 12, weight: .black))
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .frame(width: 32, height: 32)
+                .background(Color.black.opacity(0.58))
+                .clipShape(Circle())
+        }
+        .accessibilityLabel("Cancel workout")
     }
 
     private var completeSetButton: some View {
@@ -1046,7 +1085,7 @@ struct TrainerSessionView: View {
             return seconds > 0 && elapsedSeconds >= TimeInterval(seconds)
         case .amrap(let seconds):
             guard let seconds else {
-                // TODO: Phase 9B should decide how open-ended AMRAP sets finish.
+                // Open-ended AMRAP sets finish through the manual Complete Set button.
                 return false
             }
             return seconds > 0 && elapsedSeconds >= TimeInterval(seconds)
@@ -1061,6 +1100,8 @@ struct TrainerSessionView: View {
         else { return }
 
         didCompletePlannedSet = true
+        cameraManager.stop()
+        cameraManager.onFrame = nil
         HapticsEngine.shared.successRipple()
 
         let summary = PlannedWorkoutSetSummary(
@@ -1077,9 +1118,32 @@ struct TrainerSessionView: View {
             latestFormScore: lastFormScore,
             peakEffort: peakEffort,
             lastCue: coachCues.first,
+            bestCue: bestCueForSummary,
+            worstCue: worstCueForSummary,
             completionSource: source
         )
         onPlannedSetCompleted?(summary)
+    }
+
+    private func recordCues(_ cues: [CoachCue]) {
+        for cue in cues where !cueHistory.contains(where: {
+            $0.message == cue.message && $0.severity == cue.severity
+        }) {
+            cueHistory.append(cue)
+        }
+
+        let maximumStoredCues = 12
+        if cueHistory.count > maximumStoredCues {
+            cueHistory.removeFirst(cueHistory.count - maximumStoredCues)
+        }
+    }
+
+    private var bestCueForSummary: CoachCue? {
+        cueHistory.min { $0.severity < $1.severity }
+    }
+
+    private var worstCueForSummary: CoachCue? {
+        cueHistory.max { $0.severity < $1.severity }
     }
 
     // MARK: - Debug Angle

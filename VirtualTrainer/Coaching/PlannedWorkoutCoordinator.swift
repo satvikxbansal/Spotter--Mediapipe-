@@ -8,26 +8,35 @@ nonisolated struct PlannedWorkoutCoordinator {
     private(set) var currentExerciseIndex: Int
     private(set) var currentSetIndex: Int
     private(set) var completedSetSummaries: [PlannedWorkoutSetSummary]
-    private(set) var isAwaitingContinue: Bool
-    private(set) var isSessionComplete: Bool
+    private(set) var sessionState: WorkoutSessionState
+    private(set) var completedAt: Date?
 
     init(plan: WorkoutPlanV2, startedAt: Date = Date()) {
         self.plan = plan
         self.startedAt = startedAt
         self.completedSetSummaries = []
-        self.isAwaitingContinue = false
+        self.completedAt = nil
 
         if let firstPosition = Self.firstSetPosition(in: plan) {
             self.currentBlockIndex = firstPosition.blockIndex
             self.currentExerciseIndex = firstPosition.exerciseIndex
             self.currentSetIndex = firstPosition.setIndex
-            self.isSessionComplete = false
+            self.sessionState = .ready
         } else {
             self.currentBlockIndex = 0
             self.currentExerciseIndex = 0
             self.currentSetIndex = 0
-            self.isSessionComplete = true
+            self.sessionState = .completed
+            self.completedAt = startedAt
         }
+    }
+
+    var isAwaitingContinue: Bool {
+        sessionState == .rest
+    }
+
+    var isSessionComplete: Bool {
+        sessionState == .completed
     }
 
     var currentTarget: WorkoutTarget? {
@@ -35,22 +44,25 @@ nonisolated struct PlannedWorkoutCoordinator {
     }
 
     var currentContext: WorkoutSessionContext? {
-        guard !isSessionComplete,
-              let exercise = currentExercise,
-              let set = currentSet
+        guard sessionState == .ready || sessionState == .activeSet,
+              let position = currentPosition
         else { return nil }
 
-        return WorkoutSessionContext(
-            planId: plan.id,
-            planTitle: plan.title,
-            exerciseType: exercise.exerciseType,
-            target: set.target,
-            setIndex: currentSetIndex,
-            totalSets: exercise.sets.count,
-            exerciseIndex: currentGlobalExerciseIndex,
-            totalExercises: totalExercises,
-            coach: plan.coach,
-            startsActive: false
+        return context(for: position)
+    }
+
+    var restContext: PlannedWorkoutRestContext? {
+        guard sessionState == .rest,
+              let summary = completedSetSummaries.last,
+              let position = currentPosition,
+              let nextPosition = Self.nextSetPosition(after: position, in: plan),
+              let upNextContext = context(for: nextPosition)
+        else { return nil }
+
+        return PlannedWorkoutRestContext(
+            lastSummary: summary,
+            upNextContext: upNextContext,
+            restSeconds: max(currentExercise?.restSeconds ?? 0, 0)
         )
     }
 
@@ -59,22 +71,31 @@ nonisolated struct PlannedWorkoutCoordinator {
         return Self.nextSetPosition(after: position, in: plan) != nil
     }
 
+    mutating func startSession() {
+        guard sessionState == .ready else { return }
+        sessionState = .activeSet
+    }
+
     @discardableResult
     mutating func completeCurrentSet(with summary: PlannedWorkoutSetSummary) -> Bool {
-        guard !isSessionComplete,
-              !isAwaitingContinue,
+        guard sessionState == .activeSet,
               summary.planId == plan.id,
               summary.exerciseIndex == currentGlobalExerciseIndex,
               summary.setIndex == currentSetIndex
         else { return false }
 
         completedSetSummaries.append(summary)
-        isAwaitingContinue = true
+        if hasNextSet {
+            sessionState = .rest
+        } else {
+            sessionState = .completed
+            completedAt = summary.completedAt
+        }
         return true
     }
 
     mutating func continueToNextSet() {
-        guard isAwaitingContinue,
+        guard sessionState == .rest,
               let position = currentPosition
         else { return }
 
@@ -82,11 +103,26 @@ nonisolated struct PlannedWorkoutCoordinator {
             currentBlockIndex = nextPosition.blockIndex
             currentExerciseIndex = nextPosition.exerciseIndex
             currentSetIndex = nextPosition.setIndex
-            isAwaitingContinue = false
+            sessionState = .activeSet
         } else {
-            isAwaitingContinue = false
-            isSessionComplete = true
+            sessionState = .completed
+            completedAt = completedSetSummaries.last?.completedAt ?? Date()
         }
+    }
+
+    mutating func cancelSession(at date: Date = Date()) {
+        guard sessionState != .completed else { return }
+        sessionState = .cancelled
+        completedAt = date
+    }
+
+    func workoutSummary(completedAt fallbackCompletedAt: Date = Date()) -> WorkoutSummary {
+        WorkoutSummaryBuilder.build(
+            plan: plan,
+            startedAt: startedAt,
+            completedSets: completedSetSummaries,
+            completedAt: completedAt ?? fallbackCompletedAt
+        )
     }
 }
 
@@ -117,7 +153,8 @@ nonisolated private extension PlannedWorkoutCoordinator {
     }
 
     var currentPosition: SetPosition? {
-        guard !isSessionComplete,
+        guard sessionState != .completed,
+              sessionState != .cancelled,
               currentBlock != nil,
               currentExercise != nil,
               currentSet != nil
@@ -142,6 +179,50 @@ nonisolated private extension PlannedWorkoutCoordinator {
             .reduce(0) { $0 + $1.exercises.count }
 
         return exercisesBeforeCurrentBlock + currentExerciseIndex
+    }
+
+    func context(for position: SetPosition) -> WorkoutSessionContext? {
+        guard let exercise = exercise(at: position),
+              let set = set(at: position, in: exercise)
+        else { return nil }
+
+        return WorkoutSessionContext(
+            planId: plan.id,
+            planTitle: plan.title,
+            exerciseType: exercise.exerciseType,
+            target: set.target,
+            setIndex: position.setIndex,
+            totalSets: exercise.sets.count,
+            exerciseIndex: globalExerciseIndex(
+                blockIndex: position.blockIndex,
+                exerciseIndex: position.exerciseIndex
+            ),
+            totalExercises: totalExercises,
+            coach: plan.coach,
+            startsActive: false
+        )
+    }
+
+    func exercise(at position: SetPosition) -> PlannedExercise? {
+        guard plan.blocks.indices.contains(position.blockIndex) else { return nil }
+        let block = plan.blocks[position.blockIndex]
+        guard block.exercises.indices.contains(position.exerciseIndex) else { return nil }
+        return block.exercises[position.exerciseIndex]
+    }
+
+    func set(at position: SetPosition, in exercise: PlannedExercise) -> PlannedSet? {
+        guard exercise.sets.indices.contains(position.setIndex) else { return nil }
+        return exercise.sets[position.setIndex]
+    }
+
+    func globalExerciseIndex(blockIndex: Int, exerciseIndex: Int) -> Int {
+        guard plan.blocks.indices.contains(blockIndex) else { return 0 }
+
+        let exercisesBeforeBlock = plan.blocks
+            .prefix(blockIndex)
+            .reduce(0) { $0 + $1.exercises.count }
+
+        return exercisesBeforeBlock + exerciseIndex
     }
 
     static func firstSetPosition(in plan: WorkoutPlanV2) -> SetPosition? {

@@ -1,5 +1,13 @@
 import Foundation
 
+nonisolated enum WorkoutSessionState: String, Equatable {
+    case ready
+    case activeSet
+    case rest
+    case completed
+    case cancelled
+}
+
 nonisolated struct WorkoutSessionContext: Identifiable, Equatable {
     let mode: SessionMode = .plannedWorkout
     let planId: UUID
@@ -50,6 +58,16 @@ nonisolated struct WorkoutSessionContext: Identifiable, Equatable {
     }
 }
 
+nonisolated struct PlannedWorkoutRestContext: Identifiable {
+    let lastSummary: PlannedWorkoutSetSummary
+    let upNextContext: WorkoutSessionContext
+    let restSeconds: Int
+
+    var id: String {
+        "\(lastSummary.id.uuidString)-rest-\(upNextContext.id)"
+    }
+}
+
 nonisolated enum PlannedSetCompletionSource: String {
     case targetMet
     case manual
@@ -71,6 +89,8 @@ nonisolated struct PlannedWorkoutSetSummary: Identifiable {
     let latestFormScore: FormScore?
     let peakEffort: Double
     let lastCue: CoachCue?
+    let bestCue: CoachCue?
+    let worstCue: CoachCue?
     let completionSource: PlannedSetCompletionSource
 
     init(
@@ -89,6 +109,8 @@ nonisolated struct PlannedWorkoutSetSummary: Identifiable {
         latestFormScore: FormScore?,
         peakEffort: Double,
         lastCue: CoachCue?,
+        bestCue: CoachCue? = nil,
+        worstCue: CoachCue? = nil,
         completionSource: PlannedSetCompletionSource
     ) {
         self.id = id
@@ -106,6 +128,8 @@ nonisolated struct PlannedWorkoutSetSummary: Identifiable {
         self.latestFormScore = latestFormScore
         self.peakEffort = peakEffort
         self.lastCue = lastCue
+        self.bestCue = bestCue
+        self.worstCue = worstCue
         self.completionSource = completionSource
     }
 }
