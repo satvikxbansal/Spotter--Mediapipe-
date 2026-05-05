@@ -4,7 +4,7 @@ struct WorkoutPreviewView: View {
     @EnvironmentObject private var onboardingStore: OnboardingStore
 
     @State private var previewState: WorkoutPreviewState
-    @State private var activeContext: LiveSessionContext?
+    @State private var activePlan: WorkoutPlanV2?
     @State private var statusMessage: String?
 
     init(plan: WorkoutPlanV2, profile: UserProfile? = nil) {
@@ -39,8 +39,8 @@ struct WorkoutPreviewView: View {
         .safeAreaInset(edge: .bottom) {
             startSessionBar
         }
-        .fullScreenCover(item: $activeContext) { context in
-            TrainerSessionView(context: context)
+        .fullScreenCover(item: $activePlan) { plan in
+            PlannedWorkoutSessionView(plan: plan)
         }
         .preferredColorScheme(.dark)
     }
@@ -254,11 +254,11 @@ struct WorkoutPreviewView: View {
 
     private func startSession() {
         HapticsEngine.shared.buttonTap()
-        guard let context = previewState.startSessionContext() else {
+        guard previewState.startSessionContext() != nil else {
             statusMessage = "This plan has no trackable exercise yet."
             return
         }
-        activeContext = context
+        activePlan = previewState.displayPlan
     }
 }
 

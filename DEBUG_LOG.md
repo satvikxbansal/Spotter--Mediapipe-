@@ -404,3 +404,25 @@ Centralized readiness gesture handling in `WorkoutReadyCoordinator.handleGesture
 For live camera state machines, validate both value changes and ordering changes. A correct current value can still be missed if no new change event fires.
 
 **Pattern Tags:** #gesture-detection #emotion-detection #readiness #state-management #tests
+
+---
+
+### [DL-019] Stabilize Planned Workout Coordinator Tests
+**Date:** 2026-05-05
+**Severity:** build-breaking
+**Category:** state-management
+**File(s):** `VirtualTrainer/Coaching/PlannedWorkoutCoordinator.swift`, `VirtualTrainer/UI/PlannedWorkoutSessionView.swift`, `VirtualTrainerTests/PlannedWorkoutCoordinatorTests.swift`
+
+**Error:**
+The first Phase 9A coordinator test run crashed with `malloc: *** error for object ... pointer being freed was not allocated` and `Test crashed with signal abrt`. After converting the coordinator to value semantics, the tests then failed to compile because mutating methods were called on `let` constants.
+
+**Root Cause:**
+`PlannedWorkoutCoordinator` was originally more observable than necessary for pure set sequencing state. Under the project-wide MainActor defaults, the short-lived `ObservableObject` test instances hit the same simulator teardown family already seen with other lightweight observable logic classes. Once the coordinator became a value type, the tests still treated it like a reference object.
+
+**Fix Applied:**
+Converted `PlannedWorkoutCoordinator` to a `nonisolated struct`, stored it in `PlannedWorkoutSessionView` with `@State`, and updated coordinator tests to use mutable `var` instances where set completion/advance methods mutate state.
+
+**Prevention Rule:**
+Keep pure workout/session sequencing logic value-based unless reference identity or independent observation is required. When changing a coordinator from reference semantics to value semantics, update tests and callers to make state mutation explicit.
+
+**Pattern Tags:** #planned-workout #state-management #tests #concurrency

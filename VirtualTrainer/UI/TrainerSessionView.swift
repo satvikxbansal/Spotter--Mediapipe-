@@ -19,7 +19,9 @@ struct TrainerSessionView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let context: LiveSessionContext
+    private let workoutSessionContext: WorkoutSessionContext?
     private let onFreeAnalysisEnded: ((FreeAnalysisSummary) -> Void)?
+    private let onPlannedSetCompleted: ((PlannedWorkoutSetSummary) -> Void)?
 
     @StateObject private var cameraManager = CameraManager()
     @StateObject private var poseEstimator = PoseEstimator()
@@ -44,6 +46,7 @@ struct TrainerSessionView: View {
     @State private var elapsedSeconds: TimeInterval = 0
     @State private var currentEffortScore: Double = 0
     @State private var peakEffort: Double = 0
+    @State private var didCompletePlannedSet = false
     @State private var visibilityResult = BodyVisibilityChecker.Result(
         isReady: false,
         visibility: 0,
@@ -58,7 +61,9 @@ struct TrainerSessionView: View {
             workout: workout,
             coach: coachPersonality
         )
+        self.workoutSessionContext = nil
         self.onFreeAnalysisEnded = nil
+        self.onPlannedSetCompleted = nil
     }
 
     init(
@@ -66,7 +71,19 @@ struct TrainerSessionView: View {
         onFreeAnalysisEnded: ((FreeAnalysisSummary) -> Void)? = nil
     ) {
         self.context = context
+        self.workoutSessionContext = nil
         self.onFreeAnalysisEnded = onFreeAnalysisEnded
+        self.onPlannedSetCompleted = nil
+    }
+
+    init(
+        context: WorkoutSessionContext,
+        onPlannedSetCompleted: ((PlannedWorkoutSetSummary) -> Void)? = nil
+    ) {
+        self.context = context.liveSessionContext
+        self.workoutSessionContext = context
+        self.onFreeAnalysisEnded = nil
+        self.onPlannedSetCompleted = onPlannedSetCompleted
     }
 
     private var coachPersonality: CoachPersonality {
@@ -110,6 +127,7 @@ struct TrainerSessionView: View {
         .preferredColorScheme(.dark)
         .statusBarHidden()
         .onAppear {
+            didCompletePlannedSet = false
             sessionStartedAt = context.startsActive ? Date() : nil
             elapsedSeconds = 0
             currentEffortScore = 0
@@ -242,6 +260,8 @@ struct TrainerSessionView: View {
 
                 voiceCoach.playRep(count: repCount)
             }
+
+            completePlannedSetIfTargetMet()
         }
         .onChange(of: handGesture.currentGesture) {
             readyCoordinator.handleGesture(handGesture.currentGesture)
@@ -261,6 +281,7 @@ struct TrainerSessionView: View {
             guard readyCoordinator.state == .exerciseActive,
                   let sessionStartedAt else { return }
             elapsedSeconds = now.timeIntervalSince(sessionStartedAt)
+            completePlannedSetIfTargetMet()
         }
     }
 
@@ -475,6 +496,9 @@ struct TrainerSessionView: View {
                     if context.isFreeAnalysis {
                         endFreeAnalysisButton
                     }
+                    if shouldShowCompleteSetButton {
+                        completeSetButton
+                    }
                     repCounterBadge
                 }
             }
@@ -580,6 +604,14 @@ struct TrainerSessionView: View {
             return "Open practice"
         }
 
+        if let workoutSessionContext {
+            return [
+                "Exercise \(workoutSessionContext.exerciseIndex + 1) of \(workoutSessionContext.totalExercises)",
+                "Set \(workoutSessionContext.setIndex + 1) of \(workoutSessionContext.totalSets)",
+                workoutSessionContext.targetText
+            ].joined(separator: " • ")
+        }
+
         var details: [String] = []
         if let setIndex = context.setIndex,
            let totalSets = context.totalSets {
@@ -592,6 +624,10 @@ struct TrainerSessionView: View {
     }
 
     private var targetText: String? {
+        if let workoutSessionContext {
+            return workoutSessionContext.targetText
+        }
+
         guard let target = context.target else { return nil }
         switch target {
         case .open:
@@ -603,11 +639,32 @@ struct TrainerSessionView: View {
         }
     }
 
+    private var shouldShowCompleteSetButton: Bool {
+        workoutSessionContext != nil &&
+            readyCoordinator.state == .exerciseActive &&
+            !didCompletePlannedSet
+    }
+
     private var endFreeAnalysisButton: some View {
         Button {
             endFreeAnalysis()
         } label: {
             Text("Done")
+                .font(.system(size: 12, weight: .heavy))
+                .tracking(0.8)
+                .foregroundStyle(Theme.Colors.background)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Theme.Colors.accent)
+                .clipShape(Capsule())
+        }
+    }
+
+    private var completeSetButton: some View {
+        Button {
+            completePlannedSet(source: .manual)
+        } label: {
+            Text("Complete Set")
                 .font(.system(size: 12, weight: .heavy))
                 .tracking(0.8)
                 .foregroundStyle(Theme.Colors.background)
@@ -968,6 +1025,61 @@ struct TrainerSessionView: View {
         )
         onFreeAnalysisEnded?(summary)
         dismiss()
+    }
+
+    private func completePlannedSetIfTargetMet() {
+        guard plannedTargetIsMet else { return }
+        completePlannedSet(source: .targetMet)
+    }
+
+    private var plannedTargetIsMet: Bool {
+        guard let workoutSessionContext,
+              readyCoordinator.state == .exerciseActive
+        else { return false }
+
+        switch workoutSessionContext.target {
+        case .reps(let count):
+            return count > 0 && repCount >= count
+        case .hold(let seconds):
+            return seconds > 0 && holdDuration >= TimeInterval(seconds)
+        case .timed(let seconds):
+            return seconds > 0 && elapsedSeconds >= TimeInterval(seconds)
+        case .amrap(let seconds):
+            guard let seconds else {
+                // TODO: Phase 9B should decide how open-ended AMRAP sets finish.
+                return false
+            }
+            return seconds > 0 && elapsedSeconds >= TimeInterval(seconds)
+        case .open:
+            return false
+        }
+    }
+
+    private func completePlannedSet(source: PlannedSetCompletionSource) {
+        guard !didCompletePlannedSet,
+              let workoutSessionContext
+        else { return }
+
+        didCompletePlannedSet = true
+        HapticsEngine.shared.successRipple()
+
+        let summary = PlannedWorkoutSetSummary(
+            planId: workoutSessionContext.planId,
+            exerciseType: exerciseType,
+            target: workoutSessionContext.target,
+            setIndex: workoutSessionContext.setIndex,
+            totalSets: workoutSessionContext.totalSets,
+            exerciseIndex: workoutSessionContext.exerciseIndex,
+            totalExercises: workoutSessionContext.totalExercises,
+            duration: elapsedSeconds,
+            reps: repCount,
+            holdDuration: holdDuration,
+            latestFormScore: lastFormScore,
+            peakEffort: peakEffort,
+            lastCue: coachCues.first,
+            completionSource: source
+        )
+        onPlannedSetCompleted?(summary)
     }
 
     // MARK: - Debug Angle
