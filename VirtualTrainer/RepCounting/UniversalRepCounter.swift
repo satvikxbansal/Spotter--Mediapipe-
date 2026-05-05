@@ -7,9 +7,8 @@ import simd
 
 /// A data-driven rep counter that works with **any** `ExerciseDefinition`.
 ///
-/// Instead of writing a custom state machine per exercise (like
-/// `SquatRepCounter`), this counter reads thresholds and form rules
-/// from the definition and applies them generically.
+/// Instead of writing a custom state machine per exercise, this counter reads
+/// thresholds and form rules from the definition and applies them generically.
 ///
 /// Prefers 3D world landmarks for angle calculations when available.
 nonisolated final class UniversalRepCounter: RepCounter {

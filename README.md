@@ -527,7 +527,6 @@ VirtualTrainer/
 
   RepCounting/
     RepCounterProtocol.swift
-    SquatRepCounter.swift
     UniversalRepCounter.swift
 
   Services/

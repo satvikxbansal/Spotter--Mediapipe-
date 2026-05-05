@@ -6,7 +6,7 @@ import Combine
 // ────────────────────────────────────────────────────────────────────
 
 /// The phases of the "are you ready?" flow before an exercise begins.
-enum WorkoutReadyState: Equatable {
+nonisolated enum WorkoutReadyState: Equatable {
     /// Waiting for the user to position themselves.
     case positioning
 
@@ -169,6 +169,10 @@ final class WorkoutReadyCoordinator: ObservableObject {
         coachMessage = ""
     }
 
+    nonisolated deinit {
+        countdownTimer?.invalidate()
+    }
+
     // MARK: - Public API
 
     /// Call when the body becomes fully visible in camera.
@@ -179,8 +183,16 @@ final class WorkoutReadyCoordinator: ObservableObject {
 
     /// Call when the body is no longer visible.
     func bodyLost() {
-        // Only go back to positioning if we haven't started yet
-        guard state == .askingReady else { return }
+        // Do not allow an exercise to start from a stale countdown after the
+        // user has left the usable camera frame.
+        switch state {
+        case .askingReady, .countdown, .waitingToRetry:
+            countdownTimer?.invalidate()
+            countdownTimer = nil
+            countdownValue = 0
+        default:
+            return
+        }
         transitionTo(.positioning)
     }
 

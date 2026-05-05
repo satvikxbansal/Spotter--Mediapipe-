@@ -188,6 +188,11 @@ struct CameraReadinessView: View {
                 break
             }
         }
+        .onChange(of: readyCoordinator.state) { _, state in
+            if state == .exerciseActive {
+                startSession()
+            }
+        }
         .fullScreenCover(item: $activeContext) { context in
             TrainerSessionView(context: context) { summary in
                 activeContext = nil
@@ -247,10 +252,12 @@ struct CameraReadinessView: View {
                     .foregroundStyle(Theme.Colors.textPrimary)
             }
 
-            Button(readyCoordinator.state == .exerciseActive ? "Start free analysis" : "Skip readiness for debug") {
+            Button(readinessButtonTitle) {
                 startSession()
             }
             .buttonStyle(PrimaryCTAStyle())
+            .disabled(!canStartSession)
+            .opacity(canStartSession ? 1 : 0.55)
         }
         .padding(Theme.Spacing.md)
         .background(Color.black.opacity(0.7))
@@ -266,7 +273,20 @@ struct CameraReadinessView: View {
         }
     }
 
+    private var canStartSession: Bool {
+        activeContext == nil &&
+            (readyCoordinator.state == .askingReady || readyCoordinator.state == .exerciseActive)
+    }
+
+    private var readinessButtonTitle: String {
+        canStartSession ? "Start free analysis" : "Get fully in frame"
+    }
+
     private func startSession() {
+        guard canStartSession else {
+            HapticsEngine.shared.warningPulse()
+            return
+        }
         cameraManager.stop()
         activeContext = LiveSessionContext.freeAnalysis(
             exerciseType: exerciseType,

@@ -371,15 +371,13 @@ nonisolated final class FormFeedbackEngine {
                 severity: severity,
                 ruleId: check.id
             ))
-
-            break
         }
 
         for check in definition.positionalChecks where results[check.id]?.violated != true {
             positionalViolationFrames[check.id] = 0
         }
 
-        return feedbacks
+        return highestSeverityFeedback(feedbacks).map { [$0] } ?? []
     }
 
     private func coachCueSeverity(from rawSeverity: String) -> CoachCue.Severity {

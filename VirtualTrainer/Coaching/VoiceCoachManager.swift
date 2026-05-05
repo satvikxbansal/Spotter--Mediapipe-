@@ -20,17 +20,20 @@ final class VoiceCoachManager: ObservableObject {
     private let synthesizer = AVSpeechSynthesizer()
     private var repPhrases: [Int: AVSpeechUtterance] = [:]
     private var lastCueSpokenAt: [String: Date] = [:]
+    private var repPersonality: CoachPersonality = .good
 
     private init() {}
 
     func prefetchRepCounts(upTo count: Int, personality: CoachPersonality) {
+        repPersonality = personality
+        lastCueSpokenAt.removeAll()
         repPhrases = Dictionary(uniqueKeysWithValues: (1...count).map { value in
             (value, makeUtterance(text: "\(value)", personality: personality, kind: .repCount))
         })
     }
 
     func playRep(count: Int) {
-        speak(repPhrases[count] ?? makeUtterance(text: "\(count)", personality: .good, kind: .repCount))
+        speak(repPhrases[count] ?? makeUtterance(text: "\(count)", personality: repPersonality, kind: .repCount))
     }
 
     func playMotivation(text: String, personality: CoachPersonality) {

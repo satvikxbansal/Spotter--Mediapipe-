@@ -66,6 +66,8 @@ final class HandGestureDetector: NSObject, ObservableObject {
     // MARK: - Configuration
 
     private let confirmationFrames: Int = 3
+    private let minimumGestureConfidence: Float = 0.55
+    private let minimumActionGestureConfidence: Float = 0.65
 
     // MARK: - Internal State
 
@@ -209,8 +211,9 @@ final class HandGestureDetector: NSObject, ObservableObject {
 
         let allHands = extractLandmarks(from: result.landmarks)
 
-        let gesture = mapMediaPipeGesture(result.gestures)
+        let rawGesture = mapMediaPipeGesture(result.gestures)
         let conf = result.gestures.first?.first?.score ?? 0
+        let gesture = confidenceFilteredGesture(rawGesture, confidence: conf)
 
         updateWithCandidate(gesture, confidence: conf, allHands: allHands)
     }
@@ -228,6 +231,14 @@ final class HandGestureDetector: NSObject, ObservableObject {
         case "Pointing_Up": return .pointingUp
         default:            return .none
         }
+    }
+
+    private func confidenceFilteredGesture(_ gesture: HandGesture, confidence: Float) -> HandGesture {
+        guard gesture != .none else { return .none }
+        let threshold = (gesture == .thumbsUp || gesture == .thumbsDown)
+            ? minimumActionGestureConfidence
+            : minimumGestureConfidence
+        return confidence >= threshold ? gesture : .none
     }
 
     // MARK: - HandLandmarker Fallback Result Processing

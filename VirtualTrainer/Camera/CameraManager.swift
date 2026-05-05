@@ -69,17 +69,39 @@ final class CameraManager: NSObject, ObservableObject {
     // MARK: - Session Configuration
 
     private func configureSession() {
+        if !session.inputs.isEmpty || !session.outputs.isEmpty {
+            guard session.inputs.isEmpty || session.outputs.isEmpty else {
+                startConfiguredSession()
+                return
+            }
+
+            session.beginConfiguration()
+            session.inputs.forEach { session.removeInput($0) }
+            session.outputs.forEach { session.removeOutput($0) }
+            session.commitConfiguration()
+        }
+
         session.beginConfiguration()
         session.sessionPreset = .high
 
+        guard configureInputAndOutput() else {
+            session.commitConfiguration()
+            return
+        }
+
+        session.commitConfiguration()
+
+        startConfiguredSession()
+    }
+
+    private func configureInputAndOutput() -> Bool {
         // Input
         guard
             let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
             let input = try? AVCaptureDeviceInput(device: device),
             session.canAddInput(input)
         else {
-            session.commitConfiguration()
-            return
+            return false
         }
         session.addInput(input)
 
@@ -91,8 +113,7 @@ final class CameraManager: NSObject, ObservableObject {
         videoOutput.setSampleBufferDelegate(self, queue: videoOutputQueue)
 
         guard session.canAddOutput(videoOutput) else {
-            session.commitConfiguration()
-            return
+            return false
         }
         session.addOutput(videoOutput)
 
@@ -105,10 +126,14 @@ final class CameraManager: NSObject, ObservableObject {
             }
         }
 
-        session.commitConfiguration()
+        return true
+    }
 
-        session.startRunning()
-        DispatchQueue.main.async { self.isRunning = true }
+    private func startConfiguredSession() {
+        if !session.isRunning {
+            session.startRunning()
+        }
+        DispatchQueue.main.async { self.isRunning = self.session.isRunning }
     }
 }
 

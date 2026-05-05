@@ -294,3 +294,91 @@ Updated `TrainerSessionView.workoutTitleLabel` so the smaller eyebrow shows the 
 When live-session context contains both a plan title and an active exercise, always render the active exercise as the most prominent camera HUD label.
 
 **Pattern Tags:** #ui-layout #planned-workout #session-context #hud
+
+---
+
+### [DL-014] Harden Camera Startup And Readiness Lifecycle
+**Date:** 2026-05-05
+**Severity:** crash-risk
+**Category:** camera-pipeline
+**File(s):** `VirtualTrainer/Camera/CameraManager.swift`, `VirtualTrainer/Coaching/WorkoutReadyCoordinator.swift`, `VirtualTrainer/UI/CameraTabView.swift`, `VirtualTrainer/UI/TrainerSessionView.swift`, `VirtualTrainerTests/WorkoutReadyCoordinatorTests.swift`
+
+**Error:**
+Repeated session starts or readiness-state drift could leave the app in a risky state: duplicate/partial camera configuration, a free-analysis start button bypassing the intended readiness state, or a countdown continuing after the body left frame.
+
+**Root Cause:**
+`CameraManager.configureSession()` only handled the happy path and did not clean up partially configured sessions. The free-analysis entry UI still exposed a debug-style bypass. `WorkoutReadyCoordinator.bodyLost()` only reset from `askingReady`, not from countdown/retry states.
+
+**Fix Applied:**
+Made camera configuration idempotent, cleaned partial session inputs/outputs before retrying, and made `startConfiguredSession()` report actual `session.isRunning`. Removed the free-analysis debug bypass, wired thumbs-up active state to auto-start while preserving manual start once the body is ready, and made body loss cancel countdown/retry before activation. Added regression tests for countdown and retry cancellation. Also moved free-analysis timer/peak effort reset to the actual exercise-active transition instead of view appearance.
+
+**Prevention Rule:**
+Treat camera and readiness transitions as state machines: repeated starts, partial setup, and body-loss transitions must be explicit and covered by tests.
+
+**Pattern Tags:** #camera-pipeline #readiness #state-management #tests
+
+---
+
+### [DL-015] Fix Exertion Analyzer Sparse Blendshape False Positives
+**Date:** 2026-05-05
+**Severity:** warning
+**Category:** emotion-detection
+**File(s):** `VirtualTrainer/Coaching/ExertionAnalyzer.swift`, `VirtualTrainer/UI/TrainerSessionView.swift`, `VirtualTrainerTests/ExertionAnalyzerTests.swift`
+
+**Error:**
+Sparse face-landmarker blendshape dictionaries could inflate effort by treating missing `jawOpen` as a clenched jaw. The first regression test for this also exposed a Swift 6.2 simulator teardown crash for short-lived actor-isolated classes.
+
+**Root Cause:**
+The exertion composite always included the inverse-jaw contribution even when `jawOpen` was absent, so missing data became effort. The analyzer was also more UI-observable than needed; effort state is only consumed by `TrainerSessionView`, not observed independently elsewhere.
+
+**Fix Applied:**
+Only include each facial signal when that blendshape is present, decay effort when no usable signal exists, and made `ExertionAnalyzer` a nonisolated pure logic object. `TrainerSessionView` now copies the latest effort into SwiftUI state after each face update, preserving HUD/motivation refresh without depending on analyzer observation. Added tests for sparse blendshape behavior and available-signal normalization.
+
+**Prevention Rule:**
+Never interpret missing model output as a strong positive signal. Normalize only over signals actually present in that frame.
+
+**Pattern Tags:** #emotion-detection #mediapipe #state-management #tests
+
+---
+
+### [DL-016] Keep Highest-Severity Positional Feedback
+**Date:** 2026-05-05
+**Severity:** warning
+**Category:** form-feedback
+**File(s):** `VirtualTrainer/Coaching/FormFeedbackEngine.swift`, `VirtualTrainerTests/FormFeedbackEngineTests.swift`
+
+**Error:**
+Positional form checks could still stop at the first violation, allowing a lower-severity positional cue listed earlier to mask a more important later cue.
+
+**Root Cause:**
+The earlier severity-priority fix covered angle/form rules, but positional checks retained the old first-hit behavior.
+
+**Fix Applied:**
+Changed positional checks to collect eligible violations and return the highest-severity feedback, preserving first-listed order only for equal severity. Added a regression test mirroring the angle/form priority tests.
+
+**Prevention Rule:**
+All coaching feedback categories should use the same explicit severity ordering so rule-array order cannot accidentally suppress critical safety cues.
+
+**Pattern Tags:** #form-feedback #biomechanics #severity #tests
+
+---
+
+### [DL-017] Stabilize Gesture, Voice, Model, And Legacy Counter Wiring
+**Date:** 2026-05-05
+**Severity:** warning
+**Category:** integration
+**File(s):** `VirtualTrainer/Vision/HandGestureDetector.swift`, `VirtualTrainer/Coaching/VoiceCoachManager.swift`, `VirtualTrainer/Services/ElevenLabsService.swift`, `VirtualTrainer/RepCounting/UniversalRepCounter.swift`, `VirtualTrainer/RepCounting/RepCounterProtocol.swift`, `download_models.sh`, `README.md`
+
+**Error:**
+Several integration edges could cause confusing behavior or stale maintenance paths: low-confidence gestures could influence readiness, rep-count fallback voice lines could ignore the selected coach personality after 20 reps, the model downloader omitted gesture/face models, a placeholder ElevenLabs API key remained in source, and the removed `SquatRepCounter` path still appeared in documentation/comments.
+
+**Root Cause:**
+Recent feature work centralized runtime counting in `UniversalRepCounter` and added face/gesture features, but some supporting scripts, docs, and fallback paths were not updated together.
+
+**Fix Applied:**
+Added confidence gates for gesture recognition, preserved coach personality for rep-count fallback speech, made ElevenLabs require an `ELEVENLABS_API_KEY` Info.plist value instead of a source placeholder, added gesture and face model downloads, and removed stale `SquatRepCounter` references/file. Verified all four MediaPipe task files are present locally and the workspace/pod test path builds through `VirtualTrainer.xcworkspace`.
+
+**Prevention Rule:**
+When adding or retiring a live pipeline component, update runtime code, scripts, docs, tests, and fallback behavior in the same pass.
+
+**Pattern Tags:** #gesture-detection #voice-coach #mediapipe #rep-counter #dependencies

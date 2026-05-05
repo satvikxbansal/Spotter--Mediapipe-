@@ -77,9 +77,59 @@ final class FormFeedbackEngineTests: XCTestCase {
         XCTAssertEqual(feedbacks.first?.ruleId, "first_warning")
         XCTAssertEqual(feedbacks.first?.message, "first good")
     }
+
+    func testHigherSeverityPositionalRuleWinsEvenWhenListedLater() {
+        let definition = feedbackDefinition(
+            rules: [],
+            positionalChecks: [
+                PositionalCheck(
+                    id: "warning_position",
+                    checkType: .jointAlignedX,
+                    threshold: 0.05,
+                    jointA: .rightShoulder,
+                    jointB: .rightWrist,
+                    activeDuringPhases: ["down"],
+                    feedbackGood: "warning position good",
+                    feedbackDrill: "warning position drill",
+                    severity: "warning",
+                    cooldownSeconds: 1
+                ),
+                PositionalCheck(
+                    id: "critical_position",
+                    checkType: .jointAboveJoint,
+                    threshold: 0.05,
+                    jointA: .rightShoulder,
+                    jointB: .rightElbow,
+                    activeDuringPhases: ["down"],
+                    feedbackGood: "critical position good",
+                    feedbackDrill: "critical position drill",
+                    severity: "critical",
+                    cooldownSeconds: 1
+                ),
+            ]
+        )
+
+        let feedbacks = FormFeedbackEngine().evaluate(
+            joints: [
+                .rightShoulder: CGPoint(x: 0.0, y: 0.0),
+                .rightElbow: CGPoint(x: 0.5, y: 0.2),
+                .rightWrist: CGPoint(x: 1.0, y: 0.1),
+            ],
+            angles: ["testAngle": 100],
+            phase: .down,
+            definition: definition,
+            personality: .good
+        )
+
+        XCTAssertEqual(feedbacks.first?.ruleId, "critical_position")
+        XCTAssertEqual(feedbacks.first?.severity, .critical)
+    }
 }
 
-private func feedbackDefinition(rules: [FormRule]) -> ExerciseDefinition {
+private func feedbackDefinition(
+    rules: [FormRule],
+    positionalChecks: [PositionalCheck] = []
+) -> ExerciseDefinition {
     ExerciseDefinition(
         id: "feedbackTest",
         displayName: "Feedback Test",
@@ -105,6 +155,7 @@ private func feedbackDefinition(rules: [FormRule]) -> ExerciseDefinition {
         qualityTarget: nil,
         qualityTargetIsMinimum: false,
         formRules: rules,
+        positionalChecks: positionalChecks,
         targetMuscles: []
     )
 }

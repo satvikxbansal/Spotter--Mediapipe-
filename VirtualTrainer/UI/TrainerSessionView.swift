@@ -25,7 +25,7 @@ struct TrainerSessionView: View {
     @StateObject private var poseEstimator = PoseEstimator()
     @StateObject private var handGesture = HandGestureDetector()
     @StateObject private var faceLandmarker = FaceLandmarkerService()
-    @StateObject private var exertionAnalyzer = ExertionAnalyzer()
+    @State private var exertionAnalyzer = ExertionAnalyzer()
     @StateObject private var readyCoordinator = WorkoutReadyCoordinator()
     @StateObject private var motivationEngine = MotivationEngine()
     @ObservedObject private var voiceCoach = VoiceCoachManager.shared
@@ -42,6 +42,7 @@ struct TrainerSessionView: View {
     @State private var lastFormScore: FormScore?
     @State private var sessionStartedAt: Date?
     @State private var elapsedSeconds: TimeInterval = 0
+    @State private var currentEffortScore: Double = 0
     @State private var peakEffort: Double = 0
     @State private var visibilityResult = BodyVisibilityChecker.Result(
         isReady: false,
@@ -109,7 +110,10 @@ struct TrainerSessionView: View {
         .preferredColorScheme(.dark)
         .statusBarHidden()
         .onAppear {
-            sessionStartedAt = Date()
+            sessionStartedAt = context.startsActive ? Date() : nil
+            elapsedSeconds = 0
+            currentEffortScore = 0
+            peakEffort = 0
             repCounter = UniversalRepCounter(exerciseType: exerciseType)
             motivationEngine.personality = coachPersonality
             readyCoordinator.setPersonality(coachPersonality)
@@ -134,11 +138,17 @@ struct TrainerSessionView: View {
                 personality: coachPersonality
             )
         }
+        .onChange(of: readyCoordinator.state) { _, state in
+            guard state == .exerciseActive, sessionStartedAt == nil else { return }
+            sessionStartedAt = Date()
+            elapsedSeconds = 0
+        }
         .onDisappear {
             cameraManager.stop()
             handGesture.reset()
             readyCoordinator.reset()
             exertionAnalyzer.reset()
+            currentEffortScore = 0
             repCounter?.reset()
             formEngine.reset()
         }
@@ -224,7 +234,7 @@ struct TrainerSessionView: View {
                 HapticsEngine.shared.repTick()
                 motivationEngine.evaluateEffort(
                     currentRepCount: repCount,
-                    faceEffortScore: exertionAnalyzer.effortScore
+                    faceEffortScore: currentEffortScore
                 )
 
                 voiceCoach.playRep(count: repCount)
@@ -243,7 +253,8 @@ struct TrainerSessionView: View {
         .onChange(of: faceLandmarker.blendshapes) {
             guard readyCoordinator.state == .exerciseActive else { return }
             exertionAnalyzer.update(blendshapes: faceLandmarker.blendshapes)
-            peakEffort = max(peakEffort, exertionAnalyzer.effortScore)
+            currentEffortScore = exertionAnalyzer.effortScore
+            peakEffort = max(peakEffort, currentEffortScore)
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
             guard readyCoordinator.state == .exerciseActive,
@@ -1013,7 +1024,7 @@ struct TrainerSessionView: View {
     // MARK: - Effort Badge
 
     private var effortBadge: some View {
-        let effort = exertionAnalyzer.effortScore
+        let effort = currentEffortScore
         let color: Color = effort > 0.7
             ? Theme.Colors.danger
             : effort > 0.4 ? Theme.Colors.accent : Theme.Colors.positive

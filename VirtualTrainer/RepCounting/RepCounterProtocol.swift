@@ -135,7 +135,7 @@ nonisolated struct FormScore {
 /// implementation returns a `RepCounterOutput`.
 ///
 /// ```
-/// let counter: RepCounter = SquatRepCounter()
+/// let counter: RepCounter = UniversalRepCounter(exerciseType: .squat)
 /// let output = counter.process(angles: ["kneeAngle": 97.3, ...])
 /// ```
 nonisolated protocol RepCounter: AnyObject {

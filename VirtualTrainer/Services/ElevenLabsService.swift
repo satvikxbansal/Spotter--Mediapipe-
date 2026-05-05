@@ -22,9 +22,9 @@ nonisolated final class ElevenLabsService: Sendable {
 
     private let baseURL = "https://api.elevenlabs.io/v1/text-to-speech"
 
-    /// Replace with your actual ElevenLabs API key.
-    /// In production, load from Keychain or a secure config — never ship in source.
-    private let apiKey = "your_api_key_here"
+    /// Optional future remote-TTS key. Local voice coaching is the active path;
+    /// when this service is used, the key must come from app configuration.
+    private let apiKey = Bundle.main.object(forInfoDictionaryKey: "ELEVENLABS_API_KEY") as? String
 
     /// Turbo v2 gives the lowest latency for real-time coaching.
     private let modelID = "eleven_turbo_v2_5"
@@ -33,6 +33,7 @@ nonisolated final class ElevenLabsService: Sendable {
 
     enum ServiceError: LocalizedError {
         case badURL
+        case missingAPIKey
         case httpError(statusCode: Int)
         case emptyResponse
 
@@ -40,6 +41,8 @@ nonisolated final class ElevenLabsService: Sendable {
             switch self {
             case .badURL:
                 "Invalid ElevenLabs URL."
+            case .missingAPIKey:
+                "ElevenLabs API key is not configured."
             case .httpError(let code):
                 "ElevenLabs returned HTTP \(code)."
             case .emptyResponse:
@@ -59,6 +62,9 @@ nonisolated final class ElevenLabsService: Sendable {
     func fetchAudio(for text: String, voiceId: String) async throws -> Data {
         guard let url = URL(string: "\(baseURL)/\(voiceId)") else {
             throw ServiceError.badURL
+        }
+        guard let apiKey, !apiKey.isEmpty else {
+            throw ServiceError.missingAPIKey
         }
 
         var request = URLRequest(url: url)

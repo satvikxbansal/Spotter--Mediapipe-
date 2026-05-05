@@ -1,5 +1,4 @@
 import Foundation
-import Combine
 
 // ────────────────────────────────────────────────────────────────────
 // MARK: - ExertionAnalyzer
@@ -30,15 +29,15 @@ import Combine
 /// `effortScore`: 0.0 (relaxed) → 1.0 (maximum strain)
 /// `fatigueLevel`: derived from sustained high effort + rising
 ///                  blink frequency over time
-final class ExertionAnalyzer: ObservableObject {
+nonisolated final class ExertionAnalyzer {
 
-    // MARK: - Published State
+    // MARK: - State
 
     /// Smoothed effort score: 0.0 (resting) to 1.0 (max strain).
-    @Published private(set) var effortScore: Double = 0
+    private(set) var effortScore: Double = 0
 
     /// Fatigue indicator: 0.0 (fresh) to 1.0 (exhausted).
-    @Published private(set) var fatigueLevel: Double = 0
+    private(set) var fatigueLevel: Double = 0
 
     // MARK: - Configuration
 
@@ -85,18 +84,23 @@ final class ExertionAnalyzer: ObservableObject {
 
         for (key, weight) in weights {
             if key == "jawOpen_inverse" {
-                let jawOpen = Double(blendshapes["jawOpen"] ?? 0)
+                guard let jawOpenValue = blendshapes["jawOpen"] else { continue }
+                let jawOpen = Double(jawOpenValue)
                 let clench = max(0, 1.0 - jawOpen * 3.0)
                 composite += clench * weight
+                totalWeight += weight
             } else if let value = blendshapes[key] {
                 composite += Double(value) * weight
+                totalWeight += weight
             }
-            totalWeight += weight
         }
 
-        if totalWeight > 0 {
-            composite /= totalWeight
+        guard totalWeight > 0 else {
+            rawEffort = rawEffort * 0.95
+            effortScore = rawEffort
+            return
         }
+        composite /= totalWeight
 
         let normalized = min(composite * 2.5, 1.0)
 
