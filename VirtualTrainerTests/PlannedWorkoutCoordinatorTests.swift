@@ -155,6 +155,127 @@ final class PlannedWorkoutCoordinatorTests: XCTestCase {
         XCTAssertEqual(summary.exerciseSummaries.first?.setsCompleted, 2)
     }
 
+    func testCoordinatorRejectsMismatchedSetSummary() throws {
+        var coordinator = PlannedWorkoutCoordinator(plan: makePlan())
+        coordinator.startSession()
+        let firstContext = try XCTUnwrap(coordinator.currentContext)
+
+        XCTAssertFalse(
+            coordinator.completeCurrentSet(
+                with: makeSummary(
+                    from: firstContext,
+                    exerciseType: .pushup,
+                    reps: 8
+                )
+            )
+        )
+        XCTAssertEqual(coordinator.sessionState, .activeSet)
+        XCTAssertEqual(coordinator.completedSetSummaries.count, 0)
+
+        XCTAssertFalse(
+            coordinator.completeCurrentSet(
+                with: makeSummary(
+                    from: firstContext,
+                    target: .reps(99),
+                    reps: 8
+                )
+            )
+        )
+        XCTAssertEqual(coordinator.sessionState, .activeSet)
+        XCTAssertEqual(coordinator.completedSetSummaries.count, 0)
+
+        XCTAssertTrue(
+            coordinator.completeCurrentSet(
+                with: makeSummary(from: firstContext, reps: 8)
+            )
+        )
+        XCTAssertEqual(coordinator.sessionState, .rest)
+        XCTAssertEqual(coordinator.completedSetSummaries.count, 1)
+    }
+
+    func testLifecycleSupportsHoldTimedAndAmrapTargets() throws {
+        var coordinator = PlannedWorkoutCoordinator(plan: makeTargetVariantPlan())
+        coordinator.startSession()
+
+        let holdContext = try XCTUnwrap(coordinator.currentContext)
+        XCTAssertEqual(holdContext.target, .hold(seconds: 30))
+        XCTAssertEqual(holdContext.liveSessionContext.target, .seconds(30))
+        XCTAssertTrue(
+            coordinator.completeCurrentSet(
+                with: makeSummary(
+                    from: holdContext,
+                    reps: 0,
+                    duration: 31,
+                    holdDuration: 30
+                )
+            )
+        )
+        XCTAssertEqual(coordinator.sessionState, .rest)
+        XCTAssertEqual(coordinator.restContext?.restSeconds, 45)
+        XCTAssertEqual(coordinator.restContext?.upNextContext.target, .timed(seconds: 40))
+
+        coordinator.continueToNextSet()
+
+        let timedContext = try XCTUnwrap(coordinator.currentContext)
+        XCTAssertEqual(timedContext.liveSessionContext.target, .seconds(40))
+        XCTAssertTrue(
+            coordinator.completeCurrentSet(
+                with: makeSummary(
+                    from: timedContext,
+                    reps: 0,
+                    duration: 40
+                )
+            )
+        )
+        XCTAssertEqual(coordinator.restContext?.upNextContext.target, .amrap(seconds: 60))
+        XCTAssertEqual(coordinator.restContext?.restSeconds, 35)
+
+        coordinator.continueToNextSet()
+
+        let amrapContext = try XCTUnwrap(coordinator.currentContext)
+        XCTAssertEqual(amrapContext.liveSessionContext.target, .seconds(60))
+        XCTAssertTrue(
+            coordinator.completeCurrentSet(
+                with: makeSummary(
+                    from: amrapContext,
+                    reps: 18,
+                    duration: 60
+                )
+            )
+        )
+        XCTAssertEqual(coordinator.restContext?.upNextContext.target, .amrap(seconds: nil))
+        XCTAssertEqual(coordinator.restContext?.restSeconds, 50)
+
+        coordinator.continueToNextSet()
+
+        let openAmrapContext = try XCTUnwrap(coordinator.currentContext)
+        XCTAssertEqual(openAmrapContext.liveSessionContext.target, .open)
+        XCTAssertTrue(
+            coordinator.completeCurrentSet(
+                with: makeSummary(
+                    from: openAmrapContext,
+                    reps: 12,
+                    duration: 47,
+                    completionSource: .manual
+                )
+            )
+        )
+
+        XCTAssertEqual(coordinator.sessionState, .completed)
+        XCTAssertNil(coordinator.restContext)
+
+        let summary = coordinator.workoutSummary(
+            completedAt: Date(timeIntervalSince1970: 1_776_100_300)
+        )
+        XCTAssertEqual(summary.completedSets, 4)
+        XCTAssertEqual(summary.totalSets, 4)
+        XCTAssertEqual(summary.exercisesCompleted, 4)
+        XCTAssertEqual(summary.totalExercises, 4)
+        XCTAssertEqual(summary.totalReps, 30)
+        XCTAssertEqual(summary.totalHoldSeconds, 30)
+        XCTAssertEqual(summary.completionPercentage, 1)
+    }
+
     func testCoordinatorCanCancelSession() {
         var coordinator = PlannedWorkoutCoordinator(plan: makePlan())
         coordinator.startSession()
@@ -266,17 +387,75 @@ private extension PlannedWorkoutCoordinatorTests {
         )
     }
 
+    func makeTargetVariantPlan() -> WorkoutPlanV2 {
+        WorkoutPlanV2(
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000009B1") ?? UUID(),
+            title: "Phase 9B Mixed Targets",
+            subtitle: "Rest lifecycle test plan",
+            goal: "Exercise every planned target style.",
+            estimatedMinutes: 7,
+            difficulty: .beginner,
+            coach: .good,
+            blocks: [
+                WorkoutBlock(
+                    title: "Mixed Work",
+                    type: .main,
+                    exercises: [
+                        PlannedExercise(
+                            exerciseType: .plank,
+                            sets: [PlannedSet(setIndex: 1, target: .hold(seconds: 30))],
+                            restSeconds: 45,
+                            coachingFocus: "Brace and breathe.",
+                            cameraPosition: .side,
+                            allowSwap: true
+                        ),
+                        PlannedExercise(
+                            exerciseType: .jumpingJack,
+                            sets: [PlannedSet(setIndex: 1, target: .timed(seconds: 40))],
+                            restSeconds: 35,
+                            coachingFocus: "Steady rhythm.",
+                            cameraPosition: .front,
+                            allowSwap: true
+                        ),
+                        PlannedExercise(
+                            exerciseType: .squat,
+                            sets: [PlannedSet(setIndex: 1, target: .amrap(seconds: 60))],
+                            restSeconds: 50,
+                            coachingFocus: "Clean depth.",
+                            cameraPosition: .front,
+                            allowSwap: true
+                        ),
+                        PlannedExercise(
+                            exerciseType: .pushup,
+                            sets: [PlannedSet(setIndex: 1, target: .amrap(seconds: nil))],
+                            restSeconds: 60,
+                            coachingFocus: "Stop manually when the set is done.",
+                            cameraPosition: .side,
+                            allowSwap: true
+                        )
+                    ]
+                )
+            ],
+            generatedAt: Date(timeIntervalSince1970: 1_776_100_000),
+            planReason: "Stable fixture for Phase 9B target coverage.",
+            source: .generatedLocal
+        )
+    }
+
     func makeSummary(
         from context: WorkoutSessionContext,
+        exerciseType: ExerciseType? = nil,
+        target: WorkoutTarget? = nil,
         reps: Int,
         duration: TimeInterval = 32,
         holdDuration: TimeInterval = 0,
-        formScore: FormScore? = nil
+        formScore: FormScore? = nil,
+        completionSource: PlannedSetCompletionSource = .targetMet
     ) -> PlannedWorkoutSetSummary {
         PlannedWorkoutSetSummary(
             planId: context.planId,
-            exerciseType: context.exerciseType,
-            target: context.target,
+            exerciseType: exerciseType ?? context.exerciseType,
+            target: target ?? context.target,
             setIndex: context.setIndex,
             totalSets: context.totalSets,
             exerciseIndex: context.exerciseIndex,
@@ -288,7 +467,7 @@ private extension PlannedWorkoutCoordinatorTests {
             latestFormScore: formScore,
             peakEffort: 0.4,
             lastCue: nil,
-            completionSource: .targetMet
+            completionSource: completionSource
         )
     }
 

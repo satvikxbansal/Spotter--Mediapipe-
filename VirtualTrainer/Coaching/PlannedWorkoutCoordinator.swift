@@ -80,8 +80,14 @@ nonisolated struct PlannedWorkoutCoordinator {
     mutating func completeCurrentSet(with summary: PlannedWorkoutSetSummary) -> Bool {
         guard sessionState == .activeSet,
               summary.planId == plan.id,
+              let currentExercise,
+              let currentTarget,
+              summary.exerciseType == currentExercise.exerciseType,
+              summary.target == currentTarget,
               summary.exerciseIndex == currentGlobalExerciseIndex,
-              summary.setIndex == currentSetIndex
+              summary.setIndex == currentSetIndex,
+              summary.totalSets == currentExercise.sets.count,
+              summary.totalExercises == totalExercises
         else { return false }
 
         completedSetSummaries.append(summary)

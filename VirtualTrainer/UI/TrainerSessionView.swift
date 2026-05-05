@@ -172,8 +172,7 @@ struct TrainerSessionView: View {
             elapsedSeconds = 0
         }
         .onDisappear {
-            cameraManager.stop()
-            cameraManager.onFrame = nil
+            stopLivePipelines()
             handGesture.reset()
             readyCoordinator.reset()
             exertionAnalyzer.reset()
@@ -687,6 +686,7 @@ struct TrainerSessionView: View {
     private var cancelPlannedSessionButton: some View {
         Button {
             HapticsEngine.shared.warningPulse()
+            stopLivePipelines()
             onPlannedSessionCancelled?()
         } label: {
             Image(systemName: "xmark")
@@ -1062,6 +1062,7 @@ struct TrainerSessionView: View {
             peakEffort: peakEffort,
             lastCue: coachCues.first
         )
+        stopLivePipelines()
         onFreeAnalysisEnded?(summary)
         dismiss()
     }
@@ -1100,8 +1101,7 @@ struct TrainerSessionView: View {
         else { return }
 
         didCompletePlannedSet = true
-        cameraManager.stop()
-        cameraManager.onFrame = nil
+        stopLivePipelines()
         HapticsEngine.shared.successRipple()
 
         let summary = PlannedWorkoutSetSummary(
@@ -1123,6 +1123,11 @@ struct TrainerSessionView: View {
             completionSource: source
         )
         onPlannedSetCompleted?(summary)
+    }
+
+    private func stopLivePipelines() {
+        cameraManager.onFrame = nil
+        cameraManager.stop()
     }
 
     private func recordCues(_ cues: [CoachCue]) {

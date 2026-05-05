@@ -43,6 +43,7 @@ nonisolated final class PlanSwapService {
             guard metadata.exerciseType != exerciseId,
                   !exerciseTypesInPlan.contains(metadata.exerciseType),
                   metadata.movementPattern == originalMetadata.movementPattern,
+                  usesIsometricTargetStyle(metadata) == usesIsometricTargetStyle(originalMetadata),
                   metadata.requiredEquipment.isSubset(of: allowedEquipment),
                   let difficulty = metadata.difficulty,
                   difficultyRank(difficulty) <= difficultyRank(plan.difficulty)
@@ -170,5 +171,10 @@ nonisolated private extension PlanSwapService {
 
     func isDumbbellExercise(_ metadata: ExercisePlanMetadata) -> Bool {
         metadata.requiredEquipment.contains(.dumbbells) || metadata.planTags.contains(.dumbbell)
+    }
+
+    func usesIsometricTargetStyle(_ metadata: ExercisePlanMetadata) -> Bool {
+        metadata.exerciseType.definition?.movementType == .isometric ||
+            metadata.planTags.contains(.isometric)
     }
 }

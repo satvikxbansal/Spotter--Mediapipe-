@@ -160,7 +160,7 @@ struct CameraReadinessView: View {
             cameraManager.start()
         }
         .onDisappear {
-            cameraManager.stop()
+            stopReadinessCamera()
             handGesture.reset()
             readyCoordinator.reset()
         }
@@ -283,12 +283,17 @@ struct CameraReadinessView: View {
             HapticsEngine.shared.warningPulse()
             return
         }
-        cameraManager.stop()
+        stopReadinessCamera()
         activeContext = LiveSessionContext.freeAnalysis(
             exerciseType: exerciseType,
             coach: coach,
             startsActive: true
         )
+    }
+
+    private func stopReadinessCamera() {
+        cameraManager.onFrame = nil
+        cameraManager.stop()
     }
 }
 

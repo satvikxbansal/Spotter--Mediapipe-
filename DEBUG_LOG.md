@@ -448,3 +448,135 @@ Added `import Combine` to `VirtualTrainer/UI/RestScreenView.swift` so the timer 
 When a SwiftUI view uses `Timer.publish(...).autoconnect()` or other publisher operators directly, import `Combine` in that file instead of relying on transitive imports.
 
 **Pattern Tags:** #swiftui-views #combine #build
+
+---
+
+### [DL-021] Strictly Validate Planned Set Completion Summaries
+**Date:** 2026-05-05
+**Severity:** warning
+**Category:** state-management
+**File(s):** `VirtualTrainer/Coaching/PlannedWorkoutCoordinator.swift`, `VirtualTrainerTests/PlannedWorkoutCoordinatorTests.swift`
+
+**Error:**
+Planned workout set completion accepted any summary with the matching plan id, exercise index, and set index, leaving target, exercise type, total set count, and total exercise count unchecked.
+
+**Root Cause:**
+`PlannedWorkoutCoordinator.completeCurrentSet(with:)` validated only positional identifiers. A stale or mismatched `PlannedWorkoutSetSummary` could advance the coordinator into rest or completion while carrying the wrong active exercise or target metadata.
+
+**Fix Applied:**
+Tightened `completeCurrentSet(with:)` so the summary must match the active exercise type, active target, current global exercise index, current set index, total sets for the active exercise, and total exercises in the plan. Added regression coverage that rejects mismatched exercise and target summaries while preserving valid rest advancement.
+
+**Prevention Rule:**
+When a coordinator consumes a child-view completion summary, validate both identity and payload metadata before mutating lifecycle state.
+
+**Pattern Tags:** #planned-workout #state-management #tests
+
+---
+
+### [DL-022] Stop Live Camera Pipeline Before Planned Exit Paths
+**Date:** 2026-05-05
+**Severity:** warning
+**Category:** camera-pipeline
+**File(s):** `VirtualTrainer/UI/TrainerSessionView.swift`
+
+**Error:**
+Planned workout cancel and free-analysis Done relied on SwiftUI disappearance to stop camera capture, while planned set completion had its own inline camera stop logic.
+
+**Root Cause:**
+Camera cleanup was split across multiple call sites. Exit paths that dismissed immediately still cleaned up on `onDisappear`, but the frame handler was not cleared through one shared lifecycle method before every explicit end/cancel/complete action.
+
+**Fix Applied:**
+Added `stopLivePipelines()` in `TrainerSessionView` to clear `cameraManager.onFrame` and stop the `AVCaptureSession`, then reused it for view disappearance, free-analysis Done, planned session cancel, and planned set completion.
+
+**Prevention Rule:**
+All live camera session exit paths should call one shared cleanup helper before dismissing or advancing lifecycle state.
+
+**Pattern Tags:** #camera-pipeline #planned-workout #lifecycle
+
+---
+
+### [DL-023] Model Rest Timer Completion Explicitly
+**Date:** 2026-05-05
+**Severity:** warning
+**Category:** swiftui-views
+**File(s):** `VirtualTrainer/UI/RestScreenView.swift`, `VirtualTrainer/UI/PlannedWorkoutSessionView.swift`, `VirtualTrainerTests/PlannedWorkoutCoordinatorTests.swift`
+
+**Error:**
+When a planned workout rest timer reached zero, the rest screen still presented the countdown as `0 Seconds Left` and the parent continuation path duplicated the child button haptic.
+
+**Root Cause:**
+The rest screen treated zero as a numeric countdown value rather than a distinct completion state. The start action also triggered feedback in both the child rest view and the parent planned workout view.
+
+**Fix Applied:**
+Added a one-shot rest-complete signal, changed the zero-second label to `Rest Complete`, changed the header action to `Start Now`, reset the completion signal when `+15 sec` is added after zero, and removed the duplicate parent haptic. Added target-variant lifecycle assertions so rest durations are checked after hold, timed, and AMRAP-style sets.
+
+**Prevention Rule:**
+Countdown flows should represent zero as an explicit state, and nested SwiftUI action closures should keep haptic/audio feedback owned by one layer.
+
+**Pattern Tags:** #planned-workout #rest-screen #swiftui-views #state-management #tests
+
+---
+
+### [DL-024] Clear Readiness Camera Frame Handler Before Workout Handoff
+**Date:** 2026-05-05
+**Severity:** warning
+**Category:** camera-pipeline
+**File(s):** `VirtualTrainer/UI/CameraTabView.swift`
+
+**Error:**
+The readiness camera stopped capture before entering free analysis, but its `onFrame` callback was not cleared through a shared helper before the trainer session camera took ownership.
+
+**Root Cause:**
+Readiness cleanup and workout startup each stopped the `CameraManager` directly. That left the frame callback lifecycle less explicit during full-screen handoff to `TrainerSessionView`.
+
+**Fix Applied:**
+Added `stopReadinessCamera()` to clear `cameraManager.onFrame` and stop capture together, then used it on readiness disappearance and immediately before presenting the free-analysis trainer session.
+
+**Prevention Rule:**
+Every camera owner handoff should clear frame callbacks before presenting or starting the next camera owner.
+
+**Pattern Tags:** #camera-pipeline #readiness #lifecycle
+
+---
+
+### [DL-025] Align iOS Deployment Target And Clear Invalid Camera Entitlement
+**Date:** 2026-05-05
+**Severity:** warning
+**Category:** xcode-config
+**File(s):** `Podfile`, `Podfile.lock`, `VirtualTrainer.xcodeproj/project.pbxproj`, `VirtualTrainer/VirtualTrainer.entitlements`
+
+**Error:**
+The app and test project targets were configured with `IPHONEOS_DEPLOYMENT_TARGET = 26.2`, while the product and project rules target iOS 17+. The iOS entitlements file also contained the macOS sandbox camera entitlement `com.apple.security.device.camera`.
+
+**Root Cause:**
+The Xcode project carried a current-SDK deployment target instead of the intended app minimum, and the entitlement file retained a macOS camera sandbox key. On iOS, camera access is controlled by the `NSCameraUsageDescription` privacy string rather than that macOS entitlement.
+
+**Fix Applied:**
+Set the app, test, and Pods deployment target to iOS 17.0, ran `pod install` so CocoaPods generated settings and the lockfile checksum stayed aligned, and removed the invalid camera entitlement while preserving the entitlements file reference. Verified the built simulator app now reports `MinimumOSVersion = 17.0` and an empty entitlement dictionary.
+
+**Prevention Rule:**
+Keep app targets, test targets, Podfile settings, generated Pods settings, and platform privacy/entitlement models aligned with the real supported OS floor before declaring device readiness.
+
+**Pattern Tags:** #xcode-config #cocoapods #deployment-target #entitlements
+
+---
+
+### [DL-026] Preserve Target Style During Exercise Swaps
+**Date:** 2026-05-05
+**Severity:** warning
+**Category:** state-management
+**File(s):** `VirtualTrainer/Services/PlanSwapService.swift`, `VirtualTrainerTests/WorkoutPreviewTests.swift`
+
+**Error:**
+Exercise swapping could replace an isometric hold exercise with a rep-based exercise that shared the same movement pattern, while retaining the original hold target.
+
+**Root Cause:**
+Swap candidate filtering matched movement pattern, equipment, difficulty, unilateral status, bodyweight constraints, and camera capability, but did not require the replacement exercise to preserve the same target style as the original exercise.
+
+**Fix Applied:**
+Added an isometric target-style parity check to the swap candidate filter and covered it with a regression test using a wall-sit hold plan. Hold/isometric exercises now only swap with compatible hold/isometric exercises.
+
+**Prevention Rule:**
+Planned workout substitutions must preserve target semantics as well as movement and equipment constraints so the session lifecycle receives coherent rep, hold, timed, or AMRAP targets.
+
+**Pattern Tags:** #planned-workout #plan-swaps #targets #tests

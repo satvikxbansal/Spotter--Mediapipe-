@@ -161,6 +161,32 @@ final class PlanGeneratorTests: XCTestCase {
 
         XCTAssertEqual(decoded, plan)
     }
+
+    func testGeneratedRestSecondsUseMetadataAndAgePolicy() throws {
+        let profile = makeProfile(
+            age: 65,
+            goal: .longevity,
+            level: .beginner,
+            equipment: [.bodyweight, .mat]
+        )
+        let input = PlanGenerationInput(profile: profile, sessionLength: .twentyFive)
+        let rules = PlanGenerationRules.resolved(for: input)
+
+        let plan = generator.generate(input: input)
+
+        XCTAssertEqual(rules.restBonusSeconds, 30)
+        for block in plan.blocks {
+            for exercise in block.exercises {
+                let metadata = try XCTUnwrap(ExerciseMetadataCatalog.metadata(for: exercise.exerciseType))
+                let slotBonus = block.type == .finisher ? -10 : 0
+                XCTAssertEqual(
+                    exercise.restSeconds,
+                    max(15, metadata.defaultRestSeconds + rules.restBonusSeconds + slotBonus),
+                    "\(exercise.exerciseType.rawValue) rest should come from metadata plus age/session policy"
+                )
+            }
+        }
+    }
 }
 
 private extension PlanGeneratorTests {

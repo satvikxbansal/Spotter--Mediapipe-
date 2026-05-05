@@ -70,7 +70,6 @@ struct PlannedWorkoutSessionView: View {
     }
 
     private func continueTapped() {
-        HapticsEngine.shared.buttonTap()
         coordinator.continueToNextSet()
     }
 

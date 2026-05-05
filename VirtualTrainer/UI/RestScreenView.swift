@@ -7,6 +7,7 @@ struct RestScreenView: View {
 
     @State private var secondsRemaining: Int
     @State private var totalRestSeconds: Int
+    @State private var didSignalRestComplete: Bool = false
 
     init(
         restContext: PlannedWorkoutRestContext,
@@ -34,16 +35,23 @@ struct RestScreenView: View {
         }
         .background(Theme.Colors.background.ignoresSafeArea())
         .preferredColorScheme(.dark)
+        .onAppear {
+            signalRestCompleteIfNeeded()
+        }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            guard secondsRemaining > 0 else { return }
+            guard secondsRemaining > 0 else {
+                signalRestCompleteIfNeeded()
+                return
+            }
             secondsRemaining -= 1
+            signalRestCompleteIfNeeded()
         }
     }
 
     private var skipRestHeader: some View {
         HStack {
             Spacer()
-            Button("Skip Rest") {
+            Button(restHeaderActionTitle) {
                 startNextSet()
             }
             .font(.system(size: 12, weight: .black))
@@ -75,7 +83,7 @@ struct RestScreenView: View {
                         .foregroundStyle(Theme.Colors.textPrimary)
                         .contentTransition(.numericText(value: Double(secondsRemaining)))
 
-                    Text(secondsRemaining == 1 ? "Second Left" : "Seconds Left")
+                    Text(countdownStatusText)
                         .font(.system(size: 11, weight: .black))
                         .tracking(2.8)
                         .textCase(.uppercase)
@@ -98,6 +106,17 @@ struct RestScreenView: View {
     private var countdownProgress: Double {
         guard totalRestSeconds > 0 else { return 0 }
         return min(max(Double(secondsRemaining) / Double(totalRestSeconds), 0), 1)
+    }
+
+    private var countdownStatusText: String {
+        if secondsRemaining == 0 {
+            return "Rest Complete"
+        }
+        return secondsRemaining == 1 ? "Second Left" : "Seconds Left"
+    }
+
+    private var restHeaderActionTitle: String {
+        secondsRemaining == 0 ? "Start Now" : "Skip Rest"
     }
 
     private var lastSetCard: some View {
@@ -266,6 +285,9 @@ struct RestScreenView: View {
 
     private func addRest() {
         HapticsEngine.shared.buttonTap()
+        if secondsRemaining == 0 {
+            didSignalRestComplete = false
+        }
         secondsRemaining += 15
         totalRestSeconds += 15
     }
@@ -273,6 +295,12 @@ struct RestScreenView: View {
     private func startNextSet() {
         HapticsEngine.shared.buttonTap()
         onStartNext()
+    }
+
+    private func signalRestCompleteIfNeeded() {
+        guard secondsRemaining == 0, !didSignalRestComplete else { return }
+        didSignalRestComplete = true
+        HapticsEngine.shared.successRipple()
     }
 
     private static func durationText(_ duration: TimeInterval) -> String {

@@ -58,6 +58,17 @@ final class WorkoutPreviewTests: XCTestCase {
         }
     }
 
+    func testSwappingPreservesIsometricTargetStyle() {
+        let profile = makeProfile(equipment: [.bodyweight, .wall])
+        var state = WorkoutPreviewState(plan: makeIsometricPlan(coach: .good), profile: profile)
+
+        let didSwap = state.swapExercise(.wallSit)
+
+        XCTAssertFalse(didSwap)
+        XCTAssertEqual(state.exercises.first?.exerciseType, .wallSit)
+        XCTAssertEqual(state.exercises.first?.sets.first?.target, .hold(seconds: 20))
+    }
+
     func testSwapAllStaysWithinEquipmentAndCameraConstraints() {
         let profile = makeProfile(equipment: [.bodyweight])
         let input = PlanGenerationInput(profile: profile, sessionLength: .seven)
@@ -124,6 +135,39 @@ private extension WorkoutPreviewTests {
             ],
             generatedAt: Date(timeIntervalSince1970: 1_776_000_000),
             planReason: "Generated locally for a bodyweight beginner plan.",
+            source: .generatedLocal
+        )
+    }
+
+    func makeIsometricPlan(coach: CoachPersonality) -> WorkoutPlanV2 {
+        WorkoutPlanV2(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000809") ?? UUID(),
+            title: "Preview Hold",
+            subtitle: "Generated preview",
+            goal: "Build lower-body endurance.",
+            estimatedMinutes: 7,
+            difficulty: .beginner,
+            coach: coach,
+            blocks: [
+                WorkoutBlock(
+                    title: "Hold Practice",
+                    type: .main,
+                    exercises: [
+                        PlannedExercise(
+                            exerciseType: .wallSit,
+                            sets: [
+                                PlannedSet(setIndex: 1, target: .hold(seconds: 20))
+                            ],
+                            restSeconds: 60,
+                            coachingFocus: "Keep knees tracking and back supported.",
+                            cameraPosition: .front,
+                            allowSwap: true
+                        )
+                    ]
+                )
+            ],
+            generatedAt: Date(timeIntervalSince1970: 1_776_000_000),
+            planReason: "Generated locally for an isometric beginner plan.",
             source: .generatedLocal
         )
     }
