@@ -7,555 +7,437 @@ import SwiftUI
 struct HomeDashboardView: View {
     @EnvironmentObject private var onboardingStore: OnboardingStore
 
-    // MARK: - Splash Animation State
+    @State private var dashboardContent: DashboardContent?
+    @State private var previewPlan: WorkoutPlanV2?
+    @State private var isShowingPlanPreview = false
+    @State private var isShowingFormCheckSelection = false
+    @State private var isShowingTrophyTeaser = false
+    @State private var freeAnalysisSummary: FreeAnalysisSummary?
 
-    @State private var splashPhase: SplashPhase = .hidden
-    @State private var showDashboard = false
-
-    // MARK: - Sheet State
-
-    @State private var selectedCategory: BodyCategory?
-    @State private var showExerciseSheet = false
-    @State private var selectedExercise: String?
-    @State private var showCoachSheet = false
-    @State private var selectedPersonality: CoachPersonality = .good
-    @State private var navigateToSession = false
-
-    // MARK: - Dashboard Animation
-
-    @State private var dashboardAppeared = false
-
-    private enum SplashPhase {
-        case hidden
-        case welcomeVisible
-        case brandRevealed
-        case transitionOut
-        case done
-    }
+    private let contentFactory = DashboardContentFactory()
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-
-                if showDashboard {
-                    dashboardContent
-                        .transition(.opacity)
+            Group {
+                if let profile = onboardingStore.profile {
+                    dashboard(for: profile)
+                } else {
+                    MissingProfileDashboard {
+                        onboardingStore.resetOnboarding()
+                    }
                 }
-
-                splashOverlay
             }
-            .navigationDestination(isPresented: $navigateToSession) {
-                TrainerSessionView(
-                    workout: buildWorkoutPlan(),
-                    coachPersonality: selectedPersonality
-                )
+            .background(Theme.Colors.background)
+            .navigationTitle("Dashboard")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $isShowingPlanPreview) {
+                if let previewPlan {
+                    WorkoutPreviewView(plan: previewPlan)
+                }
+            }
+            .navigationDestination(isPresented: $isShowingFormCheckSelection) {
+                FormCheckSelectionView { summary in
+                    freeAnalysisSummary = summary
+                }
+            }
+            .navigationDestination(isPresented: $isShowingTrophyTeaser) {
+                TrophyTeaserView()
+            }
+            .sheet(item: $freeAnalysisSummary) { summary in
+                FreeAnalysisSummaryView(summary: summary)
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
             }
             .preferredColorScheme(.dark)
         }
-        .onAppear { startSplashSequence() }
-    }
-
-    // MARK: - Splash Overlay
-
-    private var splashOverlay: some View {
-        ZStack {
-            if splashPhase != .done {
-                Color.black.ignoresSafeArea()
-                    .transition(.opacity)
-
-                VStack(spacing: 12) {
-                    Text("Welcome to")
-                        .font(.system(size: 18, weight: .medium))
-                        .tracking(4.0)
-                        .textCase(.uppercase)
-                        .foregroundStyle(Color(white: 0.5))
-                        .opacity(splashWelcomeOpacity)
-
-                    Text("Spotter")
-                        .font(.system(size: 72, weight: .bold))
-                        .tracking(-1.5)
-                        .foregroundStyle(Color(white: 0.93))
-                        .opacity(splashBrandOpacity)
-                        .scaleEffect(splashBrandScale)
-                }
-                .offset(y: splashPhase == .transitionOut ? -30 : 0)
-                .animation(.easeInOut(duration: 0.5), value: splashPhase)
-            }
-        }
-        .animation(.easeInOut(duration: 0.6), value: splashPhase)
-    }
-
-    private var splashWelcomeOpacity: Double {
-        switch splashPhase {
-        case .hidden: 0
-        case .welcomeVisible, .brandRevealed: 1
-        case .transitionOut, .done: 0
+        .onAppear(perform: refreshDashboard)
+        .onChange(of: onboardingStore.profile) {
+            refreshDashboard()
         }
     }
 
-    private var splashBrandOpacity: Double {
-        switch splashPhase {
-        case .hidden, .welcomeVisible: 0
-        case .brandRevealed: 1
-        case .transitionOut, .done: 0
-        }
-    }
-
-    private var splashBrandScale: CGFloat {
-        switch splashPhase {
-        case .hidden, .welcomeVisible: 0.88
-        case .brandRevealed: 1.0
-        case .transitionOut, .done: 0.95
-        }
-    }
-
-    private func startSplashSequence() {
-        withAnimation(.easeOut(duration: 0.5)) {
-            splashPhase = .welcomeVisible
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-            withAnimation(.easeOut(duration: 0.5)) {
-                splashPhase = .brandRevealed
-            }
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            showDashboard = true
-            withAnimation(.easeInOut(duration: 0.5)) {
-                splashPhase = .transitionOut
-            }
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            splashPhase = .done
-            withAnimation(Theme.Motion.smooth.delay(0.1)) {
-                dashboardAppeared = true
-            }
-        }
-    }
-
-    // MARK: - Dashboard Content
-
-    private var dashboardContent: some View {
+    private func dashboard(for profile: UserProfile) -> some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                dashboardHeader
-                categorySection
+            VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                if let dashboardContent {
+                    DashboardHeader(content: dashboardContent)
+
+                    SmartStartCard(summary: dashboardContent.smartStart) {
+                        openPreview(for: dashboardContent.smartStart.plan)
+                    }
+
+                    DailyPlanCard(summary: dashboardContent.dailyPlan) {
+                        openPreview(for: dashboardContent.dailyPlan.plan)
+                    }
+
+                    QuickActionGrid(
+                        actions: dashboardContent.quickActions,
+                        onSelect: handleQuickAction
+                    )
+
+                    TrophyTeaserCard(text: dashboardContent.trophyTeaserText) {
+                        isShowingTrophyTeaser = true
+                    }
+
+                    if let recentWorkout = dashboardContent.recentWorkout {
+                        RecentWorkoutCard(recentWorkout: recentWorkout)
+                    }
+                } else {
+                    ProgressView()
+                        .tint(Theme.Colors.accent)
+                        .frame(maxWidth: .infinity, minHeight: 240)
+                }
             }
+            .padding(Theme.Spacing.lg)
             .padding(.bottom, Theme.Spacing.xxxl)
         }
-        .background(Color.black)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .sheet(isPresented: $showExerciseSheet) {
-            exerciseSelectionSheet
-                .presentationDetents([exerciseSheetDetent])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.ultraThinMaterial)
-        }
-        .sheet(isPresented: $showCoachSheet) {
-            coachSelectionSheet
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.ultraThinMaterial)
+        .refreshable {
+            dashboardContent = contentFactory.makeContent(profile: profile)
         }
     }
 
-    // MARK: - Dashboard Header
+    private func refreshDashboard() {
+        guard let profile = onboardingStore.profile else {
+            dashboardContent = nil
+            return
+        }
 
-    private var dashboardHeader: some View {
+        dashboardContent = contentFactory.makeContent(profile: profile)
+    }
+
+    private func openPreview(for plan: WorkoutPlanV2) {
+        HapticsEngine.shared.buttonTap()
+        previewPlan = plan
+        isShowingPlanPreview = true
+    }
+
+    private func handleQuickAction(_ action: DashboardQuickAction) {
+        guard action.isEnabled else { return }
+        HapticsEngine.shared.buttonTap()
+
+        switch action.destination {
+        case .formCheckSelection:
+            isShowingFormCheckSelection = true
+        case .trophies:
+            isShowingTrophyTeaser = true
+        case .runningAnalysis, nil:
+            break
+        }
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// MARK: - Header
+// ────────────────────────────────────────────────────────────────────
+
+private struct DashboardHeader: View {
+    let content: DashboardContent
+
+    var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Text("SPOTTER")
-                            .font(.system(size: 14, weight: .black))
-                            .tracking(2.0)
-                            .foregroundStyle(Theme.Colors.accent)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Text(content.greeting)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Theme.Colors.textSecondary)
 
-                        Circle()
-                            .fill(Theme.Colors.accent)
-                            .frame(width: 4, height: 4)
-
-                        Text(timeBasedGreeting().uppercased())
-                            .font(.system(size: 11, weight: .bold))
-                            .tracking(1.5)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                    }
-
-                    Text("Hey, \(onboardingStore.profile?.firstName ?? "Athlete")")
-                        .font(.system(size: 28, weight: .heavy))
-                        .tracking(-0.5)
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                }
-                Spacer()
-            }
-            .opacity(dashboardAppeared ? 1 : 0)
-            .offset(y: dashboardAppeared ? 0 : 10)
-
-            Text("What would you like to train today?")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.Colors.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .opacity(dashboardAppeared ? 1 : 0)
-                .offset(y: dashboardAppeared ? 0 : 12)
-                .animation(Theme.Motion.smooth.delay(0.08), value: dashboardAppeared)
-        }
-        .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.top, Theme.Spacing.xxl)
-        .padding(.bottom, Theme.Spacing.xl)
-    }
-
-    // MARK: - Body Category Cards
-
-    private var categorySection: some View {
-        VStack(spacing: Theme.Spacing.sm) {
-            ForEach(Array(BodyCategory.allCases.enumerated()), id: \.element.id) { index, category in
-                Button {
-                    HapticsEngine.shared.buttonTap()
-                    selectedCategory = category
-                    selectedExercise = nil
-                    showExerciseSheet = true
-                } label: {
-                    BodyCategoryCard(category: category)
-                }
-                .buttonStyle(CardPressStyle())
-                .opacity(dashboardAppeared ? 1 : 0)
-                .offset(y: dashboardAppeared ? 0 : 20)
-                .animation(
-                    Theme.Motion.smooth.delay(0.15 + Double(index) * 0.08),
-                    value: dashboardAppeared
-                )
-            }
-        }
-        .padding(.horizontal, Theme.Spacing.lg)
-    }
-
-    // MARK: - Exercise Selection Sheet
-
-    private var exerciseSelectionSheet: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            if let category = selectedCategory {
-                let available = category.exercises.filter(\.available)
-
-                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                    Text(category.displayName.uppercased())
-                        .font(.system(size: 12, weight: .heavy))
-                        .tracking(1.8)
-                        .foregroundStyle(Theme.Colors.accent)
-
-                    Text("Pick an exercise")
-                        .font(.system(size: 22, weight: .heavy))
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                }
-
-                VStack(spacing: Theme.Spacing.xs) {
-                    ForEach(available) { exercise in
-                        AvailableExerciseRow(
-                            exercise: exercise,
-                            isSelected: selectedExercise == exercise.id,
-                            onTap: {
-                                selectedExercise = exercise.id
-                                HapticsEngine.shared.buttonTap()
-                            }
-                        )
-                    }
-                }
-
-                Spacer(minLength: 0)
-
-                Button {
-                    HapticsEngine.shared.buttonTap()
-                    showExerciseSheet = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                        showCoachSheet = true
-                    }
-                } label: {
-                    Text("Lock in & pick your coach")
-                }
-                .buttonStyle(PrimaryCTAStyle())
-                .disabled(selectedExercise == nil)
-                .opacity(selectedExercise == nil ? 0.5 : 1.0)
-                .padding(.bottom, Theme.Spacing.xs)
-            }
-        }
-        .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.top, Theme.Spacing.xl)
-    }
-
-    // MARK: - Coach Selection Sheet
-
-    private var coachSelectionSheet: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                Text("CHOOSE YOUR COACH")
-                    .font(.system(size: 12, weight: .heavy))
-                    .tracking(1.8)
-                    .foregroundStyle(Theme.Colors.accent)
-
-                Text("Who's spotting you today?")
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(content.athleteName)
+                    .header(size: 42)
             }
 
             HStack(spacing: Theme.Spacing.sm) {
-                ForEach(CoachPersonality.allCases) { personality in
-                    Button {
-                        withAnimation(Theme.Motion.snappy) {
-                            selectedPersonality = personality
-                        }
-                        HapticsEngine.shared.buttonTap()
-                    } label: {
-                        CoachPersonalityCard(
-                            personality: personality,
-                            isSelected: selectedPersonality == personality
-                        )
-                    }
-                    .buttonStyle(CardPressStyle())
-                }
+                Label(content.streak.title, systemImage: "flame.fill")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(Theme.Colors.accent)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, Theme.Spacing.xs)
+                    .background(Theme.Colors.accentMuted)
+                    .clipShape(Capsule())
+
+                Text(content.streak.subtitle)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
 
-            Spacer(minLength: 0)
-
-            Button {
-                HapticsEngine.shared.buttonTap()
-                showCoachSheet = false
-                Task {
-                    await VoiceCoachManager.shared.playMotivation(
-                        text: "Welcome, lets get started",
-                        personality: selectedPersonality
-                    )
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    navigateToSession = true
-                }
-            } label: {
-                Text("Let's go")
-            }
-            .buttonStyle(PrimaryCTAStyle())
-            .padding(.bottom, Theme.Spacing.xs)
+            Text("Train Now")
+                .header(size: 36)
+                .padding(.top, Theme.Spacing.sm)
         }
-        .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.top, Theme.Spacing.xl)
-    }
-
-    // MARK: - Logic
-
-    /// Computes the ideal sheet height based on exercise count.
-    private var exerciseSheetDetent: PresentationDetent {
-        let count = selectedCategory?.exercises.filter(\.available).count ?? 0
-        // Header (~100) + rows (56 each) + button (~70) + padding (~60)
-        let height = CGFloat(100 + count * 56 + 70 + 60)
-        return .height(height)
-    }
-
-    private func buildWorkoutPlan() -> WorkoutPlan {
-        guard let category = selectedCategory,
-              let exerciseId = selectedExercise,
-              let exercise = category.exercises.first(where: { $0.id == exerciseId }),
-              let type = exercise.type
-        else {
-            return WorkoutPlan.MockData.legDay
-        }
-
-        return WorkoutPlan(
-            title: exercise.name,
-            subtitle: category.displayName,
-            exercises: [
-                WorkoutSet(exerciseType: type, targetReps: 12),
-                WorkoutSet(exerciseType: type, targetReps: 12),
-                WorkoutSet(exerciseType: type, targetReps: 10),
-            ],
-            estimatedMinutes: 10
-        )
-    }
-
-    private func timeBasedGreeting() -> String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 5..<12:   return "Morning"
-        case 12..<17:  return "Afternoon"
-        case 17..<22:  return "Evening"
-        default:        return "Late Night"
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 // ────────────────────────────────────────────────────────────────────
-// MARK: - Body Category Card
+// MARK: - Plan Cards
 // ────────────────────────────────────────────────────────────────────
 
-private struct BodyCategoryCard: View {
-
-    let category: BodyCategory
+private struct SmartStartCard: View {
+    let summary: DashboardPlanSummary
+    let onStart: () -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
-            Theme.Colors.accent
-                .frame(width: 3)
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack {
+                DashboardBadge(text: "Recommended")
+                Spacer()
+                Text(summary.durationText)
+                    .caption()
+            }
 
-            HStack(spacing: Theme.Spacing.md) {
-                ZStack {
-                    Circle()
-                        .fill(Theme.Colors.accent.opacity(0.12))
-                        .frame(width: 52, height: 52)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Text("Smart Start")
+                    .header(size: 30)
+                Text(summary.title)
+                    .font(.system(size: 17, weight: .heavy))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(summary.reason)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(3)
+            }
 
-                    Image(systemName: category.icon)
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.accent)
-                }
+            Button("Start", action: onStart)
+                .buttonStyle(PrimaryCTAStyle())
+        }
+        .dashboardCard()
+    }
+}
 
-                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                    Text(category.displayName)
-                        .font(.system(size: 18, weight: .heavy))
+private struct DailyPlanCard: View {
+    let summary: DashboardPlanSummary
+    let onPreview: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text("Daily Plan")
+                        .header(size: 26)
+                    Text(summary.title)
+                        .font(.system(size: 17, weight: .heavy))
                         .foregroundStyle(Theme.Colors.textPrimary)
-                        .lineLimit(1)
-
-                    Text(category.subtitle)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        .lineLimit(1)
+                    Text("\(summary.exerciseCount) exercises • \(summary.durationText)")
+                        .caption()
                 }
 
-                Spacer(minLength: 0)
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.Colors.textTertiary)
+                Spacer(minLength: Theme.Spacing.md)
             }
-            .padding(Theme.Spacing.lg)
+
+            Text(summary.reason)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .lineLimit(3)
+
+            Button("Preview plan", action: onPreview)
+                .buttonStyle(SecondaryCTAStyle())
         }
-        .background(Theme.Colors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+        .dashboardCard()
     }
 }
 
 // ────────────────────────────────────────────────────────────────────
-// MARK: - Available Exercise Row (with checkbox)
+// MARK: - Quick Actions
 // ────────────────────────────────────────────────────────────────────
 
-private struct AvailableExerciseRow: View {
+private struct QuickActionGrid: View {
+    let actions: [DashboardQuickAction]
+    let onSelect: (DashboardQuickAction) -> Void
 
-    let exercise: ExerciseOption
-    let isSelected: Bool
-    let onTap: () -> Void
+    private let columns = [
+        GridItem(.flexible(), spacing: Theme.Spacing.sm),
+        GridItem(.flexible(), spacing: Theme.Spacing.sm),
+    ]
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: Theme.Spacing.md) {
-                // Radio button
-                ZStack {
-                    Circle()
-                        .stroke(
-                            isSelected ? Theme.Colors.accent : Theme.Colors.textSecondary,
-                            lineWidth: 2
-                        )
-                        .frame(width: 22, height: 22)
-
-                    if isSelected {
-                        Circle()
-                            .fill(Theme.Colors.accent)
-                            .frame(width: 12, height: 12)
-                    }
+        LazyVGrid(columns: columns, spacing: Theme.Spacing.sm) {
+            ForEach(actions) { action in
+                Button {
+                    onSelect(action)
+                } label: {
+                    DashboardActionCard(action: action)
                 }
+                .buttonStyle(DashboardCardButtonStyle())
+                .disabled(!action.isEnabled)
+                .accessibilityHint(action.statusLabel ?? action.subtitle)
+            }
+        }
+    }
+}
 
-                Text(exercise.name)
-                    .font(.system(size: 16, weight: isSelected ? .heavy : .semibold))
-                    .foregroundStyle(isSelected ? Theme.Colors.accent : Theme.Colors.textPrimary)
+private struct DashboardActionCard: View {
+    let action: DashboardQuickAction
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack {
+                Image(systemName: action.systemImage)
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(action.isEnabled ? Theme.Colors.accent : Theme.Colors.textTertiary)
 
                 Spacer()
+
+                if let statusLabel = action.statusLabel {
+                    DashboardBadge(text: statusLabel)
+                        .opacity(action.isEnabled ? 1 : 0.75)
+                }
             }
-            .padding(.vertical, Theme.Spacing.sm)
-            .padding(.horizontal, Theme.Spacing.md)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .fill(isSelected ? Theme.Colors.accent.opacity(0.08) : Theme.Colors.surface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(isSelected ? Theme.Colors.accent.opacity(0.3) : Color.clear, lineWidth: 1)
-            )
-            .contentShape(Rectangle())
+
+            Spacer(minLength: Theme.Spacing.md)
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                Text(action.title)
+                    .font(.system(size: 18, weight: .heavy))
+                    .textCase(.uppercase)
+                    .foregroundStyle(action.isEnabled ? Theme.Colors.textPrimary : Theme.Colors.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(action.subtitle)
+                    .caption()
+            }
         }
-        .buttonStyle(.plain)
-        .animation(Theme.Motion.snappy, value: isSelected)
-    }
-}
-
-// ────────────────────────────────────────────────────────────────────
-// MARK: - Coach Personality Card
-// ────────────────────────────────────────────────────────────────────
-
-private struct CoachPersonalityCard: View {
-
-    let personality: CoachPersonality
-    let isSelected: Bool
-
-    private var tint: Color { personality.accentColor }
-
-    var body: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            coachPhoto
-            coachInfo
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, Theme.Spacing.lg)
-        .padding(.bottom, Theme.Spacing.md + 2)
-        .padding(.horizontal, Theme.Spacing.sm)
-        .background(isSelected ? tint.opacity(0.10) : Theme.Colors.surface)
+        .frame(maxWidth: .infinity, minHeight: 136, alignment: .leading)
+        .padding(Theme.Spacing.md)
+        .background(action.isEnabled ? Theme.Colors.surface : Theme.Colors.surface.opacity(0.45))
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                .stroke(isSelected ? tint : Color.clear, lineWidth: 2)
+                .stroke(action.isEnabled ? Theme.Colors.divider : Theme.Colors.textTertiary.opacity(0.35), lineWidth: 1)
         )
-    }
-
-    private var coachPhoto: some View {
-        Image(personality.imageName)
-            .resizable()
-            .aspectRatio(contentMode: .fill)
-            .frame(width: 80, height: 80)
-            .clipShape(Circle())
-            .overlay(
-                Circle()
-                    .stroke(
-                        isSelected ? tint : Theme.Colors.divider,
-                        lineWidth: isSelected ? 2.5 : 1
-                    )
-            )
-            .shadow(color: isSelected ? tint.opacity(0.4) : .clear, radius: 10)
-    }
-
-    private var coachInfo: some View {
-        VStack(spacing: Theme.Spacing.xs) {
-            Text(personality.coachName)
-                .font(.system(size: 16, weight: .heavy))
-                .foregroundStyle(isSelected ? tint : Theme.Colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-
-            Text(personality.tagline)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Theme.Colors.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, Theme.Spacing.xxs)
-        }
     }
 }
 
 // ────────────────────────────────────────────────────────────────────
-// MARK: - Card Press Style
+// MARK: - Secondary Cards
 // ────────────────────────────────────────────────────────────────────
 
-private struct CardPressStyle: ButtonStyle {
+private struct TrophyTeaserCard: View {
+    let text: String
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            HStack(spacing: Theme.Spacing.md) {
+                Image(systemName: "trophy.fill")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(Theme.Colors.accent)
+                    .frame(width: 44, height: 44)
+                    .background(Theme.Colors.accentMuted)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text("Trophy Case")
+                        .font(.system(size: 18, weight: .heavy))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(text)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+            .dashboardCard()
+        }
+        .buttonStyle(DashboardCardButtonStyle())
+    }
+}
+
+private struct RecentWorkoutCard: View {
+    let recentWorkout: DashboardRecentWorkout
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text("Recent Workout")
+                .header(size: 22)
+            HStack {
+                Text(recentWorkout.title)
+                    .font(.system(size: 17, weight: .heavy))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Spacer()
+                Text(recentWorkout.completedAt, style: .date)
+                    .caption()
+            }
+        }
+        .dashboardCard()
+    }
+}
+
+private struct MissingProfileDashboard: View {
+    let onStart: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            Spacer()
+
+            Text("Profile Needed")
+                .header(size: 34)
+            Text("Dashboard plans need your local onboarding profile first.")
+                .bodyText()
+                .foregroundStyle(Theme.Colors.textSecondary)
+
+            Button("Start onboarding", action: onStart)
+                .buttonStyle(PrimaryCTAStyle())
+
+            Spacer()
+        }
+        .padding(Theme.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.background)
+    }
+}
+
+private struct TrophyTeaserView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            Text("Trophies")
+                .header(size: 36)
+            Text("No trophies yet.")
+                .bodyText()
+                .foregroundStyle(Theme.Colors.textSecondary)
+            Spacer()
+        }
+        .padding(Theme.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.background)
+        .navigationTitle("Trophies")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct DashboardBadge: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .black))
+            .tracking(0.7)
+            .textCase(.uppercase)
+            .foregroundStyle(Theme.Colors.background)
+            .padding(.horizontal, Theme.Spacing.xs)
+            .padding(.vertical, Theme.Spacing.xxxs)
+            .background(Theme.Colors.accent)
+            .clipShape(Capsule())
+    }
+}
+
+private struct DashboardCardButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.975 : 1.0)
-            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .opacity(configuration.isPressed ? 0.78 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
             .animation(Theme.Motion.snappy, value: configuration.isPressed)
+    }
+}
+
+private extension View {
+    func dashboardCard() -> some View {
+        self
+            .padding(Theme.Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.Colors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
     }
 }
 
