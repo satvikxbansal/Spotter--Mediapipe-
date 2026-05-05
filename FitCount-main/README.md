@@ -1,3 +1,9 @@
+# Legacy FitCount Sample
+
+This folder is kept as a reference sample. The active Spotter / VirtualTrainer project README is here: [../README.md](../README.md).
+
+---
+
 #  FitCount by QuickPose.ai
 
 This project provides the end-to-end demo solution for an AR/AI fitness iOS app. FitCount is based on the [QuickPose.ai](https://QuickPose.ai) SDK.
