@@ -292,6 +292,266 @@ nonisolated struct WorkoutPlan: Identifiable {
     }
 }
 
+// ────────────────────────────────────────────────────────────────────
+// MARK: - Workout Plan V2
+// ────────────────────────────────────────────────────────────────────
+
+/// Target styles supported by the next workout planner.
+nonisolated enum WorkoutTarget: Codable, Equatable, Hashable {
+    case reps(Int)
+    case hold(seconds: Int)
+    case timed(seconds: Int)
+    case amrap(seconds: Int?)
+    case open
+
+    var formattedText: String {
+        switch self {
+        case .reps(let count):
+            return "\(count) \(count == 1 ? "rep" : "reps")"
+        case .hold(let seconds):
+            return "\(Self.formatDuration(seconds)) hold"
+        case .timed(let seconds):
+            return "\(Self.formatDuration(seconds)) work"
+        case .amrap(let seconds):
+            guard let seconds else { return "AMRAP" }
+            return "AMRAP \(Self.formatDuration(seconds))"
+        case .open:
+            return "Open"
+        }
+    }
+
+    static func formatTargetText(_ target: WorkoutTarget) -> String {
+        target.formattedText
+    }
+
+    private static func formatDuration(_ seconds: Int) -> String {
+        let safeSeconds = max(seconds, 0)
+        guard safeSeconds >= 60 else { return "\(safeSeconds) sec" }
+
+        let minutes = safeSeconds / 60
+        let remainingSeconds = safeSeconds % 60
+        return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+}
+
+/// Where a workout plan came from.
+nonisolated enum PlanSource: String, Codable, CaseIterable, Equatable, Hashable {
+    case generatedLocal
+    case template
+    case remote
+    case aiAssisted
+}
+
+/// Role of a workout block inside a plan.
+nonisolated enum WorkoutBlockType: String, Codable, CaseIterable, Equatable, Hashable {
+    case warmup
+    case main
+    case circuit
+    case finisher
+    case cooldown
+}
+
+/// High-level section of a generated workout.
+nonisolated struct WorkoutBlock: Codable, Equatable {
+    let title: String
+    let type: WorkoutBlockType
+    let exercises: [PlannedExercise]
+
+    init(
+        title: String,
+        type: WorkoutBlockType,
+        exercises: [PlannedExercise]
+    ) {
+        self.title = title
+        self.type = type
+        self.exercises = exercises
+    }
+}
+
+/// One exercise prescription inside a workout block.
+nonisolated struct PlannedExercise: Codable, Equatable {
+    let exerciseType: ExerciseType
+    let sets: [PlannedSet]
+    let restSeconds: Int
+    let coachingFocus: String
+    let cameraPosition: CameraPosition
+    let allowSwap: Bool
+
+    init(
+        exerciseType: ExerciseType,
+        sets: [PlannedSet],
+        restSeconds: Int,
+        coachingFocus: String,
+        cameraPosition: CameraPosition,
+        allowSwap: Bool
+    ) {
+        self.exerciseType = exerciseType
+        self.sets = sets
+        self.restSeconds = restSeconds
+        self.coachingFocus = coachingFocus
+        self.cameraPosition = cameraPosition
+        self.allowSwap = allowSwap
+    }
+}
+
+/// One prescribed set. `setIndex` is one-based within its exercise.
+nonisolated struct PlannedSet: Codable, Equatable {
+    let setIndex: Int
+    let target: WorkoutTarget
+
+    init(setIndex: Int, target: WorkoutTarget) {
+        self.setIndex = setIndex
+        self.target = target
+    }
+}
+
+/// Structured workout plan for generated, remote, template, and AI-assisted flows.
+nonisolated struct WorkoutPlanV2: Identifiable, Codable, Equatable {
+    let id: UUID
+    let title: String
+    let subtitle: String
+    let goal: String
+    let estimatedMinutes: Int
+    let difficulty: ExerciseDifficulty
+    let coach: CoachPersonality
+    let blocks: [WorkoutBlock]
+    let generatedAt: Date
+    let planReason: String
+    let source: PlanSource
+
+    init(
+        id: UUID = UUID(),
+        title: String,
+        subtitle: String,
+        goal: String,
+        estimatedMinutes: Int,
+        difficulty: ExerciseDifficulty,
+        coach: CoachPersonality,
+        blocks: [WorkoutBlock],
+        generatedAt: Date = Date(),
+        planReason: String,
+        source: PlanSource
+    ) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.goal = goal
+        self.estimatedMinutes = estimatedMinutes
+        self.difficulty = difficulty
+        self.coach = coach
+        self.blocks = blocks
+        self.generatedAt = generatedAt
+        self.planReason = planReason
+        self.source = source
+    }
+
+    init(
+        legacy workout: WorkoutPlan,
+        goal: String? = nil,
+        difficulty: ExerciseDifficulty? = nil,
+        coach: CoachPersonality = .good,
+        generatedAt: Date = Date(),
+        planReason: String = "Converted from the legacy workout plan format.",
+        source: PlanSource = .template
+    ) {
+        self.init(
+            id: workout.id,
+            title: workout.title,
+            subtitle: workout.subtitle,
+            goal: goal ?? workout.subtitle,
+            estimatedMinutes: workout.estimatedMinutes,
+            difficulty: difficulty ?? Self.inferredDifficulty(for: workout.exercises),
+            coach: coach,
+            blocks: [
+                WorkoutBlock(
+                    title: "Main Work",
+                    type: .main,
+                    exercises: Self.convertLegacySets(workout.exercises)
+                )
+            ],
+            generatedAt: generatedAt,
+            planReason: planReason,
+            source: source
+        )
+    }
+
+    private static func convertLegacySets(_ sets: [WorkoutSet]) -> [PlannedExercise] {
+        var plannedExercises: [PlannedExercise] = []
+        var currentExerciseType: ExerciseType?
+        var currentSets: [PlannedSet] = []
+
+        func appendCurrentExercise() {
+            guard let exerciseType = currentExerciseType else { return }
+            plannedExercises.append(
+                PlannedExercise(
+                    exerciseType: exerciseType,
+                    sets: currentSets,
+                    restSeconds: ExerciseMetadataCatalog.metadata(for: exerciseType)?.defaultRestSeconds ?? 60,
+                    coachingFocus: exerciseType.visibilityHint,
+                    cameraPosition: exerciseType.cameraPosition,
+                    allowSwap: true
+                )
+            )
+        }
+
+        for legacySet in sets {
+            if currentExerciseType != legacySet.exerciseType {
+                appendCurrentExercise()
+                currentExerciseType = legacySet.exerciseType
+                currentSets = []
+            }
+
+            let nextIndex = currentSets.count + 1
+            currentSets.append(
+                PlannedSet(
+                    setIndex: nextIndex,
+                    target: legacySet.exerciseType.isIsometric
+                        ? .hold(seconds: legacySet.targetReps)
+                        : .reps(legacySet.targetReps)
+                )
+            )
+        }
+
+        appendCurrentExercise()
+        return plannedExercises
+    }
+
+    private static func inferredDifficulty(for sets: [WorkoutSet]) -> ExerciseDifficulty {
+        let difficulties = sets.compactMap {
+            ExerciseMetadataCatalog.metadata(for: $0.exerciseType)?.difficulty
+        }
+
+        if difficulties.contains(.advanced) {
+            return .advanced
+        }
+        if difficulties.contains(.intermediate) {
+            return .intermediate
+        }
+        return .beginner
+    }
+}
+
+extension WorkoutPlan {
+    func convertedToV2(
+        goal: String? = nil,
+        difficulty: ExerciseDifficulty? = nil,
+        coach: CoachPersonality = .good,
+        generatedAt: Date = Date(),
+        planReason: String = "Converted from the legacy workout plan format.",
+        source: PlanSource = .template
+    ) -> WorkoutPlanV2 {
+        WorkoutPlanV2(
+            legacy: self,
+            goal: goal,
+            difficulty: difficulty,
+            coach: coach,
+            generatedAt: generatedAt,
+            planReason: planReason,
+            source: source
+        )
+    }
+}
+
 extension WorkoutPlan {
 
     /// Ready-made plans for previews and first-launch content.
@@ -343,7 +603,7 @@ extension WorkoutPlan {
 
 /// Two flavours of motivational coaching.
 /// Persisted via `@AppStorage` using the raw string value.
-nonisolated enum CoachPersonality: String, CaseIterable, Identifiable {
+nonisolated enum CoachPersonality: String, Codable, CaseIterable, Identifiable {
     case good
     case drill
 
