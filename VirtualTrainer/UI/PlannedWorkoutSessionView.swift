@@ -2,14 +2,17 @@ import SwiftUI
 
 struct PlannedWorkoutSessionView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var onboardingStore: OnboardingStore
     @EnvironmentObject private var calibrationStore: CalibrationStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
     @EnvironmentObject private var trophyStore: TrophyStore
+    @EnvironmentObject private var insightStore: InsightStore
     @State private var coordinator: PlannedWorkoutCoordinator
     @State private var didSaveHistorySummary = false
     @State private var savedHistorySummary: WorkoutSessionSummary?
     @State private var newlyEarnedTrophyEvents: [TrophyUnlockEvent] = []
     @State private var nearestTrophyProgress: TrophyProgress?
+    @State private var workoutInsight: AIInsight?
 
     init(plan: WorkoutPlanV2) {
         _coordinator = State(
@@ -71,7 +74,8 @@ struct PlannedWorkoutSessionView: View {
             summary: coordinator.workoutSummary(),
             historySummary: savedHistorySummary,
             trophyEvents: newlyEarnedTrophyEvents,
-            nearestTrophyProgress: nearestTrophyProgress
+            nearestTrophyProgress: nearestTrophyProgress,
+            coachInsight: workoutInsight
         ) {
             dismiss()
         }
@@ -108,7 +112,38 @@ struct PlannedWorkoutSessionView: View {
             calibrationStatus: calibrationStore.status
         )
         nearestTrophyProgress = trophyStore.snapshot.nearestInProgress
+        workoutInsight = makeWorkoutInsight(for: summary)
         didSaveHistorySummary = true
+    }
+
+    private func makeWorkoutInsight(for summary: WorkoutSessionSummary) -> AIInsight? {
+        guard let profile = onboardingStore.profile else { return nil }
+        let now = Date()
+        let trendEngine = TrendEngine()
+        let trendSnapshot = trendEngine.buildSnapshot(
+            history: historyStore.summaries,
+            profile: profile,
+            trophies: trophyStore.snapshot,
+            now: now
+        )
+        let signals = SignalExtractor(trendEngine: trendEngine).extractSignals(
+            snapshot: trendSnapshot,
+            history: historyStore.summaries,
+            profile: profile,
+            trophies: trophyStore.snapshot
+        )
+        let generated = InsightEngine().generateWorkoutInsights(
+            summary: summary,
+            plan: coordinator.plan,
+            trendSnapshot: trendSnapshot,
+            signals: signals
+        )
+        return insightStore.selectInsights(
+            generated,
+            for: .workoutSummary,
+            limit: 1,
+            now: now
+        ).first
     }
 }
 
@@ -116,7 +151,9 @@ struct PlannedWorkoutSessionView: View {
     PlannedWorkoutSessionView(
         plan: WorkoutPlan.MockData.legDay.convertedToV2()
     )
+    .environmentObject(OnboardingStore())
     .environmentObject(CalibrationStore())
     .environmentObject(WorkoutHistoryStore())
     .environmentObject(TrophyStore())
+    .environmentObject(InsightStore())
 }

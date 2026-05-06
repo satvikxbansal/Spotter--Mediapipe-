@@ -37,4 +37,5 @@ struct MainTabView: View {
         .environmentObject(WorkoutHistoryStore())
         .environmentObject(TrophyStore())
         .environmentObject(ThemeStore())
+        .environmentObject(InsightStore())
 }

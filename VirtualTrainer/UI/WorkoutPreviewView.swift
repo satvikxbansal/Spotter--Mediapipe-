@@ -2,11 +2,15 @@ import SwiftUI
 
 struct WorkoutPreviewView: View {
     @EnvironmentObject private var onboardingStore: OnboardingStore
+    @EnvironmentObject private var historyStore: WorkoutHistoryStore
+    @EnvironmentObject private var trophyStore: TrophyStore
+    @EnvironmentObject private var insightStore: InsightStore
 
     @State private var previewState: WorkoutPreviewState
     @State private var activePlan: WorkoutPlanV2?
     @State private var statusMessage: String?
     @State private var targetDraft: TargetVolumeDraft?
+    @State private var planInsight: AIInsight?
 
     init(plan: WorkoutPlanV2, profile: UserProfile? = nil) {
         _previewState = State(
@@ -26,8 +30,7 @@ struct WorkoutPreviewView: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                 header
                 coachSelector
-                reasonCard
-                insightPlaceholder
+                planInsightCard
                 cameraPlanCard
                 planBlocks
             }
@@ -52,6 +55,13 @@ struct WorkoutPreviewView: View {
             .presentationDetents([.medium, .large])
         }
         .preferredColorScheme(.dark)
+        .onAppear(perform: refreshPlanInsight)
+        .onChange(of: historyStore.summaries) {
+            refreshPlanInsight()
+        }
+        .onChange(of: trophyStore.snapshot) {
+            refreshPlanInsight()
+        }
     }
 
     private var header: some View {
@@ -130,30 +140,24 @@ struct WorkoutPreviewView: View {
         }
     }
 
-    private var reasonCard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text("Why this plan")
-                .font(.system(size: 18, weight: .heavy))
-                .foregroundStyle(Theme.Colors.textPrimary)
-            Text(plan.planReason)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Theme.Colors.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .previewCard()
-    }
-
-    private var insightPlaceholder: some View {
+    private var planInsightCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             HStack(spacing: Theme.Spacing.xs) {
                 Image(systemName: "lightbulb.fill")
                     .foregroundStyle(Theme.Colors.accent)
-                Text("Plan insight")
+                Text(planInsight == nil ? "Why this plan" : "Plan insight")
                     .font(.system(size: 18, weight: .heavy))
                     .foregroundStyle(Theme.Colors.textPrimary)
             }
 
-            Text(plan.planReason)
+            if let planInsight {
+                Text(planInsight.headline)
+                    .font(.system(size: 15, weight: .black))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text(planInsight?.message ?? plan.planReason)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -283,6 +287,41 @@ struct WorkoutPreviewView: View {
             return
         }
         activePlan = previewState.displayPlan
+    }
+
+    private func refreshPlanInsight() {
+        guard let profile = onboardingStore.profile ?? previewState.input?.profile else {
+            planInsight = nil
+            return
+        }
+
+        let now = Date()
+        let trendEngine = TrendEngine()
+        let trendSnapshot = trendEngine.buildSnapshot(
+            history: historyStore.summaries,
+            profile: profile,
+            trophies: trophyStore.snapshot,
+            now: now
+        )
+        let signals = SignalExtractor(trendEngine: trendEngine).extractSignals(
+            snapshot: trendSnapshot,
+            history: historyStore.summaries,
+            profile: profile,
+            trophies: trophyStore.snapshot
+        )
+        let generated = InsightEngine().generatePlanInsights(
+            profile: profile,
+            plan: plan,
+            trendSnapshot: trendSnapshot,
+            signals: signals,
+            trophyProgress: trophyStore.snapshot
+        )
+        planInsight = insightStore.selectInsights(
+            generated,
+            for: .workoutPreview,
+            limit: 1,
+            now: now
+        ).first
     }
 }
 
@@ -582,4 +621,6 @@ private extension View {
     }
     .environmentObject(OnboardingStore())
     .environmentObject(WorkoutHistoryStore())
+    .environmentObject(TrophyStore())
+    .environmentObject(InsightStore())
 }

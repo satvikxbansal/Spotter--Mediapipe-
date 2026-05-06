@@ -9,8 +9,10 @@ struct HomeDashboardView: View {
     @EnvironmentObject private var calibrationStore: CalibrationStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
     @EnvironmentObject private var trophyStore: TrophyStore
+    @EnvironmentObject private var insightStore: InsightStore
 
     @State private var dashboardContent: DashboardContent?
+    @State private var dashboardInsight: AIInsight?
     @State private var previewPlan: WorkoutPlanV2?
     @State private var isShowingPlanPreview = false
     @State private var isShowingFormCheckSelection = false
@@ -84,6 +86,10 @@ struct HomeDashboardView: View {
                         openPreview(for: dashboardContent.dailyPlan.plan)
                     }
 
+                    if let dashboardInsight {
+                        DashboardCoachInsightCard(insight: dashboardInsight)
+                    }
+
                     QuickActionGrid(
                         actions: dashboardContent.quickActions,
                         onSelect: handleQuickAction
@@ -106,36 +112,63 @@ struct HomeDashboardView: View {
             .padding(.bottom, Theme.Spacing.xxxl)
         }
         .refreshable {
-            trophyStore.updateAll(
-                history: historyStore.summaries,
-                calibrationStatus: calibrationStore.status
-            )
-            dashboardContent = contentFactory.makeContent(
-                profile: profile,
-                recentWorkoutHistory: historyStore.recentWorkoutHistoryItems(),
-                currentStreakDayCount: historyStore.aggregateStats().currentStreak,
-                trophySnapshot: trophyStore.snapshot
-            )
+            refreshDashboard()
         }
     }
 
     private func refreshDashboard() {
         guard let profile = onboardingStore.profile else {
             dashboardContent = nil
+            dashboardInsight = nil
             return
         }
 
+        let now = Date()
         trophyStore.updateAll(
             history: historyStore.summaries,
-            calibrationStatus: calibrationStore.status
+            calibrationStatus: calibrationStore.status,
+            now: now
         )
 
         dashboardContent = contentFactory.makeContent(
             profile: profile,
+            now: now,
             recentWorkoutHistory: historyStore.recentWorkoutHistoryItems(),
-            currentStreakDayCount: historyStore.aggregateStats().currentStreak,
+            currentStreakDayCount: historyStore.aggregateStats(now: now).currentStreak,
             trophySnapshot: trophyStore.snapshot
         )
+        dashboardInsight = makeDashboardInsight(profile: profile, now: now)
+    }
+
+    private func makeDashboardInsight(
+        profile: UserProfile,
+        now: Date
+    ) -> AIInsight? {
+        let trendEngine = TrendEngine()
+        let trendSnapshot = trendEngine.buildSnapshot(
+            history: historyStore.summaries,
+            profile: profile,
+            trophies: trophyStore.snapshot,
+            now: now
+        )
+        let signals = SignalExtractor(trendEngine: trendEngine).extractSignals(
+            snapshot: trendSnapshot,
+            history: historyStore.summaries,
+            profile: profile,
+            trophies: trophyStore.snapshot
+        )
+        let generated = InsightEngine().generateDashboardInsights(
+            profile: profile,
+            trendSnapshot: trendSnapshot,
+            signals: signals,
+            trophies: trophyStore.snapshot
+        )
+        return insightStore.selectInsights(
+            generated,
+            for: .dashboard,
+            limit: 1,
+            now: now
+        ).first
     }
 
     private func openPreview(for plan: WorkoutPlanV2) {
@@ -406,6 +439,62 @@ private struct TrophyTeaserCard: View {
     }
 }
 
+private struct DashboardCoachInsightCard: View {
+    let insight: AIInsight
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.md) {
+            Image(systemName: iconName)
+                .font(.system(size: 22, weight: .black))
+                .foregroundStyle(tint)
+                .frame(width: 44, height: 44)
+                .background(tint.opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                Text("Coach Insight")
+                    .font(.system(size: 11, weight: .black))
+                    .tracking(1.0)
+                    .textCase(.uppercase)
+                    .foregroundStyle(tint)
+                Text(insight.shortMessage)
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: Theme.Spacing.sm)
+        }
+        .dashboardCard()
+    }
+
+    private var tint: Color {
+        switch insight.severity {
+        case .positive:
+            return Theme.Colors.positive
+        case .neutral:
+            return Theme.Colors.accent
+        case .caution, .important:
+            return Theme.Colors.danger
+        }
+    }
+
+    private var iconName: String {
+        switch insight.type {
+        case .growthCelebration, .consistency:
+            return "chart.line.uptrend.xyaxis"
+        case .formCorrection, .safety:
+            return "exclamationmark.triangle.fill"
+        case .recovery:
+            return "timer"
+        case .trophyProgress:
+            return "trophy.fill"
+        default:
+            return "brain.head.profile"
+        }
+    }
+}
+
 private struct RecentWorkoutCard: View {
     let recentWorkout: DashboardRecentWorkout
 
@@ -495,4 +584,5 @@ private extension View {
         .environmentObject(CalibrationStore())
         .environmentObject(WorkoutHistoryStore())
         .environmentObject(TrophyStore())
+        .environmentObject(InsightStore())
 }

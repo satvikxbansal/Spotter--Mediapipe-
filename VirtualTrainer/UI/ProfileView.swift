@@ -6,9 +6,11 @@ struct ProfileView: View {
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
     @EnvironmentObject private var trophyStore: TrophyStore
     @EnvironmentObject private var themeStore: ThemeStore
+    @EnvironmentObject private var insightStore: InsightStore
 
     @State private var selectedSummary: WorkoutSessionSummary?
     @State private var isShowingAllHistory = false
+    @State private var profileInsights: [AIInsight] = []
 
     var body: some View {
         NavigationStack {
@@ -35,13 +37,14 @@ struct ProfileView: View {
             }
             .onAppear(perform: refreshProfileData)
             .onChange(of: historyStore.summaries) {
-                refreshTrophies()
+                refreshProfileData()
             }
             .onChange(of: calibrationStore.status) {
                 refreshTrophies()
             }
             .onChange(of: onboardingStore.profile) {
                 themeStore.sync(with: onboardingStore.profile)
+                refreshProfileData()
             }
         }
         .preferredColorScheme(.dark)
@@ -66,13 +69,6 @@ struct ProfileView: View {
             profile: profile,
             now: now
         )
-        let trainingSignals = SignalExtractor(trendEngine: trendEngine).extractSignals(
-            snapshot: trendSnapshot,
-            history: historyStore.summaries,
-            profile: profile,
-            trophies: trophyStore.snapshot
-        )
-
         return ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                 ProfileHeaderView(
@@ -104,7 +100,7 @@ struct ProfileView: View {
                     accent: themeStore.selectedTheme.accentColor
                 )
 
-                CoachInsightsCard(profile: profile, signals: trainingSignals)
+                CoachInsightsCard(profile: profile, insights: profileInsights)
 
                 WorkoutHistorySection(
                     summaries: historyStore.fetchRecentSummaries(limit: 5),
@@ -129,13 +125,59 @@ struct ProfileView: View {
 
     private func refreshProfileData() {
         themeStore.sync(with: onboardingStore.profile)
-        refreshTrophies()
+        guard let profile = onboardingStore.profile else {
+            profileInsights = []
+            return
+        }
+        let now = Date()
+        trophyStore.updateAll(
+            history: historyStore.summaries,
+            calibrationStatus: calibrationStore.status,
+            now: now
+        )
+        refreshProfileInsights(profile: profile, now: now)
     }
 
     private func refreshTrophies() {
+        let now = Date()
         trophyStore.updateAll(
             history: historyStore.summaries,
-            calibrationStatus: calibrationStore.status
+            calibrationStatus: calibrationStore.status,
+            now: now
+        )
+        if let profile = onboardingStore.profile {
+            refreshProfileInsights(profile: profile, now: now)
+        }
+    }
+
+    private func refreshProfileInsights(
+        profile: UserProfile,
+        now: Date
+    ) {
+        let trendEngine = TrendEngine()
+        let trendSnapshot = trendEngine.buildSnapshot(
+            history: historyStore.summaries,
+            profile: profile,
+            trophies: trophyStore.snapshot,
+            now: now
+        )
+        let signals = SignalExtractor(trendEngine: trendEngine).extractSignals(
+            snapshot: trendSnapshot,
+            history: historyStore.summaries,
+            profile: profile,
+            trophies: trophyStore.snapshot
+        )
+        let generated = InsightEngine().generateProfileInsights(
+            profile: profile,
+            trendSnapshot: trendSnapshot,
+            signals: signals,
+            trophies: trophyStore.snapshot
+        )
+        profileInsights = insightStore.selectInsights(
+            generated,
+            for: .profile,
+            limit: 2,
+            now: now
         )
     }
 
@@ -579,28 +621,84 @@ private struct WorkoutSnapshotCard: View {
 
 private struct CoachInsightsCard: View {
     let profile: UserProfile
-    let signals: [UserTrainingSignal]
+    let insights: [AIInsight]
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            ProfileSectionHeader(title: "Training Signals")
+            ProfileSectionHeader(title: "Coach Insights")
 
-            if signals.isEmpty {
+            if insights.isEmpty {
                 EmptyProfileCard(
                     systemImage: "brain.head.profile",
-                    title: "No trend signals yet",
-                    subtitle: "Save a planned workout or free-analysis session to build evidence-backed signals for \(profile.primaryGoal.displayName.lowercased())."
+                    title: "No fresh insights yet",
+                    subtitle: "Save more workouts to build evidence-backed coaching stories for \(profile.primaryGoal.displayName.lowercased())."
                 )
             } else {
                 VStack(spacing: Theme.Spacing.sm) {
-                    ForEach(Array(signals.prefix(4))) { signal in
-                        TrainingSignalRow(signal: signal)
+                    ForEach(Array(insights.prefix(2))) { insight in
+                        ProfileInsightRow(insight: insight)
                     }
                 }
                 .padding(Theme.Spacing.md)
                 .background(Theme.Colors.surface)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             }
+        }
+    }
+}
+
+private struct ProfileInsightRow: View {
+    let insight: AIInsight
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+            Image(systemName: iconName)
+                .font(.system(size: 13, weight: .black))
+                .foregroundStyle(tint)
+                .frame(width: 30, height: 30)
+                .background(tint.opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
+                Text(insight.headline)
+                    .font(.system(size: 14, weight: .black))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(insight.message)
+                    .caption()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: Theme.Spacing.xs)
+        }
+    }
+
+    private var tint: Color {
+        switch insight.severity {
+        case .positive:
+            return Theme.Colors.positive
+        case .neutral:
+            return Theme.Colors.accent
+        case .caution, .important:
+            return Theme.Colors.danger
+        }
+    }
+
+    private var iconName: String {
+        switch insight.type {
+        case .consistency:
+            return "flame.fill"
+        case .growthCelebration, .dayOverDayTrend:
+            return "chart.line.uptrend.xyaxis"
+        case .formCorrection, .safety:
+            return "exclamationmark.triangle.fill"
+        case .recovery:
+            return "timer"
+        case .trophyProgress:
+            return "trophy.fill"
+        default:
+            return "brain.head.profile"
         }
     }
 }
@@ -974,4 +1072,5 @@ private enum ProfileFormat {
         .environmentObject(WorkoutHistoryStore())
         .environmentObject(TrophyStore())
         .environmentObject(ThemeStore())
+        .environmentObject(InsightStore())
 }

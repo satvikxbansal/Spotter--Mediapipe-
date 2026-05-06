@@ -13,6 +13,7 @@ struct VirtualTrainerApp: App {
     @StateObject private var workoutHistoryStore = WorkoutHistoryStore()
     @StateObject private var trophyStore = TrophyStore()
     @StateObject private var themeStore = ThemeStore()
+    @StateObject private var insightStore = InsightStore()
 
     var body: some Scene {
         WindowGroup {
@@ -30,6 +31,7 @@ struct VirtualTrainerApp: App {
             .environmentObject(workoutHistoryStore)
             .environmentObject(trophyStore)
             .environmentObject(themeStore)
+            .environmentObject(insightStore)
             .onAppear {
                 themeStore.sync(with: onboardingStore.profile)
             }

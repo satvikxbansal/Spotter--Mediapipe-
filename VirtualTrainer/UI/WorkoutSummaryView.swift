@@ -5,6 +5,7 @@ struct WorkoutSummaryView: View {
     let historySummary: WorkoutSessionSummary?
     let trophyEvents: [TrophyUnlockEvent]
     let nearestTrophyProgress: TrophyProgress?
+    let coachInsight: AIInsight?
     let onDone: () -> Void
 
     @State private var isShowingDetail = false
@@ -14,12 +15,14 @@ struct WorkoutSummaryView: View {
         historySummary: WorkoutSessionSummary?,
         trophyEvents: [TrophyUnlockEvent] = [],
         nearestTrophyProgress: TrophyProgress? = nil,
+        coachInsight: AIInsight? = nil,
         onDone: @escaping () -> Void
     ) {
         self.summary = summary
         self.historySummary = historySummary
         self.trophyEvents = trophyEvents
         self.nearestTrophyProgress = nearestTrophyProgress
+        self.coachInsight = coachInsight
         self.onDone = onDone
     }
 
@@ -178,7 +181,14 @@ struct WorkoutSummaryView: View {
                     .foregroundStyle(Theme.Colors.accent)
             }
 
-            Text(summary.coachInsight)
+            if let coachInsight {
+                Text(coachInsight.headline)
+                    .font(.system(size: 15, weight: .black))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text(coachInsight?.message ?? summary.coachInsight)
                 .font(.system(size: 18, weight: .heavy))
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
