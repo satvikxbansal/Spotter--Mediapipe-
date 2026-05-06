@@ -22,8 +22,9 @@ nonisolated final class ElevenLabsService: Sendable {
 
     private let baseURL = "https://api.elevenlabs.io/v1/text-to-speech"
 
-    /// Optional future remote-TTS key. Local voice coaching is the active path;
-    /// when this service is used, the key must come from app configuration.
+    /// Optional future remote-TTS key. Local voice coaching is the active path.
+    /// Do not ship real third-party secrets in the client; remote TTS should
+    /// move behind backend functions before production use.
     private let apiKey = Bundle.main.object(forInfoDictionaryKey: "ELEVENLABS_API_KEY") as? String
 
     /// Turbo v2 gives the lowest latency for real-time coaching.

@@ -458,7 +458,7 @@
 				GCC_GENERATE_TEST_COVERAGE_FILES = NO;
 				GCC_INSTRUMENT_PROGRAM_FLOW_ARCS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "VirtualTrainer needs camera access to track your body posture and count exercise reps.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Spotter needs camera access for on-device body tracking and rep counting. Camera frames are not stored or uploaded.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -509,7 +509,7 @@
 				GCC_GENERATE_TEST_COVERAGE_FILES = NO;
 				GCC_INSTRUMENT_PROGRAM_FLOW_ARCS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "VirtualTrainer needs camera access to track your body posture and count exercise reps.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Spotter needs camera access for on-device body tracking and rep counting. Camera frames are not stored or uploaded.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

@@ -29,7 +29,10 @@ final class CameraManager: NSObject, ObservableObject {
     /// video frame's sample buffer on a dedicated processing queue —
     /// never the main thread. MediaPipe accepts CMSampleBuffer
     /// directly via MPImage.
-    var onFrame: ((CMSampleBuffer) -> Void)?
+    var onFrame: ((CMSampleBuffer) -> Void)? {
+        get { lockedFrameHandler() }
+        set { setLockedFrameHandler(newValue) }
+    }
 
     private let sessionQueue = DispatchQueue(label: "com.virtualtrainer.camera.session")
     private let videoOutputQueue = DispatchQueue(
@@ -37,6 +40,8 @@ final class CameraManager: NSObject, ObservableObject {
         qos: .userInitiated
     )
     private let videoOutput = AVCaptureVideoDataOutput()
+    private let frameHandlerLock = NSLock()
+    private var frameHandler: ((CMSampleBuffer) -> Void)?
 
     // MARK: - Public API
 
@@ -153,6 +158,19 @@ final class CameraManager: NSObject, ObservableObject {
         }
         DispatchQueue.main.async { self.isRunning = self.session.isRunning }
     }
+
+    private func lockedFrameHandler() -> ((CMSampleBuffer) -> Void)? {
+        frameHandlerLock.lock()
+        let handler = frameHandler
+        frameHandlerLock.unlock()
+        return handler
+    }
+
+    private func setLockedFrameHandler(_ handler: ((CMSampleBuffer) -> Void)?) {
+        frameHandlerLock.lock()
+        frameHandler = handler
+        frameHandlerLock.unlock()
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -166,6 +184,6 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        onFrame?(sampleBuffer)
+        lockedFrameHandler()?(sampleBuffer)
     }
 }
