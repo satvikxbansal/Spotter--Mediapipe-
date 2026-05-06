@@ -398,7 +398,7 @@ struct OnboardingCompletionView: View {
             Text("Ready for calibration")
                 .header(size: 42)
 
-            Text("Your profile will be saved locally. Main tabs unlock after this step.")
+            Text("Your profile will be saved locally. Calibration comes next.")
                 .bodyText()
                 .foregroundStyle(Theme.Colors.textSecondary)
 
@@ -412,7 +412,7 @@ struct OnboardingCompletionView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             }
 
-            Button("Enter Spotter") {
+            Button("Continue to calibration") {
                 store.completeOnboarding()
             }
             .buttonStyle(PrimaryCTAStyle())
