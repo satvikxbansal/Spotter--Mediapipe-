@@ -16,6 +16,16 @@ nonisolated enum TrainingSignalType: String, Codable, CaseIterable, Hashable {
     case planFit
     case trophyProximity
     case cameraFriction
+    case qualityCapacity
+    case targetFit
+    case movementBalance
+    case cueCluster
+    case restResponse
+    case progressionReadiness
+    case sessionFit
+    case exerciseReacquisition
+    case exercisePreference
+    case qualityPR
 }
 
 nonisolated enum SignalConfidence: String, Codable, CaseIterable, Hashable {

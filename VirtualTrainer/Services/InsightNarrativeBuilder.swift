@@ -36,6 +36,9 @@ nonisolated struct InsightNarrativeBuilder {
 
 nonisolated private extension InsightNarrativeBuilder {
     func message(for candidate: InsightCandidate) -> String {
+        if let derivedMessage = derivedMessage(candidate) {
+            return derivedMessage
+        }
         switch candidate.type {
         case .formCorrection:
             return formCorrectionMessage(candidate)
@@ -65,6 +68,10 @@ nonisolated private extension InsightNarrativeBuilder {
         let value = candidate.context["value"]?.nilIfEmpty ?? candidate.evidence.first?.value
         let cue = candidate.context["cue"]?.nilIfEmpty
 
+        if let derivedShortMessage = derivedShortMessage(candidate, exercise: exercise, value: value) {
+            return derivedShortMessage
+        }
+
         switch candidate.type {
         case .formCorrection:
             if let exercise, let rep = candidate.context["breakdownRep"]?.nilIfEmpty {
@@ -82,6 +89,10 @@ nonisolated private extension InsightNarrativeBuilder {
         case .recovery:
             if candidate.context["signalType"] == TrainingSignalType.fatigue.rawValue {
                 return "Recent strain signals are up. Keep the next plan short and clean."
+            }
+            if candidate.context["signalType"] == TrainingSignalType.skippedExercise.rawValue ||
+                candidate.context["restSkipped"] == "true" {
+                return "Rest is being skipped early. Trim it only if the next set stays clean."
             }
             return "\(exercise ?? "Volume") needs more recovery room today."
         case .safety:
@@ -104,6 +115,104 @@ nonisolated private extension InsightNarrativeBuilder {
             return "\(exercise ?? "Today's session") gave the next plan a clear signal."
         case .dayOverDayTrend:
             return "\(value ?? "Recent training") is the story. Match volume to quality."
+        }
+    }
+
+    func derivedMessage(_ candidate: InsightCandidate) -> String? {
+        guard let signalType = candidate.context["signalType"]?.nilIfEmpty,
+              let trainingSignalType = TrainingSignalType(rawValue: signalType)
+        else { return nil }
+
+        let exercise = candidate.context["exercise"]?.nilIfEmpty ?? candidate.relatedExerciseType?.displayName ?? "This movement"
+        let value = candidate.context["value"]?.nilIfEmpty ?? candidate.evidence.first?.value ?? "the recent signal"
+        let comparison = candidate.context["comparison"]?.nilIfEmpty
+        let pattern = candidate.context["movementPattern"]?.nilIfEmpty
+
+        switch trainingSignalType {
+        case .qualityCapacity:
+            let dropText = comparison.map { ", with \($0)" } ?? ""
+            return "\(exercise) is currently most reliable around \(value)\(dropText). Keep the next target there first; add work only after that number stays clean."
+        case .targetFit:
+            switch candidate.context["status"] {
+            case "ready":
+                return "\(exercise) target fit looks ready: \(comparison ?? value). Add the smallest possible progression only if the first set stays clean."
+            case "matched":
+                return "\(exercise) is well matched today: \(comparison ?? value). Keep the target steady and let quality decide the next change."
+            default:
+                return "\(exercise) target looks too aggressive from \(comparison ?? value). Pull the next target back before completion or quality breaks further."
+            }
+        case .movementBalance:
+            let missing = pattern ?? "a missing movement pattern"
+            return "\(value), with \(comparison ?? "one pattern underrepresented"). Next plan should make room for \(missing.lowercased()) work so training does not keep repeating the same stress."
+        case .cueCluster:
+            return "\(value) cues are grouping across recent evidence. Make that cue family the first focus before adding reps, time, or tempo."
+        case .restResponse:
+            if candidate.context["status"] == "restHelped" {
+                return "After extended rest, \(exercise) quality moved \(comparison ?? "up"). Keep the extra rest available before cutting volume."
+            }
+            return "After extended rest, \(exercise) quality still did not rebound enough. Lower the next target before adding more rest or volume."
+        case .progressionReadiness:
+            if candidate.context["status"] == "ready" {
+                return "\(exercise) passed the progression gate: \(comparison ?? value). Progress by the smallest step and stop the increase if form fades."
+            }
+            return "\(exercise) has not cleared the progression gate yet: \(comparison ?? value). Repeat the target until quality, cues, and rest all settle."
+        case .sessionFit:
+            return "\(value), with \(comparison ?? "recent clean evidence"). Use shorter plans as a real strategy, not a fallback, when consistency needs protection."
+        case .exerciseReacquisition:
+            return "\(exercise) is back after \(value). Restart from the last clean target before asking the movement to progress again."
+        case .exercisePreference:
+            return "\(exercise) is showing repeated fit friction: \(value). Use an easier variant or swap later instead of forcing the same target."
+        case .qualityPR:
+            return "\(exercise) hit \(value), ahead of \(comparison ?? "the previous mark"). Celebrate it, then keep the next session specific instead of chasing random extra volume."
+        default:
+            return nil
+        }
+    }
+
+    func derivedShortMessage(
+        _ candidate: InsightCandidate,
+        exercise: String?,
+        value: String?
+    ) -> String? {
+        guard let signalType = candidate.context["signalType"]?.nilIfEmpty,
+              let trainingSignalType = TrainingSignalType(rawValue: signalType)
+        else { return nil }
+
+        let exercise = exercise ?? "This movement"
+        let value = value ?? candidate.evidence.first?.value ?? "the signal"
+        switch trainingSignalType {
+        case .qualityCapacity:
+            return "\(exercise) is most reliable around \(value). Keep that target first."
+        case .targetFit:
+            if candidate.context["status"] == "ready" {
+                return "\(exercise) earned a small progression. Keep the first set clean."
+            }
+            if candidate.context["status"] == "matched" {
+                return "\(exercise) target fits today. Hold the line."
+            }
+            return "\(exercise) target is too hot. Pull back before quality breaks."
+        case .movementBalance:
+            return "Recent training is pattern-heavy. Add the missing pattern next."
+        case .cueCluster:
+            return "Cue focus: \(value). Make the cue family first."
+        case .restResponse:
+            return candidate.context["status"] == "restHelped"
+                ? "Extra rest helped quality rebound. Keep it available."
+                : "Extra rest did not restore quality. Lower the target."
+        case .progressionReadiness:
+            return candidate.context["status"] == "ready"
+                ? "\(exercise) passed the progression gate."
+                : "\(exercise) should repeat before progressing."
+        case .sessionFit:
+            return "Short sessions are working. Use them to protect consistency."
+        case .exerciseReacquisition:
+            return "\(exercise) is back after a gap. Restart conservative."
+        case .exercisePreference:
+            return "\(exercise) is showing repeated friction. Use an easier fit."
+        case .qualityPR:
+            return "\(exercise) hit \(value). Quality PR."
+        default:
+            return nil
         }
     }
 
@@ -152,7 +261,10 @@ nonisolated private extension InsightNarrativeBuilder {
         }
 
         if let count {
-            return "\(exercise) had \(count) skipped set\(count == "1" ? "" : "s"). Because skipped work is a signal, not a failure, repeat the target before adding volume."
+            if candidate.context["restSkipped"] == "true" {
+                return "\(exercise) had \(count) early rest skip\(count == "1" ? "" : "s"). Because rest timing is part of the target, trim planned rest only if the next set stays clean."
+            }
+            return "\(exercise) had \(count) planning signal\(count == "1" ? "" : "s"). Because the goal is clean progress, repeat the target before adding volume."
         }
 
         return "\(exercise) gave enough evidence to adjust the next target. Because the goal is clean progress, \(actionPhrase(candidate.candidateAction, exercise: exercise))"
@@ -167,6 +279,10 @@ nonisolated private extension InsightNarrativeBuilder {
         }
 
         if let count {
+            if candidate.context["signalType"] == TrainingSignalType.skippedExercise.rawValue ||
+                candidate.context["restSkipped"] == "true" {
+                return "Rest was skipped early \(count) around \(exercise). Because that can mean the timer is not fitting the set, trim rest only while the following set stays clean."
+            }
             return "Rest extended \(count) around \(exercise). Because recovery demand rose, next time add rest or trim volume before form quality breaks."
         }
 

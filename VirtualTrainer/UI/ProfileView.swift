@@ -768,6 +768,18 @@ private struct TrainingSignalRow: View {
             return "trophy.fill"
         case .cameraFriction:
             return "camera.fill"
+        case .qualityCapacity, .targetFit, .progressionReadiness, .qualityPR:
+            return "target"
+        case .movementBalance:
+            return "square.grid.3x3.fill"
+        case .cueCluster:
+            return "quote.bubble.fill"
+        case .restResponse, .sessionFit:
+            return "timer"
+        case .exerciseReacquisition:
+            return "arrow.clockwise"
+        case .exercisePreference:
+            return "slider.horizontal.3"
         }
     }
 }

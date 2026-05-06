@@ -28,7 +28,7 @@ nonisolated struct InsightCandidateBuilder {
 
         for signal in signals {
             switch signal.type {
-            case .fatigue, .cameraFriction:
+            case .fatigue, .cameraFriction, .movementBalance, .sessionFit:
                 if let candidate = trendCandidate(
                     from: signal,
                     surfaces: [.workoutPreview],
@@ -38,7 +38,7 @@ nonisolated struct InsightCandidateBuilder {
                 ) {
                     candidates.append(candidate)
                 }
-            case .restBehavior, .skippedExercise, .planFit:
+            case .restBehavior, .skippedExercise, .planFit, .qualityCapacity, .targetFit, .cueCluster, .restResponse, .progressionReadiness, .exerciseReacquisition, .exercisePreference, .qualityPR:
                 guard planContainsSignalExercise(signal, planExercises: planExercises) else {
                     continue
                 }
@@ -498,32 +498,32 @@ nonisolated private extension InsightCandidateBuilder {
             )
         }
 
-        let skipped = summary.exerciseSummaries.filter(\.skipped)
-        guard !skipped.isEmpty else { return }
-        let exercise = mostCommonExercise(in: skipped.map(\.exerciseType)) ?? skipped[0].exerciseType
-        let evidence = skipped.prefix(4).map {
+        let restSkipped = summary.exerciseSummaries.filter(\.skipped)
+        guard !restSkipped.isEmpty else { return }
+        let exercise = mostCommonExercise(in: restSkipped.map(\.exerciseType)) ?? restSkipped[0].exerciseType
+        let evidence = restSkipped.prefix(4).map {
             InsightEvidence(
-                metric: "skippedSets",
-                value: "\(skipped.count) skipped set\(skipped.count == 1 ? "" : "s")",
+                metric: "restSkipped",
+                value: "\(restSkipped.count) early rest skip\(restSkipped.count == 1 ? "" : "s")",
                 comparison: summary.completionPercent.map { "\(Int(($0 * 100).rounded()))% completion" },
                 workoutId: summary.id,
                 exerciseType: $0.exerciseType,
                 setIndex: $0.setIndex,
-                confidence: skipped.count >= 2 ? 0.88 : 0.74
+                confidence: restSkipped.count >= 2 ? 0.88 : 0.74
             )
         }
 
         candidates.append(
             InsightCandidate(
-                type: .planAdjustment,
-                candidateHeadline: "\(exercise.displayName) target should repeat",
-                candidateAction: .repeatTarget,
+                type: .recovery,
+                candidateHeadline: "\(exercise.displayName) rest timing should adjust",
+                candidateAction: .reduceRest,
                 evidence: evidence,
-                rawScore: skipped.count >= 2 ? 86 : 74,
-                confidence: skipped.count >= 2 ? 0.88 : 0.74,
+                rawScore: restSkipped.count >= 2 ? 84 : 72,
+                confidence: restSkipped.count >= 2 ? 0.88 : 0.74,
                 surfaces: [.workoutSummary, .workoutPreview],
-                severity: .caution,
-                emotionalIntent: .preventOverreach,
+                severity: .neutral,
+                emotionalIntent: .explainPlan,
                 relatedExerciseType: exercise,
                 relatedGoal: goal(from: summary.goal),
                 createdAt: summary.createdAt,
@@ -536,7 +536,8 @@ nonisolated private extension InsightCandidateBuilder {
                 ].joined(separator: "|"),
                 context: [
                     "exercise": exercise.displayName,
-                    "count": String(skipped.count),
+                    "count": String(restSkipped.count),
+                    "restSkipped": "true",
                     "goal": goalText(summary.goal)
                 ]
             )
@@ -738,6 +739,8 @@ nonisolated private extension InsightCandidateBuilder {
                 "goal": signal.goal?.displayName ?? "",
                 "planTitle": planTitle ?? "",
                 "signalType": signal.type.rawValue,
+                "status": status(for: signal),
+                "movementPattern": signal.movementPattern.map(movementPatternLabel) ?? "",
                 "planContainsExercise": exercise.map { planExercises?.contains($0) == true ? "true" : "false" } ?? "false"
             ]
         )
@@ -768,7 +771,7 @@ nonisolated private extension InsightCandidateBuilder {
                     confidence: progress.confidence == .exact ? 0.88 : 0.72
                 )
             ],
-            rawScore: progress.progressFraction >= 0.9 ? 84 : 76,
+            rawScore: progress.progressFraction >= 0.9 ? 100 : (progress.progressFraction >= 0.85 ? 95 : 88),
             confidence: progress.confidence == .exact ? 0.88 : 0.72,
             surfaces: surfaces,
             severity: .positive,
@@ -823,7 +826,7 @@ nonisolated private extension InsightCandidateBuilder {
         case .restBehavior:
             return (.recovery, signal.exerciseType.map { "Rest is rising around \($0.displayName)" } ?? "Rest is rising", .increaseRest, .caution, .preventOverreach, 89, 4)
         case .skippedExercise:
-            return (.planAdjustment, signal.exerciseType.map { "\($0.displayName) should repeat before progressing" } ?? "Repeat the target before progressing", .repeatTarget, .caution, .preventOverreach, 84, 4)
+            return (.recovery, signal.exerciseType.map { "Rest timing is being skipped around \($0.displayName)" } ?? "Rest timing is being skipped", .reduceRest, .neutral, .explainPlan, 78, 4)
         case .repeatedCue:
             return (.formCorrection, "One cue is becoming the priority", .focusCue, .caution, .giveToughLove, 87, 5)
         case .planFit:
@@ -832,6 +835,108 @@ nonisolated private extension InsightCandidateBuilder {
             return (.trophyProgress, signal.title, .celebrate, .positive, .unlockMotivation, 79, 5)
         case .cameraFriction:
             return (.planSpecific, "Camera setup is the first win", .focusCue, .neutral, .explainPlan, 73, 2)
+        case .qualityCapacity:
+            return (.planAdjustment, signal.exerciseType.map { "\($0.displayName) has a clean target estimate" } ?? "Clean target is clearer", .repeatTarget, .caution, .preventOverreach, 92, 5)
+        case .targetFit:
+            switch status(for: signal) {
+            case "ready":
+                return (.planAdjustment, signal.exerciseType.map { "\($0.displayName) earned a small progression" } ?? "Target earned a small progression", .increaseTarget, .positive, .buildConfidence, 88, 3)
+            case "matched":
+                return (.planSpecific, signal.exerciseType.map { "\($0.displayName) target fits today" } ?? "Target fits today", .continuePlan, .positive, .explainPlan, 76, 2)
+            default:
+                return (.planAdjustment, signal.exerciseType.map { "\($0.displayName) target is too hot" } ?? "Target should pull back", .decreaseTarget, .caution, .preventOverreach, 94, 3)
+            }
+        case .movementBalance:
+            return (.planAdjustment, "Training balance needs a missing pattern", .swapExerciseLater, .neutral, .explainPlan, 78, 5)
+        case .cueCluster:
+            return (.formCorrection, "One cue family is becoming the priority", .focusCue, .caution, .giveToughLove, 89, 5)
+        case .restResponse:
+            if status(for: signal) == "restHelped" {
+                return (.recovery, signal.exerciseType.map { "Rest is helping \($0.displayName)" } ?? "Rest is helping quality", .increaseRest, .neutral, .explainPlan, 86, 3)
+            }
+            return (.planAdjustment, signal.exerciseType.map { "Rest did not fix \($0.displayName)" } ?? "Rest did not restore quality", .decreaseTarget, .caution, .preventOverreach, 91, 3)
+        case .progressionReadiness:
+            if status(for: signal) == "ready" {
+                return (.planAdjustment, signal.exerciseType.map { "\($0.displayName) passed the progression gate" } ?? "Progression gate is clear", .increaseTarget, .positive, .buildConfidence, 90, 3)
+            }
+            return (.planAdjustment, signal.exerciseType.map { "\($0.displayName) should wait before progressing" } ?? "Progression should wait", .repeatTarget, .caution, .preventOverreach, 88, 3)
+        case .sessionFit:
+            return (.consistency, "Short sessions are working", .protectStreakWithSmartStart, .positive, .reinforceConsistency, 82, 4)
+        case .exerciseReacquisition:
+            return (.planAdjustment, signal.exerciseType.map { "\($0.displayName) needs a re-entry target" } ?? "Re-entry target should stay conservative", .repeatTarget, .neutral, .explainPlan, 82, 4)
+        case .exercisePreference:
+            return (.planAdjustment, signal.exerciseType.map { "\($0.displayName) needs an easier fit" } ?? "One movement needs an easier fit", .useEasierVariant, .caution, .preventOverreach, 93, 4)
+        case .qualityPR:
+            return (.growthCelebration, signal.exerciseType.map { "\($0.displayName) hit a quality PR" } ?? "Quality hit a new high", .celebrate, .positive, .celebrateGrowth, 84, 5)
+        }
+    }
+
+    func status(for signal: UserTrainingSignal) -> String {
+        switch signal.type {
+        case .targetFit:
+            if signal.value == "ready to progress" { return "ready" }
+            if signal.value == "well matched" { return "matched" }
+            if signal.value == "too aggressive" { return "tooAggressive" }
+        case .restResponse:
+            if signal.value.contains("rest helped") { return "restHelped" }
+            if signal.value.contains("did not restore") { return "restDidNotRestore" }
+        case .progressionReadiness:
+            if signal.value == "ready to progress" { return "ready" }
+            if signal.value == "not ready to progress" { return "blocked" }
+        default:
+            break
+        }
+
+        let text = "\(signal.title) \(signal.value) \(signal.comparisonValue ?? "")".lowercased()
+        if text.contains("not ready") || text.contains("should wait") {
+            return "blocked"
+        }
+        if text.contains("ready to progress") || text.contains("earned") || text.contains("passed") {
+            return "ready"
+        }
+        if text.contains("well matched") || text.contains("fits today") {
+            return "matched"
+        }
+        if text.contains("too aggressive") || text.contains("too hot") {
+            return "tooAggressive"
+        }
+        if text.contains("did not restore") {
+            return "restDidNotRestore"
+        }
+        if text.contains("rest helped") {
+            return "restHelped"
+        }
+        return ""
+    }
+
+    func movementPatternLabel(_ pattern: MovementPattern) -> String {
+        switch pattern {
+        case .squat:
+            return "Squat"
+        case .hinge:
+            return "Hinge"
+        case .lunge:
+            return "Lunge"
+        case .push:
+            return "Push"
+        case .pull:
+            return "Pull"
+        case .carry:
+            return "Carry"
+        case .coreFlexion:
+            return "Core flexion"
+        case .coreAntiExtension:
+            return "Core stability"
+        case .coreRotation:
+            return "Core rotation"
+        case .balance:
+            return "Balance"
+        case .mobility:
+            return "Mobility"
+        case .cardio:
+            return "Cardio"
+        case .yogaHold:
+            return "Yoga hold"
         }
     }
 

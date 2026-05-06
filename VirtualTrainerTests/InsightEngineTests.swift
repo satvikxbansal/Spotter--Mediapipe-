@@ -202,6 +202,259 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertTrue(insights.allSatisfy { $0.recommendedAction != .noActionNeeded })
     }
 
+    func testDerivedSignalsProtectCleanCapacityTargetFitProgressionAndQualityPR() {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let latest = makeSummary(
+            idSuffix: "9040",
+            endedAt: now,
+            exerciseType: .squat,
+            sets: [
+                makeSetSummary(
+                    exerciseType: .pushup,
+                    setIndex: 0,
+                    scores: [92, 90, 88, 84, 76, 70, 68, 65],
+                    cueMessages: ["Stack shoulders"]
+                ),
+                makeSetSummary(
+                    exerciseType: .squat,
+                    setIndex: 1,
+                    scores: [95, 94, 94, 93, 94, 95, 94, 94]
+                )
+            ]
+        )
+        let history = [
+            latest,
+            makeSummary(
+                idSuffix: "9041",
+                endedAt: date(year: 2026, month: 5, day: 5, hour: 12),
+                exerciseType: .pushup,
+                scores: [91, 90, 88, 82, 74, 70, 68, 66],
+                cueMessages: ["Stack shoulders"]
+            ),
+            makeSummary(
+                idSuffix: "9042",
+                endedAt: date(year: 2026, month: 5, day: 4, hour: 12),
+                exerciseType: .squat,
+                scores: [90, 89, 90, 88, 89, 90, 88, 89]
+            )
+        ]
+
+        let signals = trainingSignals(history: history, now: now)
+
+        assertSignal(.qualityCapacity, existsIn: signals)
+        assertSignal(.targetFit, existsIn: signals)
+        assertSignal(.progressionReadiness, existsIn: signals)
+        assertSignal(.qualityPR, existsIn: signals)
+        assertNoUnsupportedPhysiologyCopy(in: signals)
+    }
+
+    func testDerivedSignalsDetectBalanceCueClustersRestResponseAndSessionFit() {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let history = [
+            makeSummary(
+                idSuffix: "9043",
+                endedAt: now,
+                exerciseType: .pushup,
+                sets: [
+                    makeSetSummary(exerciseType: .pushup, setIndex: 0, scores: [80, 78, 76], restExtended: true),
+                    makeSetSummary(exerciseType: .pushup, setIndex: 1, scores: [88, 89, 90])
+                ]
+            ),
+            makeSummary(
+                idSuffix: "9044",
+                endedAt: date(year: 2026, month: 5, day: 5, hour: 12),
+                exerciseType: .lunge,
+                scores: [86, 82, 76, 72],
+                cueMessages: ["Keep your front knee steady"]
+            ),
+            makeSummary(
+                idSuffix: "9045",
+                endedAt: date(year: 2026, month: 5, day: 4, hour: 12),
+                exerciseType: .squat,
+                scores: [88, 84, 78, 74],
+                cueMessages: ["Knee is drifting inward"]
+            ),
+            makeSummary(
+                idSuffix: "9046",
+                endedAt: date(year: 2026, month: 5, day: 3, hour: 12),
+                exerciseType: .squat,
+                averageFormScore: 90,
+                durationSeconds: 480
+            ),
+            makeSummary(
+                idSuffix: "9047",
+                endedAt: date(year: 2026, month: 5, day: 2, hour: 12),
+                exerciseType: .squat,
+                averageFormScore: 88,
+                durationSeconds: 540
+            ),
+            makeSummary(
+                idSuffix: "9048",
+                endedAt: date(year: 2026, month: 5, day: 1, hour: 12),
+                exerciseType: .squat,
+                averageFormScore: 86,
+                durationSeconds: 600
+            )
+        ]
+
+        let signals = trainingSignals(history: history, now: now)
+
+        assertSignal(.movementBalance, existsIn: signals)
+        assertSignal(.cueCluster, existsIn: signals)
+        assertSignal(.restResponse, existsIn: signals)
+        assertSignal(.sessionFit, existsIn: signals)
+        assertNoUnsupportedPhysiologyCopy(in: signals)
+    }
+
+    func testDerivedSignalsDetectReacquisitionAndRepeatedExerciseFriction() {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let history = [
+            makeSummary(
+                idSuffix: "9049",
+                endedAt: now,
+                exerciseType: .deadlift,
+                averageFormScore: 86
+            ),
+            makeSummary(
+                idSuffix: "9050",
+                endedAt: date(year: 2026, month: 5, day: 5, hour: 12),
+                exerciseType: .pushup,
+                scores: [92, 86, 74, 70],
+                cueMessages: ["Move further from the camera"]
+            ),
+            makeSummary(
+                idSuffix: "9051",
+                endedAt: date(year: 2026, month: 5, day: 4, hour: 12),
+                exerciseType: .pushup,
+                scores: [80, 78, 74, 70],
+                restExtended: true
+            ),
+            makeSummary(
+                idSuffix: "9052",
+                endedAt: date(year: 2026, month: 4, day: 15, hour: 12),
+                exerciseType: .deadlift,
+                averageFormScore: 88
+            )
+        ]
+
+        let signals = trainingSignals(history: history, now: now)
+
+        assertSignal(.exerciseReacquisition, existsIn: signals)
+        assertSignal(.exercisePreference, existsIn: signals)
+        assertNoUnsupportedPhysiologyCopy(in: signals)
+    }
+
+    func testDerivedSignalsDoNotInferTargetFitOrQualityPRWithoutQualityEvidence() {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let unscoredTargetMet = makeSummary(
+            idSuffix: "9053",
+            endedAt: now,
+            exerciseType: .squat,
+            averageFormScore: nil
+        )
+        let noPriorQualityHistory = [
+            makeSummary(
+                idSuffix: "9054",
+                endedAt: now,
+                exerciseType: .pushup,
+                scores: [95, 94, 93, 94]
+            ),
+            makeSummary(
+                idSuffix: "9055",
+                endedAt: date(year: 2026, month: 5, day: 5, hour: 12),
+                exerciseType: .pushup,
+                averageFormScore: nil
+            )
+        ]
+
+        let unscoredSignals = trainingSignals(history: [unscoredTargetMet], now: now)
+        let noPriorQualitySignals = trainingSignals(history: noPriorQualityHistory, now: now)
+
+        XCTAssertNil(unscoredSignals.first { $0.type == .targetFit })
+        XCTAssertNil(noPriorQualitySignals.first { $0.type == .qualityPR })
+    }
+
+    func testBlockedProgressionReadinessDoesNotMapToIncreaseTarget() throws {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let history = [
+            makeSummary(
+                idSuffix: "9056",
+                endedAt: now,
+                exerciseType: .squat,
+                scores: [86, 84, 83, 82],
+                restExtended: true
+            ),
+            makeSummary(
+                idSuffix: "9057",
+                endedAt: date(year: 2026, month: 5, day: 5, hour: 12),
+                exerciseType: .squat,
+                scores: [88, 86, 85, 84]
+            )
+        ]
+        let profile = makeProfile()
+        let trophies = emptyTrophySnapshot(now: now)
+        let trendEngine = TrendEngine(calendar: calendar)
+        let snapshot = trendEngine.buildSnapshot(
+            history: history,
+            profile: profile,
+            trophies: trophies,
+            now: now
+        )
+        let signals = SignalExtractor(trendEngine: trendEngine).extractSignals(
+            snapshot: snapshot,
+            history: history,
+            profile: profile,
+            trophies: trophies
+        )
+        let signal = try XCTUnwrap(signals.first { $0.type == .progressionReadiness })
+
+        XCTAssertEqual(signal.value, "not ready to progress")
+
+        let candidate = try XCTUnwrap(
+            InsightCandidateBuilder()
+                .buildProfileCandidates(profile: profile, trendSnapshot: snapshot, signals: signals, trophies: trophies)
+                .first { $0.context["signalType"] == TrainingSignalType.progressionReadiness.rawValue }
+        )
+
+        XCTAssertEqual(candidate.candidateAction, .repeatTarget)
+    }
+
+    func testRestResponseIgnoresAlreadyCleanSetsAfterExtendedRest() {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let history = [
+            makeSummary(
+                idSuffix: "9058",
+                endedAt: now,
+                exerciseType: .pushup,
+                sets: [
+                    makeSetSummary(exerciseType: .pushup, setIndex: 0, scores: [92, 92, 92], restExtended: true),
+                    makeSetSummary(exerciseType: .pushup, setIndex: 1, scores: [89, 89, 89])
+                ]
+            )
+        ]
+
+        let signals = trainingSignals(history: history, now: now)
+
+        XCTAssertNil(signals.first { $0.type == .restResponse })
+    }
+
+    func testEarlyRestSkipDoesNotBecomeTargetTooAggressive() {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let history = [
+            makeSummary(
+                idSuffix: "9059",
+                endedAt: now,
+                exerciseType: .squat,
+                scores: [91, 90, 90, 89],
+                skipped: true
+            )
+        ]
+
+        let signals = trainingSignals(history: history, now: now)
+
+        XCTAssertNil(signals.first { $0.type == .targetFit && $0.value == "too aggressive" })
+    }
+
     func testRankerChoosesSpecificActionableInsightOverGenericPraise() {
         let evidence = InsightEvidence(
             metric: "formDropOff",
@@ -598,6 +851,28 @@ private extension InsightEngineTests {
         )
     }
 
+    func trainingSignals(
+        history: [WorkoutSessionSummary],
+        trophies: TrophyProgressSnapshot? = nil,
+        now: Date
+    ) -> [UserTrainingSignal] {
+        let profile = makeProfile()
+        let resolvedTrophies = trophies ?? emptyTrophySnapshot(now: now)
+        let trendEngine = TrendEngine(calendar: calendar)
+        let snapshot = trendEngine.buildSnapshot(
+            history: history,
+            profile: profile,
+            trophies: resolvedTrophies,
+            now: now
+        )
+        return SignalExtractor(trendEngine: trendEngine).extractSignals(
+            snapshot: snapshot,
+            history: history,
+            profile: profile,
+            trophies: resolvedTrophies
+        )
+    }
+
     func unsafeNarrativeInsight(value: String) -> AIInsight {
         let evidence = InsightEvidence(
             metric: "unsupported",
@@ -633,6 +908,31 @@ private extension InsightEngineTests {
         XCTAssertFalse(text.contains("calorie"))
         XCTAssertFalse(text.contains("weight loss"))
         XCTAssertFalse(text.contains("fat loss"))
+    }
+
+    func assertNoUnsupportedPhysiologyCopy(in signals: [UserTrainingSignal]) {
+        let text = signals.map { "\($0.title) \($0.value) \($0.comparisonValue ?? "")" }
+            .joined(separator: " ")
+            .lowercased()
+        XCTAssertFalse(text.contains("heart rate"))
+        XCTAssertFalse(text.contains("bpm"))
+        XCTAssertFalse(text.contains("calorie"))
+        XCTAssertFalse(text.contains("weight loss"))
+        XCTAssertFalse(text.contains("fat loss"))
+    }
+
+    func assertSignal(
+        _ type: TrainingSignalType,
+        existsIn signals: [UserTrainingSignal],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertNotNil(
+            signals.first { $0.type == type },
+            "Expected \(type.rawValue). Got: \(signals.map { $0.type.rawValue }.sorted().joined(separator: ", "))",
+            file: file,
+            line: line
+        )
     }
 
     func makeStoredInsight(now: Date) -> AIInsight {
@@ -737,6 +1037,7 @@ private extension InsightEngineTests {
         cueMessages: [String] = [],
         restExtended: Bool = false,
         skipped: Bool = false,
+        durationSeconds: Int = 600,
         sets: [ExerciseSetSummary]? = nil,
         qualityOverride: SetQualitySummary? = nil
     ) -> WorkoutSessionSummary {
@@ -763,9 +1064,9 @@ private extension InsightEngineTests {
             title: "\(exerciseType.displayName) Session",
             goal: "Build clean strength.",
             coach: .good,
-            startedAt: endedAt.addingTimeInterval(-600),
+            startedAt: endedAt.addingTimeInterval(-TimeInterval(durationSeconds)),
             endedAt: endedAt,
-            durationSeconds: 600,
+            durationSeconds: durationSeconds,
             totalReps: resolvedReps,
             totalHoldSeconds: 0,
             averageFormScore: resolvedAverage,

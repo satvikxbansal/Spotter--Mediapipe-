@@ -712,3 +712,25 @@ Updated the README to reflect planned sessions, rest, summaries/history, calibra
 After each bridge, docs should be checked against the actual current user flow, and camera lifecycle state shared across capture queues should be synchronized before adding more planned-workout or insight surfaces.
 
 **Pattern Tags:** #audit #privacy #docs #camera #crash-prevention
+
+---
+
+### [DL-033] Harden AI Coach Derived Signal Accuracy
+**Date:** 2026-05-06
+**Severity:** warning
+**Category:** insight-accuracy
+**File(s):** `VirtualTrainer/Services/SignalExtractor.swift`, `VirtualTrainer/Services/InsightCandidateBuilder.swift`, `VirtualTrainer/Services/InsightNarrativeBuilder.swift`, `VirtualTrainerTests/InsightEngineTests.swift`
+
+**Error:**
+The new derived AI Coach signals had a few accuracy risks: string status parsing could read `not ready to progress` as ready, rest-response logic could call already-clean post-rest sets a failed recovery, cue-cluster evidence could pull in camera-framing cues, and rest skipped early was being treated like skipped work.
+
+**Root Cause:**
+The insight layer was inferring coaching status from broad text matching and reused existing `skipped` naming without accounting for the current planned-workout rest model, where that field means an early rest skip. Some derived signals also accepted too little scored quality evidence for progression/PR-style claims.
+
+**Fix Applied:**
+Made status mapping type-aware, required reliable scored quality samples for positive target/progression/quality-PR claims, tightened rest-response thresholds, required cue clusters to span multiple sessions with distinct non-camera cues, and changed early-rest-skip copy/actions away from skipped-work language. Added regression tests for blocked progression routing, rest-response false positives, and early rest skips not becoming target-aggressive signals.
+
+**Prevention Rule:**
+Deterministic coach insights should prefer explicit typed status over parsing prose, require enough scored evidence before positive progression claims, and preserve the exact semantics of workout summary fields before turning them into coaching recommendations.
+
+**Pattern Tags:** #insight-accuracy #ai-coach #training-signals #rest-timing #tests
