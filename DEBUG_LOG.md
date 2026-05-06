@@ -580,3 +580,47 @@ Added an isometric target-style parity check to the swap candidate filter and co
 Planned workout substitutions must preserve target semantics as well as movement and equipment constraints so the session lifecycle receives coherent rep, hold, timed, or AMRAP targets.
 
 **Pattern Tags:** #planned-workout #plan-swaps #targets #tests
+
+---
+
+### [DL-027] Avoid Main-Actor Store Deinit Crash In History Tests
+**Date:** 2026-05-05
+**Severity:** warning
+**Category:** concurrency
+**File(s):** `VirtualTrainer/Models/WorkoutHistoryStore.swift`, `VirtualTrainerTests/WorkoutHistoryStoreTests.swift`
+
+**Error:**
+Phase 10 history-store unit tests compiled but crashed with `Test crashed with signal abrt` during `WorkoutHistoryStore.__deallocating_deinit` on the iPhone 17 simulator.
+
+**Root Cause:**
+`WorkoutHistoryStore` is a short-lived `@MainActor ObservableObject` in the new unit tests. Under the current Swift 6.2 simulator/back-deploy runtime, tearing down that main-actor isolated observable store at test method exit routed through the actor deinit path and aborted before assertions could complete.
+
+**Fix Applied:**
+Added an explicit `nonisolated deinit {}` to `WorkoutHistoryStore` and reran the focused Phase 10 tests plus the full workspace test suite. The new history persistence tests now pass without teardown crashes.
+
+**Prevention Rule:**
+When adding a test-created main-actor observable store, give teardown an explicit nonisolated deinit or separate the persistence core from the observable wrapper so unit-test lifetime cleanup does not depend on main-actor deinit back-deploy behavior.
+
+**Pattern Tags:** #concurrency #observableobject #tests #history
+
+---
+
+### [DL-028] Roll Back In-Memory History On Persistence Failure
+**Date:** 2026-05-05
+**Severity:** warning
+**Category:** persistence
+**File(s):** `VirtualTrainer/Models/WorkoutHistoryStore.swift`, `VirtualTrainerTests/WorkoutHistoryStoreTests.swift`
+
+**Error:**
+If `WorkoutHistoryStore.addSummary(_:)` failed to write the JSON file, the failed summary could still remain visible in the store's in-memory `summaries` list for the current app run.
+
+**Root Cause:**
+The store appended or replaced the summary before calling `persist()`, then returned the persistence result directly. A failed write set `persistenceError`, but it did not restore the previous in-memory array.
+
+**Fix Applied:**
+Preserved the previous summary list before mutation and restored it when persistence fails. Added a regression test that uses an unwritable history path and verifies failed saves do not appear in fetch-by-id or recent-history results.
+
+**Prevention Rule:**
+Local persistence APIs should keep memory and disk semantics aligned: if a user-facing save returns failure, rollback observable state or make the partial in-memory state explicit.
+
+**Pattern Tags:** #history #persistence #tests

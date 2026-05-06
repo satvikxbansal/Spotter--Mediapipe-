@@ -147,7 +147,7 @@
 
           --background: #0D0D0D;
         --foreground: #F2F0EB;
-        --primary: #B8E600;
+        --primary: #C8FF00;
         --primary-foreground: #000000;
         --secondary: #262626;
         --secondary-foreground: #F2F0EB;
@@ -207,18 +207,20 @@
         </div>
         <span class="font-mono text-[12px] uppercase tracking-widest text-white/60">02 / 04</span>
       </div>
-      <div class="mb-10">
-        <h1 class="font-heading text-4xl font-black uppercase leading-none tracking-tighter">
+      <div class="mb-6">
+        <h1 class="font-heading text-3xl font-black uppercase leading-none tracking-tighter">
           Enter your<br /><span class="text-primary italic">vitals</span>
         </h1>
-        <p class="mt-3 text-muted-foreground font-medium">
+        <p class="mt-2 text-sm text-muted-foreground font-medium">
           Used to personalize your daily coaching.
         </p>
       </div>
-      <div class="flex-1 flex flex-col gap-6 overflow-y-auto pb-6">
-        <div class="bg-black border border-white rounded-[24px] p-6 flex flex-col gap-6">
+      <div class="flex-1 flex flex-col gap-4 overflow-y-auto pb-4">
+        <div
+          class="bg-black border-2 border-white rounded-[24px] p-5 flex flex-col gap-4 shadow-[inset_0_4px_12px_rgba(0,0,0,0.8)]"
+        >
           <div class="flex items-center justify-between">
-            <span class="font-mono text-[11px] uppercase tracking-[0.2em] text-white/50"
+            <span class="font-mono text-[11px] uppercase tracking-[0.2em] text-white/40"
               >Height</span
             >
             <div class="flex bg-black border border-white/20 rounded-full p-1">
@@ -234,38 +236,67 @@
             </div>
           </div>
           <div class="flex flex-col items-center">
-            <div class="relative mb-6">
+            <div class="relative mb-4">
               <span
                 class="font-heading text-7xl font-black text-white italic tracking-tighter leading-none"
                 >178</span
               ><span
-                class="absolute -right-6 bottom-1 font-mono text-xs uppercase tracking-widest text-accent font-bold"
+                class="absolute -right-8 bottom-1 font-mono text-sm uppercase tracking-widest text-accent font-black"
                 >cm</span
               >
             </div>
-            <div class="w-full relative h-12 flex items-center justify-center">
-              <div class="absolute inset-0 flex items-center justify-between px-4 opacity-40">
-                <div class="h-4 w-[1px] bg-white"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-6 w-[2px] bg-white/60"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-4 w-[1px] bg-white"></div>
-              </div>
+            <div
+              class="w-full relative h-20 flex items-center justify-center bg-white/5 rounded-2xl border border-white/10 overflow-hidden"
+            >
               <div
-                class="absolute h-10 w-[3px] bg-accent shadow-[0_0_15px_rgba(200,255,0,0.5)] z-10"
+                class="absolute inset-0 bg-gradient-to-r from-black via-transparent to-black z-10 opacity-80 pointer-events-none"
               ></div>
+              <div class="flex items-center gap-6 px-12 opacity-30">
+                <span class="font-heading text-xl font-bold">176</span>
+                <div class="flex items-end gap-1.5 pb-1">
+                  <div class="h-4 w-[1px] bg-white/60"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                </div>
+                <span class="font-heading text-xl font-bold">177</span>
+                <div class="flex items-end gap-1.5 pb-1">
+                  <div class="h-4 w-[1px] bg-white/60"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                </div>
+                <span class="font-heading text-xl font-bold text-accent">178</span>
+                <div class="flex items-end gap-1.5 pb-1">
+                  <div class="h-4 w-[1px] bg-white/60"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                </div>
+                <span class="font-heading text-xl font-bold">179</span>
+                <div class="flex items-end gap-1.5 pb-1">
+                  <div class="h-4 w-[1px] bg-white/60"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                </div>
+                <span class="font-heading text-xl font-bold">180</span>
+              </div>
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="w-[2px] h-12 bg-accent shadow-[0_0_15px_#C8FF00] z-20"></div>
+              </div>
             </div>
           </div>
         </div>
-        <div class="bg-black border border-white rounded-[24px] p-6 flex flex-col gap-6">
+        <div
+          class="bg-black border-2 border-white rounded-[24px] p-6 flex flex-col gap-6 shadow-[inset_0_4px_12px_rgba(0,0,0,0.8)]"
+        >
           <div class="flex items-center justify-between">
-            <span class="font-mono text-[11px] uppercase tracking-[0.2em] text-white/50"
+            <span class="font-mono text-[11px] uppercase tracking-[0.2em] text-white/40"
               >Weight</span
             >
             <div class="flex bg-black border border-white/20 rounded-full p-1">
@@ -281,32 +312,59 @@
             </div>
           </div>
           <div class="flex flex-col items-center">
-            <div class="relative mb-6">
+            <div class="relative mb-4">
               <span
                 class="font-heading text-7xl font-black text-white italic tracking-tighter leading-none"
                 >84.5</span
               ><span
-                class="absolute -right-6 bottom-1 font-mono text-xs uppercase tracking-widest text-accent font-bold"
+                class="absolute -right-8 bottom-1 font-mono text-sm uppercase tracking-widest text-accent font-black"
                 >kg</span
               >
             </div>
-            <div class="w-full relative h-12 flex items-center justify-center">
-              <div class="absolute inset-0 flex items-center justify-between px-4 opacity-40">
-                <div class="h-4 w-[1px] bg-white"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-6 w-[2px] bg-white/60"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-2 w-[1px] bg-white/40"></div>
-                <div class="h-4 w-[1px] bg-white"></div>
-              </div>
+            <div
+              class="w-full relative h-20 flex items-center justify-center bg-white/5 rounded-2xl border border-white/10 overflow-hidden"
+            >
               <div
-                class="absolute h-10 w-[3px] bg-accent shadow-[0_0_15px_rgba(200,255,0,0.5)] z-10"
+                class="absolute inset-0 bg-gradient-to-r from-black via-transparent to-black z-10 opacity-80 pointer-events-none"
               ></div>
+              <div class="flex items-center gap-6 px-12 opacity-30">
+                <span class="font-heading text-xl font-bold">82</span>
+                <div class="flex items-end gap-1.5 pb-1">
+                  <div class="h-4 w-[1px] bg-white/60"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                </div>
+                <span class="font-heading text-xl font-bold">83</span>
+                <div class="flex items-end gap-1.5 pb-1">
+                  <div class="h-4 w-[1px] bg-white/60"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                </div>
+                <span class="font-heading text-xl font-bold text-accent">84.5</span>
+                <div class="flex items-end gap-1.5 pb-1">
+                  <div class="h-4 w-[1px] bg-white/60"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                </div>
+                <span class="font-heading text-xl font-bold">85</span>
+                <div class="flex items-end gap-1.5 pb-1">
+                  <div class="h-4 w-[1px] bg-white/60"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                  <div class="h-2 w-[1px] bg-white/30"></div>
+                </div>
+                <span class="font-heading text-xl font-bold">86</span>
+              </div>
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="w-[2px] h-12 bg-accent shadow-[0_0_15px_#C8FF00] z-20"></div>
+              </div>
             </div>
           </div>
         </div>

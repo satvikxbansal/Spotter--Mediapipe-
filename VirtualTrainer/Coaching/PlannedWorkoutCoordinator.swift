@@ -8,6 +8,7 @@ nonisolated struct PlannedWorkoutCoordinator {
     private(set) var currentExerciseIndex: Int
     private(set) var currentSetIndex: Int
     private(set) var completedSetSummaries: [PlannedWorkoutSetSummary]
+    private(set) var restOutcomes: [UUID: PlannedWorkoutRestResult]
     private(set) var sessionState: WorkoutSessionState
     private(set) var completedAt: Date?
 
@@ -15,6 +16,7 @@ nonisolated struct PlannedWorkoutCoordinator {
         self.plan = plan
         self.startedAt = startedAt
         self.completedSetSummaries = []
+        self.restOutcomes = [:]
         self.completedAt = nil
 
         if let firstPosition = Self.firstSetPosition(in: plan) {
@@ -116,6 +118,14 @@ nonisolated struct PlannedWorkoutCoordinator {
         }
     }
 
+    mutating func recordRestOutcome(_ result: PlannedWorkoutRestResult) {
+        guard sessionState == .rest,
+              let summary = completedSetSummaries.last
+        else { return }
+
+        restOutcomes[summary.id] = result
+    }
+
     mutating func cancelSession(at date: Date = Date()) {
         guard sessionState != .completed else { return }
         sessionState = .cancelled
@@ -127,6 +137,16 @@ nonisolated struct PlannedWorkoutCoordinator {
             plan: plan,
             startedAt: startedAt,
             completedSets: completedSetSummaries,
+            completedAt: completedAt ?? fallbackCompletedAt
+        )
+    }
+
+    func workoutSessionSummary(completedAt fallbackCompletedAt: Date = Date()) -> WorkoutSessionSummary {
+        WorkoutSessionSummary.plannedWorkout(
+            plan: plan,
+            startedAt: startedAt,
+            completedSets: completedSetSummaries,
+            restOutcomes: restOutcomes,
             completedAt: completedAt ?? fallbackCompletedAt
         )
     }

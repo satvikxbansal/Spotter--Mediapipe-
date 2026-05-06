@@ -139,13 +139,46 @@ nonisolated private extension SessionTarget {
 }
 
 nonisolated struct FreeAnalysisSummary: Identifiable {
-    let id = UUID()
+    let id: UUID
     let exerciseType: ExerciseType
+    let coach: CoachPersonality
+    let startedAt: Date
+    let endedAt: Date
     let duration: TimeInterval
     let reps: Int
+    let holdDuration: TimeInterval
     let latestFormScore: FormScore?
     let peakEffort: Double
     let lastCue: CoachCue?
+    let cueEvents: [CueEvent]
+
+    init(
+        id: UUID = UUID(),
+        exerciseType: ExerciseType,
+        coach: CoachPersonality,
+        startedAt: Date,
+        endedAt: Date,
+        duration: TimeInterval,
+        reps: Int,
+        holdDuration: TimeInterval,
+        latestFormScore: FormScore?,
+        peakEffort: Double,
+        lastCue: CoachCue?,
+        cueEvents: [CueEvent] = []
+    ) {
+        self.id = id
+        self.exerciseType = exerciseType
+        self.coach = coach
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.duration = max(duration, 0)
+        self.reps = max(reps, 0)
+        self.holdDuration = max(holdDuration, 0)
+        self.latestFormScore = latestFormScore
+        self.peakEffort = max(0, min(peakEffort, 1))
+        self.lastCue = lastCue
+        self.cueEvents = cueEvents
+    }
 
     var durationText: String {
         let seconds = max(Int(duration), 0)

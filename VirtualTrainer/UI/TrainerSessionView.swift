@@ -39,6 +39,7 @@ struct TrainerSessionView: View {
     @State private var currentPhase: RepPhase = .idle
     @State private var coachCues: [CoachCue] = []
     @State private var cueHistory: [CoachCue] = []
+    @State private var cueEventHistory: [CueEvent] = []
     @State private var debugAngle: Double?
     @State private var motivationScale: CGFloat = 0.3
     @State private var holdDuration: TimeInterval = 0
@@ -139,6 +140,7 @@ struct TrainerSessionView: View {
             currentEffortScore = 0
             peakEffort = 0
             cueHistory = []
+            cueEventHistory = []
             repCounter = UniversalRepCounter(exerciseType: exerciseType)
             motivationEngine.personality = coachPersonality
             readyCoordinator.setPersonality(coachPersonality)
@@ -1054,13 +1056,20 @@ struct TrainerSessionView: View {
     }
 
     private func endFreeAnalysis() {
+        let endedAt = Date()
+        let startedAt = sessionStartedAt ?? endedAt.addingTimeInterval(-elapsedSeconds)
         let summary = FreeAnalysisSummary(
             exerciseType: exerciseType,
+            coach: coachPersonality,
+            startedAt: startedAt,
+            endedAt: endedAt,
             duration: elapsedSeconds,
             reps: repCount,
+            holdDuration: holdDuration,
             latestFormScore: lastFormScore,
             peakEffort: peakEffort,
-            lastCue: coachCues.first
+            lastCue: coachCues.first,
+            cueEvents: cueEventHistory
         )
         stopLivePipelines()
         onFreeAnalysisEnded?(summary)
@@ -1120,6 +1129,7 @@ struct TrainerSessionView: View {
             lastCue: coachCues.first,
             bestCue: bestCueForSummary,
             worstCue: worstCueForSummary,
+            cueEvents: cueEventHistory,
             completionSource: source
         )
         onPlannedSetCompleted?(summary)
@@ -1135,11 +1145,22 @@ struct TrainerSessionView: View {
             $0.message == cue.message && $0.severity == cue.severity
         }) {
             cueHistory.append(cue)
+            cueEventHistory.append(
+                CueEvent(
+                    timestamp: Date(),
+                    exerciseType: exerciseType,
+                    cueMessage: cue.message,
+                    severity: cue.severity
+                )
+            )
         }
 
         let maximumStoredCues = 12
         if cueHistory.count > maximumStoredCues {
             cueHistory.removeFirst(cueHistory.count - maximumStoredCues)
+        }
+        if cueEventHistory.count > maximumStoredCues {
+            cueEventHistory.removeFirst(cueEventHistory.count - maximumStoredCues)
         }
     }
 

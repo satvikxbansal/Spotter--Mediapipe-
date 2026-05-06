@@ -6,6 +6,7 @@ import SwiftUI
 
 struct HomeDashboardView: View {
     @EnvironmentObject private var onboardingStore: OnboardingStore
+    @EnvironmentObject private var historyStore: WorkoutHistoryStore
 
     @State private var dashboardContent: DashboardContent?
     @State private var previewPlan: WorkoutPlanV2?
@@ -48,15 +49,18 @@ struct HomeDashboardView: View {
             }
             .sheet(item: $freeAnalysisSummary) { summary in
                 FreeAnalysisSummaryView(summary: summary)
-                    .presentationDetents([.medium])
+                    .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
             .preferredColorScheme(.dark)
         }
         .onAppear(perform: refreshDashboard)
-        .onChange(of: onboardingStore.profile) {
-            refreshDashboard()
-        }
+            .onChange(of: onboardingStore.profile) {
+                refreshDashboard()
+            }
+            .onChange(of: historyStore.summaries) {
+                refreshDashboard()
+            }
     }
 
     private func dashboard(for profile: UserProfile) -> some View {
@@ -95,7 +99,10 @@ struct HomeDashboardView: View {
             .padding(.bottom, Theme.Spacing.xxxl)
         }
         .refreshable {
-            dashboardContent = contentFactory.makeContent(profile: profile)
+            dashboardContent = contentFactory.makeContent(
+                profile: profile,
+                recentWorkoutHistory: historyStore.recentWorkoutHistoryItems()
+            )
         }
     }
 
@@ -105,7 +112,10 @@ struct HomeDashboardView: View {
             return
         }
 
-        dashboardContent = contentFactory.makeContent(profile: profile)
+        dashboardContent = contentFactory.makeContent(
+            profile: profile,
+            recentWorkoutHistory: historyStore.recentWorkoutHistoryItems()
+        )
     }
 
     private func openPreview(for plan: WorkoutPlanV2) {
@@ -451,4 +461,5 @@ private extension View {
 #Preview {
     HomeDashboardView()
         .environmentObject(OnboardingStore())
+        .environmentObject(WorkoutHistoryStore())
 }

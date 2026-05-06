@@ -44,7 +44,7 @@ struct CameraTabView: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(item: $summary) { summary in
                 FreeAnalysisSummaryView(summary: summary)
-                    .presentationDetents([.medium])
+                    .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
         }
@@ -300,25 +300,76 @@ struct CameraReadinessView: View {
 struct FreeAnalysisSummaryView: View {
     let summary: FreeAnalysisSummary
 
+    @EnvironmentObject private var historyStore: WorkoutHistoryStore
+    @State private var didSave = false
+    @State private var savedHistorySummary: WorkoutSessionSummary?
+    @State private var detailSummary: WorkoutSessionSummary?
+
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            Text("Free Analysis Summary")
-                .header(size: 28)
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                Text("Free Analysis Summary")
+                    .header(size: 28)
 
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                SummaryRow(label: "Exercise", value: summary.exerciseType.displayName)
-                SummaryRow(label: "Duration", value: summary.durationText)
-                SummaryRow(label: "Reps", value: "\(summary.reps)")
-                SummaryRow(label: "Form", value: summary.latestFormScore.map { "\($0.grade.rawValue) \($0.score)" } ?? "No completed rep yet")
-                SummaryRow(label: "Peak effort", value: "\(Int(summary.peakEffort * 100))%")
-                SummaryRow(label: "Last cue", value: summary.lastCue?.message ?? "None")
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    SummaryRow(label: "Exercise", value: summary.exerciseType.displayName)
+                    SummaryRow(label: "Duration", value: summary.durationText)
+                    SummaryRow(label: "Reps", value: "\(summary.reps)")
+                    if summary.holdDuration > 0 {
+                        SummaryRow(label: "Hold", value: "\(Int(summary.holdDuration.rounded()))s")
+                    }
+                    SummaryRow(label: "Form", value: summary.latestFormScore.map { "\($0.grade.rawValue) \($0.score)" } ?? "No completed rep yet")
+                    SummaryRow(label: "Peak effort", value: "\(Int(summary.peakEffort * 100))%")
+                    SummaryRow(label: "Last cue", value: summary.lastCue?.message ?? "None")
+                }
+
+                if let persistenceError = historyStore.persistenceError {
+                    Text(persistenceError)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Theme.Colors.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(spacing: Theme.Spacing.sm) {
+                    Button(didSave ? "Saved to history" : "Save to history") {
+                        saveSummary()
+                    }
+                    .buttonStyle(PrimaryCTAStyle())
+                    .disabled(didSave)
+                    .opacity(didSave ? 0.68 : 1)
+
+                    if let savedHistorySummary {
+                        Button("View detail") {
+                            HapticsEngine.shared.buttonTap()
+                            detailSummary = savedHistorySummary
+                        }
+                        .buttonStyle(SecondaryCTAStyle())
+                    }
+                }
             }
-
-            Spacer()
+            .padding(Theme.Spacing.lg)
         }
-        .padding(Theme.Spacing.lg)
         .background(Theme.Colors.background)
+        .onAppear {
+            if let existing = historyStore.fetchSummary(id: summary.id) {
+                didSave = true
+                savedHistorySummary = existing
+            }
+        }
+        .sheet(item: $detailSummary) { detail in
+            WorkoutDetailSheetView(summary: detail)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
         .preferredColorScheme(.dark)
+    }
+
+    private func saveSummary() {
+        let historySummary = WorkoutSessionSummary.freeAnalysis(from: summary)
+        guard historyStore.addSummary(historySummary) else { return }
+        HapticsEngine.shared.successRipple()
+        didSave = true
+        savedHistorySummary = historySummary
     }
 }
 
@@ -353,4 +404,5 @@ private extension BodyCategory {
 #Preview {
     CameraTabView()
         .environmentObject(OnboardingStore())
+        .environmentObject(WorkoutHistoryStore())
 }

@@ -544,4 +544,5 @@ private extension View {
         )
     }
     .environmentObject(OnboardingStore())
+    .environmentObject(WorkoutHistoryStore())
 }

@@ -3,15 +3,16 @@ import Combine
 
 struct RestScreenView: View {
     let restContext: PlannedWorkoutRestContext
-    let onStartNext: () -> Void
+    let onStartNext: (PlannedWorkoutRestResult) -> Void
 
     @State private var secondsRemaining: Int
     @State private var totalRestSeconds: Int
     @State private var didSignalRestComplete: Bool = false
+    @State private var didExtendRest: Bool = false
 
     init(
         restContext: PlannedWorkoutRestContext,
-        onStartNext: @escaping () -> Void
+        onStartNext: @escaping (PlannedWorkoutRestResult) -> Void
     ) {
         self.restContext = restContext
         self.onStartNext = onStartNext
@@ -285,6 +286,7 @@ struct RestScreenView: View {
 
     private func addRest() {
         HapticsEngine.shared.buttonTap()
+        didExtendRest = true
         if secondsRemaining == 0 {
             didSignalRestComplete = false
         }
@@ -294,7 +296,12 @@ struct RestScreenView: View {
 
     private func startNextSet() {
         HapticsEngine.shared.buttonTap()
-        onStartNext()
+        onStartNext(
+            PlannedWorkoutRestResult(
+                restExtended: didExtendRest,
+                skipped: secondsRemaining > 0
+            )
+        )
     }
 
     private func signalRestCompleteIfNeeded() {
@@ -396,6 +403,6 @@ private struct RestReviewRow: View {
             ),
             restSeconds: 45
         ),
-        onStartNext: {}
+        onStartNext: { _ in }
     )
 }

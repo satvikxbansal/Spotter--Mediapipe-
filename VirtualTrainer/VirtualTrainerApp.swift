@@ -9,6 +9,7 @@ import SwiftUI
 @main
 struct VirtualTrainerApp: App {
     @StateObject private var onboardingStore = OnboardingStore()
+    @StateObject private var workoutHistoryStore = WorkoutHistoryStore()
 
     var body: some Scene {
         WindowGroup {
@@ -20,6 +21,7 @@ struct VirtualTrainerApp: App {
                 }
             }
             .environmentObject(onboardingStore)
+            .environmentObject(workoutHistoryStore)
         }
     }
 }

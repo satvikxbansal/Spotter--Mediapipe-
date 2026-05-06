@@ -2,7 +2,10 @@ import SwiftUI
 
 struct WorkoutSummaryView: View {
     let summary: WorkoutSummary
+    let historySummary: WorkoutSessionSummary?
     let onDone: () -> Void
+
+    @State private var isShowingDetail = false
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -18,17 +21,36 @@ struct WorkoutSummaryView: View {
         }
         .background(Theme.Colors.background.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) {
-            Button {
-                HapticsEngine.shared.buttonTap()
-                onDone()
-            } label: {
-                Text("Done")
+            VStack(spacing: Theme.Spacing.sm) {
+                if historySummary != nil {
+                    Button {
+                        HapticsEngine.shared.buttonTap()
+                        isShowingDetail = true
+                    } label: {
+                        Text("View Saved Detail")
+                    }
+                    .buttonStyle(SecondaryCTAStyle())
+                }
+
+                Button {
+                    HapticsEngine.shared.buttonTap()
+                    onDone()
+                } label: {
+                    Text("Done")
+                }
+                .buttonStyle(PrimaryCTAStyle())
             }
-            .buttonStyle(PrimaryCTAStyle())
             .padding(.horizontal, Theme.Spacing.lg)
             .padding(.top, Theme.Spacing.md)
             .padding(.bottom, Theme.Spacing.sm)
             .background(Theme.Colors.background)
+        }
+        .sheet(isPresented: $isShowingDetail) {
+            if let historySummary {
+                WorkoutDetailSheetView(summary: historySummary)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
         }
         .preferredColorScheme(.dark)
     }
@@ -237,6 +259,7 @@ private struct WorkoutSummaryExerciseRow: View {
                 )
             ]
         ),
+        historySummary: nil,
         onDone: {}
     )
 }

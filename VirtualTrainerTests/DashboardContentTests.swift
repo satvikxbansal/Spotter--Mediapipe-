@@ -2,9 +2,13 @@ import XCTest
 @testable import VirtualTrainer
 
 final class DashboardContentTests: XCTestCase {
-    private let factory = DashboardContentFactory(
-        calendar: Calendar(identifier: .gregorian)
-    )
+    private let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        return calendar
+    }()
+
+    private lazy var factory = DashboardContentFactory(calendar: calendar)
 
     func testCompletedProfileDashboardGeneratesPlans() {
         let content = factory.makeContent(
@@ -65,6 +69,39 @@ final class DashboardContentTests: XCTestCase {
         XCTAssertFalse(action.isEnabled)
         XCTAssertEqual(action.statusLabel, "Coming Soon")
         XCTAssertEqual(action.destination, .runningAnalysis)
+    }
+
+    func testRecentWorkoutHistoryFeedsStreakAndRecentWorkout() throws {
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 5, hour: 12)))
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+        let oldWorkout = try XCTUnwrap(calendar.date(byAdding: .day, value: -3, to: today))
+        let history = [
+            RecentWorkoutHistoryItem(
+                id: UUID(uuidString: "00000000-0000-0000-0000-000000000801") ?? UUID(),
+                exerciseType: .pushup,
+                completedAt: yesterday
+            ),
+            RecentWorkoutHistoryItem(
+                id: UUID(uuidString: "00000000-0000-0000-0000-000000000802") ?? UUID(),
+                exerciseType: .squat,
+                completedAt: today
+            ),
+            RecentWorkoutHistoryItem(
+                id: UUID(uuidString: "00000000-0000-0000-0000-000000000803") ?? UUID(),
+                exerciseType: .plank,
+                completedAt: oldWorkout
+            )
+        ]
+
+        let content = factory.makeContent(
+            profile: makeProfile(goal: .strength),
+            now: today,
+            recentWorkoutHistory: history
+        )
+
+        XCTAssertEqual(content.streak.dayCount, 2)
+        XCTAssertEqual(content.recentWorkout?.exerciseType, .squat)
+        XCTAssertEqual(content.recentWorkout?.completedAt, today)
     }
 }
 

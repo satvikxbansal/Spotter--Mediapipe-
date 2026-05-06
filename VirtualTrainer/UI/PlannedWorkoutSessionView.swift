@@ -2,7 +2,10 @@ import SwiftUI
 
 struct PlannedWorkoutSessionView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var historyStore: WorkoutHistoryStore
     @State private var coordinator: PlannedWorkoutCoordinator
+    @State private var didSaveHistorySummary = false
+    @State private var savedHistorySummary: WorkoutSessionSummary?
 
     init(plan: WorkoutPlanV2) {
         _coordinator = State(
@@ -25,8 +28,8 @@ struct PlannedWorkoutSessionView: View {
             activeSetView
         case .rest:
             if let restContext = coordinator.restContext {
-                RestScreenView(restContext: restContext) {
-                    continueTapped()
+                RestScreenView(restContext: restContext) { result in
+                    continueTapped(result)
                 }
                 .id(restContext.id)
             } else {
@@ -60,8 +63,14 @@ struct PlannedWorkoutSessionView: View {
     }
 
     private var workoutCompleteView: some View {
-        WorkoutSummaryView(summary: coordinator.workoutSummary()) {
+        WorkoutSummaryView(
+            summary: coordinator.workoutSummary(),
+            historySummary: savedHistorySummary
+        ) {
             dismiss()
+        }
+        .onAppear {
+            saveHistorySummaryIfNeeded()
         }
     }
 
@@ -69,7 +78,8 @@ struct PlannedWorkoutSessionView: View {
         guard coordinator.completeCurrentSet(with: summary) else { return }
     }
 
-    private func continueTapped() {
+    private func continueTapped(_ result: PlannedWorkoutRestResult) {
+        coordinator.recordRestOutcome(result)
         coordinator.continueToNextSet()
     }
 
@@ -77,10 +87,22 @@ struct PlannedWorkoutSessionView: View {
         coordinator.cancelSession()
         dismiss()
     }
+
+    private func saveHistorySummaryIfNeeded() {
+        guard coordinator.sessionState == .completed,
+              !didSaveHistorySummary
+        else { return }
+
+        let summary = coordinator.workoutSessionSummary()
+        guard historyStore.addSummary(summary) else { return }
+        savedHistorySummary = summary
+        didSaveHistorySummary = true
+    }
 }
 
 #Preview {
     PlannedWorkoutSessionView(
         plan: WorkoutPlan.MockData.legDay.convertedToV2()
     )
+    .environmentObject(WorkoutHistoryStore())
 }

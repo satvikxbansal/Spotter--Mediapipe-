@@ -68,6 +68,16 @@ nonisolated struct PlannedWorkoutRestContext: Identifiable {
     }
 }
 
+nonisolated struct PlannedWorkoutRestResult: Equatable {
+    let restExtended: Bool
+    let skipped: Bool
+
+    init(restExtended: Bool = false, skipped: Bool = false) {
+        self.restExtended = restExtended
+        self.skipped = skipped
+    }
+}
+
 nonisolated enum PlannedSetCompletionSource: String {
     case targetMet
     case manual
@@ -91,6 +101,7 @@ nonisolated struct PlannedWorkoutSetSummary: Identifiable {
     let lastCue: CoachCue?
     let bestCue: CoachCue?
     let worstCue: CoachCue?
+    let cueEvents: [CueEvent]
     let completionSource: PlannedSetCompletionSource
 
     init(
@@ -111,6 +122,7 @@ nonisolated struct PlannedWorkoutSetSummary: Identifiable {
         lastCue: CoachCue?,
         bestCue: CoachCue? = nil,
         worstCue: CoachCue? = nil,
+        cueEvents: [CueEvent] = [],
         completionSource: PlannedSetCompletionSource
     ) {
         self.id = id
@@ -130,6 +142,7 @@ nonisolated struct PlannedWorkoutSetSummary: Identifiable {
         self.lastCue = lastCue
         self.bestCue = bestCue
         self.worstCue = worstCue
+        self.cueEvents = cueEvents
         self.completionSource = completionSource
     }
 }
