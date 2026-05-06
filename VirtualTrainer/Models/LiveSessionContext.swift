@@ -3,6 +3,7 @@ import Foundation
 nonisolated enum SessionMode: String, Equatable {
     case freeAnalysis
     case plannedWorkout
+    case calibration
 }
 
 nonisolated enum SessionTarget: Equatable {
@@ -25,6 +26,10 @@ nonisolated struct LiveSessionContext: Identifiable, Equatable {
 
     var isFreeAnalysis: Bool {
         mode == .freeAnalysis
+    }
+
+    var isCalibration: Bool {
+        mode == .calibration
     }
 
     init(
@@ -61,6 +66,22 @@ nonisolated struct LiveSessionContext: Identifiable, Equatable {
             exerciseType: exerciseType,
             target: .open,
             title: exerciseType.displayName,
+            coach: coach,
+            startsActive: startsActive
+        )
+    }
+
+    static func calibration(
+        exerciseType: ExerciseType = CalibrationDefaults.exerciseType,
+        targetReps: Int = CalibrationDefaults.targetReps,
+        coach: CoachPersonality = .good,
+        startsActive: Bool = false
+    ) -> LiveSessionContext {
+        LiveSessionContext(
+            mode: .calibration,
+            exerciseType: exerciseType,
+            target: .reps(targetReps),
+            title: "Calibration",
             coach: coach,
             startsActive: startsActive
         )

@@ -109,7 +109,14 @@ struct FormCheckSelectionView: View {
 struct CameraReadinessView: View {
     let exerciseType: ExerciseType
     let coach: CoachPersonality
-    let onSummary: (FreeAnalysisSummary) -> Void
+    private let readinessTitle: String
+    private let activeNavigationTitle: String
+    private let startButtonTitle: String
+    private let targetRepsForFailure: Int
+    private let makeContext: () -> LiveSessionContext
+    private let onSummary: ((FreeAnalysisSummary) -> Void)?
+    private let onCalibrationCompleted: ((CalibrationRecord) -> Void)?
+    private let onCalibrationFailed: ((CalibrationRecord) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var cameraManager = CameraManager()
@@ -127,6 +134,55 @@ struct CameraReadinessView: View {
 
     private var exerciseDefinition: ExerciseDefinition {
         exerciseType.definition ?? ExerciseLibrary.squats
+    }
+
+    init(
+        exerciseType: ExerciseType,
+        coach: CoachPersonality,
+        onSummary: @escaping (FreeAnalysisSummary) -> Void
+    ) {
+        self.exerciseType = exerciseType
+        self.coach = coach
+        self.readinessTitle = "Get camera ready"
+        self.activeNavigationTitle = "Readiness"
+        self.startButtonTitle = "Start free analysis"
+        self.targetRepsForFailure = CalibrationDefaults.targetReps
+        self.makeContext = {
+            LiveSessionContext.freeAnalysis(
+                exerciseType: exerciseType,
+                coach: coach,
+                startsActive: true
+            )
+        }
+        self.onSummary = onSummary
+        self.onCalibrationCompleted = nil
+        self.onCalibrationFailed = nil
+    }
+
+    init(
+        calibrationExerciseType exerciseType: ExerciseType = CalibrationDefaults.exerciseType,
+        targetReps: Int = CalibrationDefaults.targetReps,
+        coach: CoachPersonality,
+        onCompleted: @escaping (CalibrationRecord) -> Void,
+        onFailed: @escaping (CalibrationRecord) -> Void
+    ) {
+        self.exerciseType = exerciseType
+        self.coach = coach
+        self.readinessTitle = "Set up calibration"
+        self.activeNavigationTitle = "Calibration"
+        self.startButtonTitle = "Start calibration"
+        self.targetRepsForFailure = targetReps
+        self.makeContext = {
+            LiveSessionContext.calibration(
+                exerciseType: exerciseType,
+                targetReps: targetReps,
+                coach: coach,
+                startsActive: true
+            )
+        }
+        self.onSummary = nil
+        self.onCalibrationCompleted = onCompleted
+        self.onCalibrationFailed = onFailed
     }
 
     var body: some View {
@@ -149,7 +205,7 @@ struct CameraReadinessView: View {
             .padding(Theme.Spacing.lg)
         }
         .preferredColorScheme(.dark)
-        .navigationTitle("Readiness")
+        .navigationTitle(activeNavigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             readyCoordinator.setPersonality(coach)
@@ -190,10 +246,26 @@ struct CameraReadinessView: View {
             }
         }
         .fullScreenCover(item: $activeContext) { context in
-            TrainerSessionView(context: context) { summary in
-                activeContext = nil
-                onSummary(summary)
-                dismiss()
+            if context.isCalibration {
+                TrainerSessionView(
+                    calibrationContext: context,
+                    onCalibrationCompleted: { record in
+                        activeContext = nil
+                        onCalibrationCompleted?(record)
+                        dismiss()
+                    },
+                    onCalibrationFailed: { record in
+                        activeContext = nil
+                        onCalibrationFailed?(record)
+                        dismiss()
+                    }
+                )
+            } else {
+                TrainerSessionView(context: context) { summary in
+                    activeContext = nil
+                    onSummary?(summary)
+                    dismiss()
+                }
             }
         }
     }
@@ -204,7 +276,7 @@ struct CameraReadinessView: View {
                 .font(.system(size: 13, weight: .heavy))
                 .tracking(1.4)
                 .foregroundStyle(Theme.Colors.accent)
-            Text("Get camera ready")
+            Text(readinessTitle)
                 .header(size: 32)
             Text(exerciseDefinition.setupInstruction)
                 .font(.system(size: 14, weight: .medium))
@@ -217,6 +289,19 @@ struct CameraReadinessView: View {
 
     private var readinessCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            if cameraManager.permissionStatus == .denied {
+                permissionDeniedContent
+            } else {
+                readinessProgressContent
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .background(Color.black.opacity(0.7))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+    }
+
+    private var readinessProgressContent: some View {
+        Group {
             HStack {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
                     Text(cameraOrientationText)
@@ -255,9 +340,21 @@ struct CameraReadinessView: View {
             .disabled(!canStartSession)
             .opacity(canStartSession ? 1 : 0.55)
         }
-        .padding(Theme.Spacing.md)
-        .background(Color.black.opacity(0.7))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+    }
+
+    private var permissionDeniedContent: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            Text("Camera access is off")
+                .font(.system(size: 24, weight: .heavy))
+                .foregroundStyle(Theme.Colors.textPrimary)
+            Text("Spotter needs camera access to verify body visibility. No frames are stored or uploaded.")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.Colors.textSecondary)
+            Button(permissionDeniedButtonTitle) {
+                handlePermissionDeniedExit()
+            }
+            .buttonStyle(PrimaryCTAStyle())
+        }
     }
 
     private var cameraOrientationText: String {
@@ -271,11 +368,16 @@ struct CameraReadinessView: View {
 
     private var canStartSession: Bool {
         activeContext == nil &&
+            cameraManager.permissionStatus != .denied &&
             (readyCoordinator.state == .askingReady || readyCoordinator.state == .exerciseActive)
     }
 
     private var readinessButtonTitle: String {
-        canStartSession ? "Start free analysis" : "Get fully in frame"
+        canStartSession ? startButtonTitle : "Get fully in frame"
+    }
+
+    private var permissionDeniedButtonTitle: String {
+        onCalibrationFailed == nil ? "Back to exercises" : "Return to calibration"
     }
 
     private func startSession() {
@@ -284,11 +386,23 @@ struct CameraReadinessView: View {
             return
         }
         stopReadinessCamera()
-        activeContext = LiveSessionContext.freeAnalysis(
-            exerciseType: exerciseType,
-            coach: coach,
-            startsActive: true
-        )
+        activeContext = makeContext()
+    }
+
+    private func handlePermissionDeniedExit() {
+        if let onCalibrationFailed {
+            let now = Date()
+            onCalibrationFailed(
+                .failed(
+                    exerciseType: exerciseType,
+                    targetReps: targetRepsForFailure,
+                    startedAt: now,
+                    completedAt: now,
+                    notes: "Camera permission was unavailable during calibration."
+                )
+            )
+        }
+        dismiss()
     }
 
     private func stopReadinessCamera() {

@@ -2,6 +2,12 @@ import AVFoundation
 import Combine
 import SwiftUI
 
+nonisolated enum CameraPermissionStatus: Equatable {
+    case notDetermined
+    case authorized
+    case denied
+}
+
 // ────────────────────────────────────────────────────────────────────
 // MARK: - CameraManager
 // ────────────────────────────────────────────────────────────────────
@@ -17,6 +23,7 @@ final class CameraManager: NSObject, ObservableObject {
 
     @Published var isRunning = false
     @Published var permissionGranted = false
+    @Published private(set) var permissionStatus: CameraPermissionStatus = .notDetermined
 
     /// Set this closure before calling `start()`. It receives every
     /// video frame's sample buffer on a dedicated processing queue —
@@ -53,16 +60,23 @@ final class CameraManager: NSObject, ObservableObject {
     private func checkPermission(completion: @escaping (Bool) -> Void) {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
-            DispatchQueue.main.async { self.permissionGranted = true }
+            updatePermissionStatus(.authorized)
             completion(true)
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-                DispatchQueue.main.async { self?.permissionGranted = granted }
+                self?.updatePermissionStatus(granted ? .authorized : .denied)
                 completion(granted)
             }
         default:
-            DispatchQueue.main.async { self.permissionGranted = false }
+            updatePermissionStatus(.denied)
             completion(false)
+        }
+    }
+
+    private func updatePermissionStatus(_ status: CameraPermissionStatus) {
+        DispatchQueue.main.async {
+            self.permissionStatus = status
+            self.permissionGranted = status == .authorized
         }
     }
 
