@@ -88,10 +88,15 @@ nonisolated private extension PlanGenerator {
                 !usedExerciseTypes.contains($0.exerciseType) && sharesGoalTag($0, goal: input.goal)
             }
             let pool = matching.isEmpty ? fallback : matching
-            let impactAdjustedPool = lowImpactPoolIfAvailable(pool, rules: rules)
+            let adjustedPool = conservativePoolIfAvailable(
+                pool,
+                fallbackPool: fallback,
+                input: input,
+                rules: rules
+            )
 
             guard let metadata = sorted(
-                impactAdjustedPool,
+                adjustedPool,
                 for: slot,
                 input: input,
                 rules: rules
@@ -308,6 +313,21 @@ nonisolated private extension PlanGenerator {
         if rules.balanceMobilityBias && isBalanceMobilityOrIsometric(metadata) {
             score -= 12
         }
+        if input.limitations.contains(.kneeSensitive) {
+            score += kneeSensitivityScoreAdjustment(for: metadata)
+        }
+        if input.limitations.contains(.wristSensitive) {
+            score += wristSensitivityScoreAdjustment(for: metadata)
+        }
+        if input.limitations.contains(.shoulderSensitive) {
+            score += shoulderSensitivityScoreAdjustment(for: metadata)
+        }
+        if input.limitations.contains(.lowerBackSensitive) {
+            score += lowerBackSensitivityScoreAdjustment(for: metadata)
+        }
+        if input.limitations.contains(.balanceSensitive) {
+            score += balanceSensitivityScoreAdjustment(for: metadata, input: input)
+        }
         if rules.bodyweightFirst && !isBodyweightPrimary(metadata) {
             score += 35
         }
@@ -337,12 +357,32 @@ nonisolated private extension PlanGenerator {
         return !metadata.preferredTagsIntersection(slot.preferredTags).isEmpty
     }
 
-    func lowImpactPoolIfAvailable(
+    func conservativePoolIfAvailable(
         _ pool: [ExercisePlanMetadata],
+        fallbackPool: [ExercisePlanMetadata],
+        input: PlanGenerationInput,
         rules: PlanGenerationRules
     ) -> [ExercisePlanMetadata] {
-        guard rules.avoidHighImpactWhenAlternativesExist else { return pool }
-        return pool.filter { !isHighImpact($0) }
+        let safePrimary = pool.filter {
+            isConservativeCandidate($0, input: input, rules: rules)
+        }
+        if !safePrimary.isEmpty {
+            return safePrimary
+        }
+
+        let safeFallback = fallbackPool.filter {
+            isConservativeCandidate($0, input: input, rules: rules)
+        }
+        if !safeFallback.isEmpty {
+            return safeFallback
+        }
+
+        if rules.avoidHighImpactWhenAlternativesExist,
+           pool.contains(where: isHighImpact) {
+            return []
+        }
+
+        return pool
     }
 
     func respectsCameraSwitchLimit(
@@ -401,6 +441,170 @@ nonisolated private extension PlanGenerator {
             || metadata.movementPattern == .mobility
             || metadata.movementPattern == .yogaHold
             || metadata.planTags.contains(.isometric)
+    }
+
+    func isConservativeCandidate(
+        _ metadata: ExercisePlanMetadata,
+        input: PlanGenerationInput,
+        rules: PlanGenerationRules
+    ) -> Bool {
+        if rules.avoidHighImpactWhenAlternativesExist, isHighImpact(metadata) {
+            return false
+        }
+
+        let contraindications = metadata.contraindicationTags
+            .subtracting(allowedContraindications(for: metadata, input: input))
+        if !rules.avoidedContraindications.isDisjoint(with: contraindications) {
+            return false
+        }
+
+        if input.limitations.contains(.balanceSensitive),
+           isUnsupportedBalanceChallenge(metadata, input: input) {
+            return false
+        }
+
+        return true
+    }
+
+    func allowedContraindications(
+        for metadata: ExercisePlanMetadata,
+        input: PlanGenerationInput
+    ) -> Set<ContraindicationTag> {
+        if input.limitations.contains(.kneeSensitive),
+           metadata.exerciseType == .chairSitToStand {
+            return [.kneeSensitive]
+        }
+
+        return []
+    }
+
+    func kneeSensitivityScoreAdjustment(for metadata: ExercisePlanMetadata) -> Int {
+        var adjustment = 0
+
+        if metadata.contraindicationTags.contains(.kneeSensitive) {
+            adjustment += 65
+        }
+        if metadata.exerciseType == .chairSitToStand || metadata.exerciseType == .gluteBridge {
+            adjustment -= 55
+        }
+        if metadata.exerciseType == .hipAbduction || metadata.exerciseType == .donkeyKick {
+            adjustment -= 25
+        }
+        if metadata.movementPattern == .lunge {
+            adjustment += 30
+        }
+
+        return adjustment
+    }
+
+    func wristSensitivityScoreAdjustment(for metadata: ExercisePlanMetadata) -> Int {
+        var adjustment = 0
+
+        if metadata.contraindicationTags.contains(.wristSensitive) {
+            adjustment += 75
+        }
+        if isPushHeavy(metadata) {
+            adjustment += 35
+        }
+        if metadata.movementPattern == .pull {
+            adjustment -= 15
+        }
+
+        return adjustment
+    }
+
+    func shoulderSensitivityScoreAdjustment(for metadata: ExercisePlanMetadata) -> Int {
+        var adjustment = 0
+
+        if metadata.contraindicationTags.contains(.shoulderSensitive) {
+            adjustment += 70
+        }
+        if isAggressiveOverhead(metadata) {
+            adjustment += 40
+        }
+        if metadata.movementPattern == .pull {
+            adjustment -= 10
+        }
+
+        return adjustment
+    }
+
+    func lowerBackSensitivityScoreAdjustment(for metadata: ExercisePlanMetadata) -> Int {
+        var adjustment = 0
+
+        if metadata.contraindicationTags.contains(.lowerBackSensitive) {
+            adjustment += 75
+        }
+        if metadata.exerciseType == .deadlift || metadata.exerciseType == .romanianDeadlift {
+            adjustment += 45
+        }
+        if metadata.exerciseType == .gluteBridge || metadata.exerciseType == .birdDog {
+            adjustment -= 30
+        }
+
+        return adjustment
+    }
+
+    func balanceSensitivityScoreAdjustment(
+        for metadata: ExercisePlanMetadata,
+        input: PlanGenerationInput
+    ) -> Int {
+        var adjustment = 0
+
+        if isStableSupported(metadata, input: input) {
+            adjustment -= 24
+        }
+        if isUnsupportedBalanceChallenge(metadata, input: input) {
+            adjustment += 70
+        }
+
+        return adjustment
+    }
+
+    func isPushHeavy(_ metadata: ExercisePlanMetadata) -> Bool {
+        metadata.movementPattern == .push
+            || metadata.exerciseType == .plank
+            || metadata.exerciseType == .sidePlank
+            || metadata.exerciseType == .mountainClimber
+            || metadata.exerciseType == .downwardDog
+    }
+
+    func isAggressiveOverhead(_ metadata: ExercisePlanMetadata) -> Bool {
+        metadata.exerciseType == .overheadPress
+            || metadata.exerciseType == .shoulderPress
+            || metadata.exerciseType == .frontRaise
+            || metadata.exerciseType == .lateralRaise
+            || metadata.exerciseType == .overarmReach
+            || metadata.exerciseType == .downwardDog
+    }
+
+    func isUnsupportedBalanceChallenge(
+        _ metadata: ExercisePlanMetadata,
+        input: PlanGenerationInput
+    ) -> Bool {
+        metadata.movementPattern == .balance
+            && !isStableSupported(metadata, input: input)
+    }
+
+    func isStableSupported(
+        _ metadata: ExercisePlanMetadata,
+        input: PlanGenerationInput
+    ) -> Bool {
+        let stableEquipment: Set<EquipmentOption> = [.chair, .wall, .bench, .mat]
+        if !metadata.requiredEquipment.isDisjoint(with: stableEquipment) {
+            return true
+        }
+        if !metadata.optionalEquipment.intersection(input.effectiveEquipment).isDisjoint(with: stableEquipment) {
+            return true
+        }
+        if metadata.exerciseType == .gluteBridge
+            || metadata.exerciseType == .birdDog
+            || metadata.exerciseType == .reverseCrunch
+            || metadata.exerciseType == .mountainPose {
+            return true
+        }
+
+        return false
     }
 
     func catalogIndex(of exerciseType: ExerciseType) -> Int {
@@ -760,6 +964,11 @@ nonisolated private extension PlanGenerator {
             .sorted { $0.rawValue < $1.rawValue }
             .map(\.displayName)
             .joined(separator: ", ")
+        let limitations = input.limitations
+            .sorted { $0.rawValue < $1.rawValue }
+            .map(\.displayName)
+            .joined(separator: ", ")
+        let limitationNote = limitations.isEmpty ? "" : ", safety preferences: \(limitations)"
 
         let ageNote: String
         switch input.profile.age {
@@ -777,7 +986,7 @@ nonisolated private extension PlanGenerator {
             ageNote = "conservative intensity with balance and mobility bias"
         }
 
-        return "Generated locally from \(input.goal.displayName.lowercased()) goal, \(input.fitnessLevel.displayName.lowercased()) level, \(input.sessionLength.rawValue)-minute length, \(equipment), and \(ageNote). Camera switches capped at \(rules.maxCameraSwitches)."
+        return "Generated locally from \(input.goal.displayName.lowercased()) goal, \(input.fitnessLevel.displayName.lowercased()) level, \(input.sessionLength.rawValue)-minute length, \(equipment)\(limitationNote), and \(ageNote). Camera switches capped at \(rules.maxCameraSwitches)."
     }
 }
 

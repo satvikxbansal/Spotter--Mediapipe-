@@ -8,6 +8,10 @@ nonisolated enum PlanSessionLength: Int, Codable, CaseIterable, Identifiable, Ha
 
     var id: Int { rawValue }
 
+    static var dailyPreferenceCases: [PlanSessionLength] {
+        [.fifteen, .twentyFive, .thirtyFive]
+    }
+
     init(rawMinutes: Int) {
         switch rawMinutes {
         case 7:
@@ -57,6 +61,10 @@ nonisolated enum PlanSessionLength: Int, Codable, CaseIterable, Identifiable, Ha
             return 3
         }
     }
+
+    var displayName: String {
+        "\(rawValue) min"
+    }
 }
 
 nonisolated struct RecentWorkoutHistoryItem: Identifiable, Codable, Equatable, Hashable {
@@ -81,6 +89,7 @@ nonisolated struct PlanGenerationInput: Codable, Equatable {
     let fitnessLevel: FitnessLevel
     let ageBracket: AgeBracket
     let equipment: Set<EquipmentOption>
+    let limitations: Set<PhysicalLimitation>
     let sessionLength: PlanSessionLength
     let preferredCoach: CoachPreference
     let recentWorkoutHistory: [RecentWorkoutHistoryItem]
@@ -99,7 +108,8 @@ nonisolated struct PlanGenerationInput: Codable, Equatable {
         profile: UserProfile,
         goal: FitnessGoal? = nil,
         fitnessLevel: FitnessLevel? = nil,
-        sessionLength: PlanSessionLength = .twentyFive,
+        sessionLength: PlanSessionLength? = nil,
+        limitations: Set<PhysicalLimitation>? = nil,
         recentWorkoutHistory: [RecentWorkoutHistoryItem] = [],
         excludedExercises: Set<ExerciseType> = [],
         focusBodyRegions: Set<BodyRegion> = [],
@@ -111,7 +121,8 @@ nonisolated struct PlanGenerationInput: Codable, Equatable {
         self.fitnessLevel = fitnessLevel ?? profile.fitnessLevel
         self.ageBracket = profile.ageBracket
         self.equipment = Set(profile.equipment)
-        self.sessionLength = sessionLength
+        self.limitations = limitations ?? profile.limitations
+        self.sessionLength = sessionLength ?? profile.preferredSessionLength
         self.preferredCoach = profile.preferredCoach
         self.recentWorkoutHistory = recentWorkoutHistory
         self.excludedExercises = excludedExercises
@@ -125,6 +136,7 @@ nonisolated struct PlanGenerationInput: Codable, Equatable {
         goal: FitnessGoal? = nil,
         fitnessLevel: FitnessLevel? = nil,
         sessionLengthMinutes: Int,
+        limitations: Set<PhysicalLimitation>? = nil,
         recentWorkoutHistory: [RecentWorkoutHistoryItem] = [],
         excludedExercises: Set<ExerciseType> = [],
         focusBodyRegions: Set<BodyRegion> = [],
@@ -136,6 +148,7 @@ nonisolated struct PlanGenerationInput: Codable, Equatable {
             goal: goal,
             fitnessLevel: fitnessLevel,
             sessionLength: PlanSessionLength(rawMinutes: sessionLengthMinutes),
+            limitations: limitations,
             recentWorkoutHistory: recentWorkoutHistory,
             excludedExercises: excludedExercises,
             focusBodyRegions: focusBodyRegions,

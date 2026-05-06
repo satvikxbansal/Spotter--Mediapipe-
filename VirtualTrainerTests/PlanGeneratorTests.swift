@@ -110,6 +110,103 @@ final class PlanGeneratorTests: XCTestCase {
         XCTAssertLessThanOrEqual(plannedExercises(in: plan).count, 4)
     }
 
+    func testPreferredSessionLengthChangesDailyPlanLength() {
+        let shortProfile = makeProfile(
+            goal: .strength,
+            level: .beginner,
+            equipment: [.bodyweight, .mat],
+            preferredSessionLength: .fifteen
+        )
+        let longProfile = makeProfile(
+            goal: .strength,
+            level: .beginner,
+            equipment: [.bodyweight, .mat],
+            preferredSessionLength: .thirtyFive
+        )
+        let service = PlanService(generator: generator)
+
+        let shortPlan = service.generateDailyPlan(profile: shortProfile)
+        let longPlan = service.generateDailyPlan(profile: longProfile)
+
+        XCTAssertEqual(shortPlan.estimatedMinutes, 15)
+        XCTAssertEqual(longPlan.estimatedMinutes, 35)
+        XCTAssertLessThanOrEqual(plannedExercises(in: shortPlan).count, PlanSessionLength.fifteen.maxExercises)
+        XCTAssertLessThanOrEqual(plannedExercises(in: longPlan).count, PlanSessionLength.thirtyFive.maxExercises)
+    }
+
+    func testKneeSensitiveProfileFavorsSupportedLowerBodyAlternatives() {
+        let profile = makeProfile(
+            goal: .strength,
+            level: .beginner,
+            equipment: [.bodyweight, .chair, .mat],
+            limitations: [.kneeSensitive]
+        )
+
+        let plan = generator.generate(
+            input: PlanGenerationInput(profile: profile, sessionLength: .twentyFive)
+        )
+        let exerciseTypes = plannedExercises(in: plan).map(\.exerciseType)
+
+        XCTAssertTrue(
+            exerciseTypes.contains(.chairSitToStand) || exerciseTypes.contains(.gluteBridge),
+            "Knee-sensitive plans should prefer chair sit-to-stand or glute bridge when available."
+        )
+        XCTAssertFalse(exerciseTypes.contains(.squat))
+        XCTAssertFalse(exerciseTypes.contains(.sumoSquat))
+    }
+
+    func testHighImpactSensitiveProfileAvoidsHighImpactDefaults() {
+        let profile = makeProfile(
+            age: 30,
+            goal: .performance,
+            level: .beginner,
+            equipment: [.bodyweight, .mat],
+            limitations: [.highImpactSensitive]
+        )
+
+        let plan = generator.generate(
+            input: PlanGenerationInput(profile: profile, sessionLength: .twentyFive)
+        )
+
+        for exercise in plannedExercises(in: plan) {
+            let metadata = ExerciseMetadataCatalog.metadata(for: exercise.exerciseType)
+            XCTAssertFalse(
+                metadata?.planTags.contains(.highImpact) ?? false,
+                "\(exercise.exerciseType.rawValue) should avoid high-impact work for high-impact-sensitive profiles"
+            )
+            XCTAssertFalse(
+                metadata?.contraindicationTags.contains(.highImpact) ?? false,
+                "\(exercise.exerciseType.rawValue) has high-impact contraindication"
+            )
+        }
+    }
+
+    func testWristSensitiveProfileAvoidsPushHeavyDefaultsWhenAlternativesExist() {
+        let profile = makeProfile(
+            goal: .strength,
+            level: .beginner,
+            equipment: [.bodyweight, .dumbbells, .wall, .mat, .chair],
+            limitations: [.wristSensitive]
+        )
+
+        let plan = generator.generate(
+            input: PlanGenerationInput(profile: profile, sessionLength: .twentyFive)
+        )
+        let exerciseTypes = plannedExercises(in: plan).map(\.exerciseType)
+        let wristLoadedDefaults: Set<ExerciseType> = [
+            .pushup,
+            .inclinePushup,
+            .tricepDip,
+            .plank,
+            .sidePlank,
+            .mountainClimber,
+            .downwardDog
+        ]
+
+        XCTAssertTrue(exerciseTypes.contains(.bicepCurl) || exerciseTypes.contains(.hammerCurl))
+        XCTAssertTrue(wristLoadedDefaults.isDisjoint(with: Set(exerciseTypes)))
+    }
+
     func testCameraSwitchLimitIsRespected() {
         for sessionLength in PlanSessionLength.allCases {
             let profile = makeProfile(
@@ -321,7 +418,9 @@ private extension PlanGeneratorTests {
         age: Int = 30,
         goal: FitnessGoal,
         level: FitnessLevel,
-        equipment: Set<EquipmentOption>
+        equipment: Set<EquipmentOption>,
+        limitations: Set<PhysicalLimitation> = [],
+        preferredSessionLength: PlanSessionLength = .twentyFive
     ) -> UserProfile {
         let now = Date(timeIntervalSince1970: 1_776_000_000)
         return UserProfile(
@@ -338,6 +437,8 @@ private extension PlanGeneratorTests {
             equipment: equipment.sorted { $0.rawValue < $1.rawValue },
             preferredCoach: .bennett,
             selectedTheme: .hyper,
+            limitations: limitations,
+            preferredSessionLength: preferredSessionLength,
             onboardingCompletedAt: now,
             createdAt: now,
             updatedAt: now

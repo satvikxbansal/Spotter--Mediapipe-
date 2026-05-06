@@ -129,6 +129,14 @@ final class OnboardingStore: ObservableObject {
         }
     }
 
+    func toggleLimitation(_ limitation: PhysicalLimitation) {
+        if draft.limitations.contains(limitation) {
+            draft.limitations.remove(limitation)
+        } else {
+            draft.limitations.insert(limitation)
+        }
+    }
+
     func completeOnboarding() {
         guard canCompleteProfile,
               let genderIdentity = draft.genderIdentity,
@@ -158,11 +166,41 @@ final class OnboardingStore: ObservableObject {
             equipment: draft.equipment.sorted { $0.rawValue < $1.rawValue },
             preferredCoach: draft.preferredCoach,
             selectedTheme: draft.selectedTheme,
+            limitations: draft.limitations,
+            preferredSessionLength: draft.preferredSessionLength,
+            workoutDaysPerWeek: Self.normalizedWorkoutDaysPerWeek(draft.workoutDaysPerWeek),
+            reminderPreference: draft.reminderPreference,
+            timezoneIdentifier: Self.normalizedTimezoneIdentifier(draft.timezoneIdentifier),
+            avatarStyle: draft.avatarStyle,
             onboardingCompletedAt: now,
             createdAt: now,
             updatedAt: now
         )
 
+        save(profile)
+    }
+
+    func updateTrainingPreferences(
+        limitations: Set<PhysicalLimitation>,
+        preferredSessionLength: PlanSessionLength,
+        workoutDaysPerWeek: Int?,
+        reminderPreference: ReminderPreference,
+        timezoneIdentifier: String,
+        avatarStyle: AvatarStyle?
+    ) {
+        guard var profile else {
+            persistenceError = "No profile exists yet."
+            return
+        }
+
+        profile.limitations = limitations
+        profile.preferredSessionLength = preferredSessionLength
+        profile.workoutDaysPerWeek = Self.normalizedWorkoutDaysPerWeek(workoutDaysPerWeek)
+        profile.reminderPreference = reminderPreference
+        profile.timezoneIdentifier = Self.normalizedTimezoneIdentifier(timezoneIdentifier)
+        profile.avatarStyle = avatarStyle
+        profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
+        profile.updatedAt = Date()
         save(profile)
     }
 
@@ -256,6 +294,21 @@ final class OnboardingStore: ObservableObject {
         return base
             .appendingPathComponent("Spotter", isDirectory: true)
             .appendingPathComponent("UserProfile.json")
+    }
+
+    private static func normalizedWorkoutDaysPerWeek(_ value: Int?) -> Int? {
+        guard let value else { return UserProfile.defaultWorkoutDaysPerWeek }
+        return min(max(value, 1), 7)
+    }
+
+    private static func normalizedTimezoneIdentifier(_ identifier: String) -> String {
+        let trimmed = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let timezone = TimeZone(identifier: trimmed)
+        else {
+            return TimeZone.current.identifier
+        }
+        return timezone.identifier
     }
 
     private static func convert(

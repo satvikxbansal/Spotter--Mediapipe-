@@ -61,7 +61,7 @@ nonisolated final class PlanService {
         generator.generate(
             input: PlanGenerationInput(
                 profile: profile,
-                sessionLength: .twentyFive,
+                sessionLength: profile.preferredSessionLength,
                 recentWorkoutHistory: recentWorkoutHistory
             )
         )

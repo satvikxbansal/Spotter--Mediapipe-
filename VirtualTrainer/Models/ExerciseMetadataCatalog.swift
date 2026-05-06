@@ -149,7 +149,6 @@ nonisolated enum ExerciseMetadataCatalog {
             pattern: .squat,
             region: .lower,
             tags: [.strength, .longevity, .lowImpact, .beginnerFriendly, .bodyweight],
-            contraindications: [.kneeSensitive],
             rest: 45,
             beginnerTarget: 8,
             intermediateTarget: 12

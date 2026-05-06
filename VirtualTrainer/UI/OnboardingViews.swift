@@ -203,7 +203,7 @@ struct OnboardingGoalEquipmentView: View {
         OnboardingPage(
             stepText: "03 / 04",
             title: "Define your objective",
-            subtitle: "Pick a focus, your current level, and the gear you can use.",
+            subtitle: "Pick a focus, your current level, gear, and training constraints.",
             canContinue: store.canContinue(from: .goalEquipment),
             onBack: onBack,
             onNext: onNext
@@ -246,6 +246,49 @@ struct OnboardingGoalEquipmentView: View {
                                 isSelected: store.draft.equipment.contains(option)
                             ) {
                                 store.toggleEquipment(option)
+                            }
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    FieldLabel("Limitations")
+                    FlowLayout(spacing: Theme.Spacing.sm) {
+                        ForEach(PhysicalLimitation.allCases) { limitation in
+                            TagButton(
+                                title: limitation.displayName,
+                                isSelected: store.draft.limitations.contains(limitation)
+                            ) {
+                                store.toggleLimitation(limitation)
+                            }
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    FieldLabel("Daily plan length")
+                    HStack(spacing: Theme.Spacing.sm) {
+                        ForEach(PlanSessionLength.dailyPreferenceCases) { sessionLength in
+                            OptionButton(
+                                title: sessionLength.displayName,
+                                subtitle: nil,
+                                isSelected: store.draft.preferredSessionLength == sessionLength
+                            ) {
+                                store.draft.preferredSessionLength = sessionLength
+                            }
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    FieldLabel("Workout days per week")
+                    FlowLayout(spacing: Theme.Spacing.sm) {
+                        ForEach(1...7, id: \.self) { dayCount in
+                            TagButton(
+                                title: "\(dayCount)",
+                                isSelected: store.draft.workoutDaysPerWeek == dayCount
+                            ) {
+                                store.draft.workoutDaysPerWeek = dayCount
                             }
                         }
                     }
@@ -297,6 +340,36 @@ struct OnboardingCoachThemeView: View {
                                 isSelected: store.draft.selectedTheme == theme
                             ) {
                                 store.draft.selectedTheme = theme
+                            }
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    FieldLabel("Avatar style")
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Theme.Spacing.sm) {
+                        ForEach(AvatarStyle.allCases) { style in
+                            OptionButton(
+                                title: style.displayName,
+                                subtitle: nil,
+                                isSelected: store.draft.avatarStyle == style
+                            ) {
+                                store.draft.avatarStyle = style
+                            }
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    FieldLabel("Reminders")
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Theme.Spacing.sm) {
+                        ForEach(ReminderPreference.allCases) { preference in
+                            OptionButton(
+                                title: preference.displayName,
+                                subtitle: nil,
+                                isSelected: store.draft.reminderPreference == preference
+                            ) {
+                                store.draft.reminderPreference = preference
                             }
                         }
                     }

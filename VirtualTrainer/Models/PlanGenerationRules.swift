@@ -4,6 +4,8 @@ nonisolated struct PlanGenerationRules: Codable, Equatable {
     let maxExercises: Int
     let maxCameraSwitches: Int
     let allowedDifficulties: Set<ExerciseDifficulty>
+    let limitations: Set<PhysicalLimitation>
+    let avoidedContraindications: Set<ContraindicationTag>
     let bodyweightFirst: Bool
     let avoidHighImpactWhenAlternativesExist: Bool
     let lowerImpactBias: Bool
@@ -75,10 +77,12 @@ nonisolated struct PlanGenerationRules: Codable, Equatable {
             maxExercises: input.sessionLength.maxExercises,
             maxCameraSwitches: input.sessionLength.maxCameraSwitches,
             allowedDifficulties: allowedDifficulties,
-            bodyweightFirst: agePolicy.bodyweightFirst,
-            avoidHighImpactWhenAlternativesExist: agePolicy.avoidHighImpact,
-            lowerImpactBias: agePolicy.lowerImpactBias,
-            balanceMobilityBias: agePolicy.balanceMobilityBias,
+            limitations: input.limitations,
+            avoidedContraindications: avoidedContraindications(for: input.limitations),
+            bodyweightFirst: agePolicy.bodyweightFirst || input.limitations.contains(.lowerBackSensitive),
+            avoidHighImpactWhenAlternativesExist: agePolicy.avoidHighImpact || input.limitations.contains(.highImpactSensitive),
+            lowerImpactBias: agePolicy.lowerImpactBias || !input.limitations.isEmpty,
+            balanceMobilityBias: agePolicy.balanceMobilityBias || input.limitations.contains(.balanceSensitive),
             restBonusSeconds: agePolicy.restBonusSeconds,
             targetMultiplier: agePolicy.targetMultiplier
         )
@@ -91,5 +95,29 @@ nonisolated struct PlanGenerationRules: Codable, Equatable {
         let balanceMobilityBias: Bool
         let restBonusSeconds: Int
         let targetMultiplier: Double
+    }
+
+    private static func avoidedContraindications(
+        for limitations: Set<PhysicalLimitation>
+    ) -> Set<ContraindicationTag> {
+        var tags: Set<ContraindicationTag> = []
+
+        if limitations.contains(.kneeSensitive) {
+            tags.insert(.kneeSensitive)
+        }
+        if limitations.contains(.shoulderSensitive) {
+            tags.insert(.shoulderSensitive)
+        }
+        if limitations.contains(.wristSensitive) {
+            tags.insert(.wristSensitive)
+        }
+        if limitations.contains(.lowerBackSensitive) {
+            tags.insert(.lowerBackSensitive)
+        }
+        if limitations.contains(.highImpactSensitive) {
+            tags.insert(.highImpact)
+        }
+
+        return tags
     }
 }
