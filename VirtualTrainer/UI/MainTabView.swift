@@ -25,6 +25,7 @@ struct MainTabView: View {
 
 private struct ProfileDebugView: View {
     @EnvironmentObject private var onboardingStore: OnboardingStore
+    @EnvironmentObject private var calibrationStore: CalibrationStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
     @State private var selectedSummary: WorkoutSessionSummary?
 
@@ -42,6 +43,7 @@ private struct ProfileDebugView: View {
                         ProfileRow(label: "Level", value: profile.fitnessLevel.displayName)
                         ProfileRow(label: "Coach", value: profile.preferredCoach.displayName)
                         ProfileRow(label: "Theme", value: profile.selectedTheme.displayName)
+                        ProfileRow(label: "Calibration", value: calibrationStore.status.displayName)
                         ProfileRow(
                             label: "Equipment",
                             value: profile.equipment.map(\.displayName).joined(separator: ", ")
@@ -59,7 +61,12 @@ private struct ProfileDebugView: View {
                 }
                 .buttonStyle(SecondaryCTAStyle())
 
-                Text("Debug reset clears the local profile and restarts onboarding.")
+                Button("Reset calibration") {
+                    calibrationStore.resetForDebug()
+                }
+                .buttonStyle(SecondaryCTAStyle())
+
+                Text("Debug resets clear local onboarding or calibration state.")
                     .caption()
             }
             .padding(Theme.Spacing.lg)
@@ -217,5 +224,6 @@ private struct WorkoutHistoryRow: View {
 #Preview {
     MainTabView()
         .environmentObject(OnboardingStore())
+        .environmentObject(CalibrationStore())
         .environmentObject(WorkoutHistoryStore())
 }
