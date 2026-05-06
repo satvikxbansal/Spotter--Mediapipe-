@@ -3,15 +3,32 @@ import SwiftUI
 struct WorkoutSummaryView: View {
     let summary: WorkoutSummary
     let historySummary: WorkoutSessionSummary?
+    let trophyEvents: [TrophyUnlockEvent]
+    let nearestTrophyProgress: TrophyProgress?
     let onDone: () -> Void
 
     @State private var isShowingDetail = false
+
+    init(
+        summary: WorkoutSummary,
+        historySummary: WorkoutSessionSummary?,
+        trophyEvents: [TrophyUnlockEvent] = [],
+        nearestTrophyProgress: TrophyProgress? = nil,
+        onDone: @escaping () -> Void
+    ) {
+        self.summary = summary
+        self.historySummary = historySummary
+        self.trophyEvents = trophyEvents
+        self.nearestTrophyProgress = nearestTrophyProgress
+        self.onDone = onDone
+    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                 header
                 statGrid
+                trophySection
                 exerciseList
                 coachInsightCard
             }
@@ -92,6 +109,38 @@ struct WorkoutSummaryView: View {
             SummaryStatCard(label: "Hold", value: durationText(summary.totalHoldSeconds))
             SummaryStatCard(label: "Avg Form", value: averageFormText)
             SummaryStatCard(label: "Completion", value: completionText)
+        }
+    }
+
+    @ViewBuilder
+    private var trophySection: some View {
+        if !trophyEvents.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                Text("Trophies Earned")
+                    .font(.system(size: 18, weight: .black))
+                    .textCase(.uppercase)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+
+                VStack(spacing: Theme.Spacing.sm) {
+                    ForEach(trophyEvents) { event in
+                        TrophyUnlockEventCard(event: event)
+                    }
+                }
+            }
+        } else if let nearestTrophyProgress,
+                  let definition = TrophyDefinitionCatalog.definition(for: nearestTrophyProgress.trophyId) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                Text("Closest Trophy")
+                    .font(.system(size: 18, weight: .black))
+                    .textCase(.uppercase)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+
+                TrophyProgressCard(
+                    definition: definition,
+                    progress: nearestTrophyProgress,
+                    isFeatured: true
+                )
+            }
         }
     }
 
@@ -184,6 +233,41 @@ private struct SummaryStatCard: View {
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.lg)
                 .stroke(Theme.Colors.divider, lineWidth: 1)
+        )
+    }
+}
+
+private struct TrophyUnlockEventCard: View {
+    let event: TrophyUnlockEvent
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.md) {
+            Image(systemName: "trophy.fill")
+                .font(.system(size: 24, weight: .black))
+                .foregroundStyle(Theme.Colors.background)
+                .frame(width: 54, height: 54)
+                .background(Theme.Colors.accent)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                Text(event.title)
+                    .font(.system(size: 19, weight: .black))
+                    .textCase(.uppercase)
+                    .foregroundStyle(Theme.Colors.accent)
+                Text(event.reason)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.Colors.accentMuted)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Theme.Colors.accent.opacity(0.45), lineWidth: 1)
         )
     }
 }

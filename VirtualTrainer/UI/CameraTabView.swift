@@ -414,10 +414,14 @@ struct CameraReadinessView: View {
 struct FreeAnalysisSummaryView: View {
     let summary: FreeAnalysisSummary
 
+    @EnvironmentObject private var calibrationStore: CalibrationStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
+    @EnvironmentObject private var trophyStore: TrophyStore
     @State private var didSave = false
     @State private var savedHistorySummary: WorkoutSessionSummary?
     @State private var detailSummary: WorkoutSessionSummary?
+    @State private var newlyEarnedTrophyEvents: [TrophyUnlockEvent] = []
+    @State private var nearestTrophyProgress: TrophyProgress?
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -443,6 +447,11 @@ struct FreeAnalysisSummaryView: View {
                         .foregroundStyle(Theme.Colors.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+
+                FreeAnalysisTrophySection(
+                    events: newlyEarnedTrophyEvents,
+                    nearestProgress: nearestTrophyProgress
+                )
 
                 VStack(spacing: Theme.Spacing.sm) {
                     Button(didSave ? "Saved to history" : "Save to history") {
@@ -482,8 +491,63 @@ struct FreeAnalysisSummaryView: View {
         let historySummary = WorkoutSessionSummary.freeAnalysis(from: summary)
         guard historyStore.addSummary(historySummary) else { return }
         HapticsEngine.shared.successRipple()
+        newlyEarnedTrophyEvents = trophyStore.update(
+            after: historySummary,
+            history: historyStore.summaries,
+            calibrationStatus: calibrationStore.status
+        )
+        nearestTrophyProgress = trophyStore.snapshot.nearestInProgress
         didSave = true
         savedHistorySummary = historySummary
+    }
+}
+
+private struct FreeAnalysisTrophySection: View {
+    let events: [TrophyUnlockEvent]
+    let nearestProgress: TrophyProgress?
+
+    var body: some View {
+        if !events.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text("Trophies Earned")
+                    .font(.system(size: 15, weight: .black))
+                    .textCase(.uppercase)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+
+                ForEach(events) { event in
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Image(systemName: "trophy.fill")
+                            .font(.system(size: 18, weight: .black))
+                            .foregroundStyle(Theme.Colors.background)
+                            .frame(width: 42, height: 42)
+                            .background(Theme.Colors.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+                        VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
+                            Text(event.title)
+                                .font(.system(size: 15, weight: .black))
+                                .textCase(.uppercase)
+                                .foregroundStyle(Theme.Colors.accent)
+                            Text(event.reason)
+                                .caption()
+                        }
+                        Spacer()
+                    }
+                    .padding(Theme.Spacing.md)
+                    .background(Theme.Colors.accentMuted)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                }
+            }
+        } else if let nearestProgress,
+                  let definition = TrophyDefinitionCatalog.definition(for: nearestProgress.trophyId) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text("Closest Trophy")
+                    .font(.system(size: 15, weight: .black))
+                    .textCase(.uppercase)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                TrophyProgressCard(definition: definition, progress: nearestProgress)
+            }
+        }
     }
 }
 
@@ -518,5 +582,7 @@ private extension BodyCategory {
 #Preview {
     CameraTabView()
         .environmentObject(OnboardingStore())
+        .environmentObject(CalibrationStore())
         .environmentObject(WorkoutHistoryStore())
+        .environmentObject(TrophyStore())
 }

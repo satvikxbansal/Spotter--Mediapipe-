@@ -13,6 +13,11 @@ struct MainTabView: View {
                     Label("Camera", systemImage: "camera.fill")
                 }
 
+            TrophiesView()
+                .tabItem {
+                    Label("Trophies", systemImage: "trophy.fill")
+                }
+
             ProfileDebugView()
                 .tabItem {
                     Label("Profile", systemImage: "person.crop.circle.fill")
@@ -226,4 +231,5 @@ private struct WorkoutHistoryRow: View {
         .environmentObject(OnboardingStore())
         .environmentObject(CalibrationStore())
         .environmentObject(WorkoutHistoryStore())
+        .environmentObject(TrophyStore())
 }

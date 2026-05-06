@@ -104,7 +104,8 @@ nonisolated final class DashboardContentFactory {
         profile: UserProfile,
         now: Date = Date(),
         recentWorkoutHistory: [RecentWorkoutHistoryItem] = [],
-        currentStreakDayCount: Int? = nil
+        currentStreakDayCount: Int? = nil,
+        trophySnapshot: TrophyProgressSnapshot? = nil
     ) -> DashboardContent {
         let smartStartDeck = planService.generateQuickStartDeck(
             profile: profile,
@@ -134,7 +135,7 @@ nonisolated final class DashboardContentFactory {
             smartStartFallback: DashboardPlanSummary(plan: smartStartFallback),
             dailyPlan: DashboardPlanSummary(plan: dailyPlan),
             quickActions: Self.quickActions,
-            trophyTeaserText: "Milestones will unlock as you train.",
+            trophyTeaserText: Self.trophyTeaserText(from: trophySnapshot),
             recentWorkout: mostRecentWorkout(from: recentWorkoutHistory)
         )
     }
@@ -216,5 +217,24 @@ nonisolated final class DashboardContentFactory {
                 completedAt: $0.completedAt
             )
         }
+    }
+
+    private static func trophyTeaserText(from snapshot: TrophyProgressSnapshot?) -> String {
+        guard let snapshot else {
+            return "Milestones will unlock as you train."
+        }
+
+        let earnedCount = snapshot.availableProgress.filter(\.earned).count
+        let availableCount = snapshot.availableProgress.count
+        if earnedCount > 0 {
+            return "\(earnedCount)/\(availableCount) earned. Keep building the collection."
+        }
+
+        if let nearest = snapshot.nearestInProgress,
+           let definition = TrophyDefinitionCatalog.definition(for: nearest.trophyId) {
+            return "Closest: \(definition.title) - \(nearest.progressLabel)."
+        }
+
+        return "Save a workout to light up The Spark."
     }
 }

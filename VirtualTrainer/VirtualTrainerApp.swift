@@ -11,6 +11,7 @@ struct VirtualTrainerApp: App {
     @StateObject private var onboardingStore = OnboardingStore()
     @StateObject private var calibrationStore = CalibrationStore()
     @StateObject private var workoutHistoryStore = WorkoutHistoryStore()
+    @StateObject private var trophyStore = TrophyStore()
 
     var body: some Scene {
         WindowGroup {
@@ -26,6 +27,7 @@ struct VirtualTrainerApp: App {
             .environmentObject(onboardingStore)
             .environmentObject(calibrationStore)
             .environmentObject(workoutHistoryStore)
+            .environmentObject(trophyStore)
         }
     }
 }

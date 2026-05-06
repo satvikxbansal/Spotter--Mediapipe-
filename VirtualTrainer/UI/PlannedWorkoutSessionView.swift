@@ -2,10 +2,14 @@ import SwiftUI
 
 struct PlannedWorkoutSessionView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var calibrationStore: CalibrationStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
+    @EnvironmentObject private var trophyStore: TrophyStore
     @State private var coordinator: PlannedWorkoutCoordinator
     @State private var didSaveHistorySummary = false
     @State private var savedHistorySummary: WorkoutSessionSummary?
+    @State private var newlyEarnedTrophyEvents: [TrophyUnlockEvent] = []
+    @State private var nearestTrophyProgress: TrophyProgress?
 
     init(plan: WorkoutPlanV2) {
         _coordinator = State(
@@ -65,7 +69,9 @@ struct PlannedWorkoutSessionView: View {
     private var workoutCompleteView: some View {
         WorkoutSummaryView(
             summary: coordinator.workoutSummary(),
-            historySummary: savedHistorySummary
+            historySummary: savedHistorySummary,
+            trophyEvents: newlyEarnedTrophyEvents,
+            nearestTrophyProgress: nearestTrophyProgress
         ) {
             dismiss()
         }
@@ -96,6 +102,12 @@ struct PlannedWorkoutSessionView: View {
         let summary = coordinator.workoutSessionSummary()
         guard historyStore.addSummary(summary) else { return }
         savedHistorySummary = summary
+        newlyEarnedTrophyEvents = trophyStore.update(
+            after: summary,
+            history: historyStore.summaries,
+            calibrationStatus: calibrationStore.status
+        )
+        nearestTrophyProgress = trophyStore.snapshot.nearestInProgress
         didSaveHistorySummary = true
     }
 }
@@ -104,5 +116,7 @@ struct PlannedWorkoutSessionView: View {
     PlannedWorkoutSessionView(
         plan: WorkoutPlan.MockData.legDay.convertedToV2()
     )
+    .environmentObject(CalibrationStore())
     .environmentObject(WorkoutHistoryStore())
+    .environmentObject(TrophyStore())
 }

@@ -6,7 +6,9 @@ import SwiftUI
 
 struct HomeDashboardView: View {
     @EnvironmentObject private var onboardingStore: OnboardingStore
+    @EnvironmentObject private var calibrationStore: CalibrationStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
+    @EnvironmentObject private var trophyStore: TrophyStore
 
     @State private var dashboardContent: DashboardContent?
     @State private var previewPlan: WorkoutPlanV2?
@@ -45,7 +47,7 @@ struct HomeDashboardView: View {
                 }
             }
             .navigationDestination(isPresented: $isShowingTrophyTeaser) {
-                TrophyTeaserView()
+                TrophiesView()
             }
             .sheet(item: $freeAnalysisSummary) { summary in
                 FreeAnalysisSummaryView(summary: summary)
@@ -104,10 +106,15 @@ struct HomeDashboardView: View {
             .padding(.bottom, Theme.Spacing.xxxl)
         }
         .refreshable {
+            trophyStore.updateAll(
+                history: historyStore.summaries,
+                calibrationStatus: calibrationStore.status
+            )
             dashboardContent = contentFactory.makeContent(
                 profile: profile,
                 recentWorkoutHistory: historyStore.recentWorkoutHistoryItems(),
-                currentStreakDayCount: historyStore.aggregateStats().currentStreak
+                currentStreakDayCount: historyStore.aggregateStats().currentStreak,
+                trophySnapshot: trophyStore.snapshot
             )
         }
     }
@@ -118,10 +125,16 @@ struct HomeDashboardView: View {
             return
         }
 
+        trophyStore.updateAll(
+            history: historyStore.summaries,
+            calibrationStatus: calibrationStore.status
+        )
+
         dashboardContent = contentFactory.makeContent(
             profile: profile,
             recentWorkoutHistory: historyStore.recentWorkoutHistoryItems(),
-            currentStreakDayCount: historyStore.aggregateStats().currentStreak
+            currentStreakDayCount: historyStore.aggregateStats().currentStreak,
+            trophySnapshot: trophyStore.snapshot
         )
     }
 
@@ -437,24 +450,6 @@ private struct MissingProfileDashboard: View {
     }
 }
 
-private struct TrophyTeaserView: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            Text("Trophies")
-                .header(size: 36)
-            Text("No trophies yet.")
-                .bodyText()
-                .foregroundStyle(Theme.Colors.textSecondary)
-            Spacer()
-        }
-        .padding(Theme.Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.Colors.background)
-        .navigationTitle("Trophies")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
 private struct DashboardBadge: View {
     let text: String
 
@@ -497,5 +492,7 @@ private extension View {
 #Preview {
     HomeDashboardView()
         .environmentObject(OnboardingStore())
+        .environmentObject(CalibrationStore())
         .environmentObject(WorkoutHistoryStore())
+        .environmentObject(TrophyStore())
 }

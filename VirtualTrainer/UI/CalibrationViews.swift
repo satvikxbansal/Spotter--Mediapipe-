@@ -88,6 +88,8 @@ struct CalibrationIntroView: View {
 struct CalibrationSessionView: View {
     @EnvironmentObject private var onboardingStore: OnboardingStore
     @EnvironmentObject private var calibrationStore: CalibrationStore
+    @EnvironmentObject private var historyStore: WorkoutHistoryStore
+    @EnvironmentObject private var trophyStore: TrophyStore
 
     var body: some View {
         CameraReadinessView(
@@ -95,7 +97,12 @@ struct CalibrationSessionView: View {
             targetReps: CalibrationDefaults.targetReps,
             coach: coachPersonality,
             onCompleted: { record in
-                calibrationStore.saveCompleted(record)
+                if calibrationStore.saveCompleted(record) {
+                    trophyStore.updateAll(
+                        history: historyStore.summaries,
+                        calibrationStatus: calibrationStore.status
+                    )
+                }
             },
             onFailed: { record in
                 calibrationStore.saveFailed(record)
@@ -140,4 +147,6 @@ private struct CalibrationInfoRow: View {
     CalibrationIntroView()
         .environmentObject(OnboardingStore())
         .environmentObject(CalibrationStore())
+        .environmentObject(WorkoutHistoryStore())
+        .environmentObject(TrophyStore())
 }
