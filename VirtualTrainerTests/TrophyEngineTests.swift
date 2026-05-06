@@ -332,6 +332,64 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(reloaded.snapshot.newlyEarnedEvents.isEmpty)
     }
 
+    func testDuplicatePersistedProgressDoesNotCrashLookup() {
+        let id = TrophyDefinitionCatalog.ID.spark
+        let older = makeProgress(
+            trophyId: id,
+            currentValue: 0,
+            targetValue: 1,
+            earned: false,
+            earnedAt: nil,
+            lastUpdatedAt: date(year: 2026, month: 5, day: 1, hour: 10),
+            progressLabel: "0/1 workout"
+        )
+        let newer = makeProgress(
+            trophyId: id,
+            currentValue: 0.5,
+            targetValue: 1,
+            earned: false,
+            earnedAt: nil,
+            lastUpdatedAt: date(year: 2026, month: 5, day: 1, hour: 11),
+            progressLabel: "0.5/1 workout"
+        )
+        let snapshot = makeSnapshot(progress: [older, newer])
+
+        XCTAssertEqual(snapshot.progressByTrophyId[id]?.currentValue, 0.5)
+    }
+
+    func testDuplicatePersistedProgressPreservesEarnedTrophy() {
+        let id = TrophyDefinitionCatalog.ID.spark
+        let earnedAt = date(year: 2026, month: 5, day: 1, hour: 10)
+        let earned = makeProgress(
+            trophyId: id,
+            currentValue: 1,
+            targetValue: 1,
+            earned: true,
+            earnedAt: earnedAt,
+            lastUpdatedAt: date(year: 2026, month: 5, day: 1, hour: 10),
+            progressLabel: "Earned"
+        )
+        let staleUnearned = makeProgress(
+            trophyId: id,
+            currentValue: 0,
+            targetValue: 1,
+            earned: false,
+            earnedAt: nil,
+            lastUpdatedAt: date(year: 2026, month: 5, day: 1, hour: 12),
+            progressLabel: "0/1 workout"
+        )
+        let snapshot = makeSnapshot(progress: [staleUnearned, earned])
+
+        XCTAssertTrue(snapshot.progressByTrophyId[id]?.earned ?? false)
+        XCTAssertEqual(snapshot.progressByTrophyId[id]?.earnedAt, earnedAt)
+    }
+
+    func testTrophyDefinitionsHaveUniqueIds() {
+        let ids = TrophyDefinitionCatalog.all.map(\.id)
+
+        XCTAssertEqual(Set(ids).count, ids.count)
+    }
+
     func testEmptyHistoryUnlocksNothingExceptStaticComingSoonStates() {
         let result = engine.updateAll(history: [], calibrationStatus: .notStarted)
 
@@ -497,6 +555,36 @@ private extension TrophyEngineTests {
                 minute: minute
             )
         ) ?? Date(timeIntervalSince1970: 0)
+    }
+
+    func makeProgress(
+        trophyId: String,
+        currentValue: Double,
+        targetValue: Double,
+        earned: Bool,
+        earnedAt: Date?,
+        lastUpdatedAt: Date,
+        progressLabel: String
+    ) -> TrophyProgress {
+        TrophyProgress(
+            trophyId: trophyId,
+            currentValue: currentValue,
+            targetValue: targetValue,
+            earned: earned,
+            earnedAt: earnedAt,
+            lastUpdatedAt: lastUpdatedAt,
+            confidence: .exact,
+            progressLabel: progressLabel
+        )
+    }
+
+    func makeSnapshot(progress: [TrophyProgress]) -> TrophyProgressSnapshot {
+        TrophyProgressSnapshot(
+            catalogVersion: TrophyDefinitionCatalog.version,
+            generatedAt: date(year: 2026, month: 5, day: 1, hour: 12),
+            progress: progress,
+            newlyEarnedEvents: []
+        )
     }
 
     func temporaryTrophyURL() -> URL {

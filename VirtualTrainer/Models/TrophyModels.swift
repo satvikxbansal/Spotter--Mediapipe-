@@ -230,7 +230,13 @@ nonisolated struct TrophyProgressSnapshot: Codable, Equatable {
     let newlyEarnedEvents: [TrophyUnlockEvent]
 
     var progressByTrophyId: [String: TrophyProgress] {
-        Dictionary(uniqueKeysWithValues: progress.map { ($0.trophyId, $0) })
+        progress.reduce(into: [String: TrophyProgress]()) { result, progress in
+            if let existing = result[progress.trophyId] {
+                result[progress.trophyId] = Self.preferredProgress(existing, progress)
+            } else {
+                result[progress.trophyId] = progress
+            }
+        }
     }
 
     var earnedProgress: [TrophyProgress] {
@@ -271,6 +277,38 @@ nonisolated struct TrophyProgressSnapshot: Codable, Equatable {
 
     func progress(for trophyId: String) -> TrophyProgress? {
         progressByTrophyId[trophyId]
+    }
+
+    private static func preferredProgress(
+        _ lhs: TrophyProgress,
+        _ rhs: TrophyProgress
+    ) -> TrophyProgress {
+        if lhs.earned != rhs.earned {
+            return lhs.earned ? lhs : rhs
+        }
+
+        if lhs.earned {
+            switch (lhs.earnedAt, rhs.earnedAt) {
+            case let (lhsDate?, rhsDate?) where lhsDate != rhsDate:
+                return lhsDate < rhsDate ? lhs : rhs
+            case (nil, _?):
+                return rhs
+            case (_?, nil):
+                return lhs
+            default:
+                break
+            }
+        }
+
+        if lhs.lastUpdatedAt != rhs.lastUpdatedAt {
+            return lhs.lastUpdatedAt > rhs.lastUpdatedAt ? lhs : rhs
+        }
+
+        if lhs.progressFraction != rhs.progressFraction {
+            return lhs.progressFraction > rhs.progressFraction ? lhs : rhs
+        }
+
+        return lhs
     }
 
     static func empty(now: Date = Date()) -> TrophyProgressSnapshot {
