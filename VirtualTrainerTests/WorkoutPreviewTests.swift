@@ -102,9 +102,134 @@ final class WorkoutPreviewTests: XCTestCase {
         XCTAssertEqual(context.coach, .drill)
         XCTAssertFalse(context.startsActive)
     }
+
+    func testEditingRepTargetUpdatesPreviewPlan() throws {
+        var state = WorkoutPreviewState(plan: makeBodyweightPlan(coach: .good))
+        let exerciseId = firstExerciseId()
+        var draft = try XCTUnwrap(state.targetDraft(for: exerciseId))
+
+        draft.draftTargetValue = 12
+        let validation = state.applyTargetDraft(draft)
+
+        XCTAssertTrue(validation.isValid)
+        XCTAssertFalse(validation.didClamp)
+        XCTAssertTrue(state.hasUserEdits)
+        XCTAssertEqual(
+            state.displayPlan.blocks[0].exercises[0].sets.map(\.target),
+            [.reps(12), .reps(12)]
+        )
+    }
+
+    func testEditingSetCountRebuildsPlannedSets() throws {
+        var state = WorkoutPreviewState(plan: makeBodyweightPlan(coach: .good))
+        var draft = try XCTUnwrap(state.targetDraft(for: firstExerciseId()))
+
+        draft.draftSetCount = 3
+        draft.draftTargetValue = 10
+        _ = state.applyTargetDraft(draft)
+
+        let sets = state.displayPlan.blocks[0].exercises[0].sets
+        XCTAssertEqual(sets.map(\.setIndex), [1, 2, 3])
+        XCTAssertEqual(sets.map(\.target), [.reps(10), .reps(10), .reps(10)])
+    }
+
+    func testSavingUnchangedDraftPreservesOriginalProgression() throws {
+        var state = WorkoutPreviewState(plan: makeBodyweightPlan(coach: .good))
+        let draft = try XCTUnwrap(state.targetDraft(for: firstExerciseId()))
+
+        _ = state.applyTargetDraft(draft)
+
+        XCTAssertFalse(state.hasUserEdits)
+        XCTAssertEqual(
+            state.displayPlan.blocks[0].exercises[0].sets.map(\.target),
+            [.reps(8), .reps(9)]
+        )
+    }
+
+    func testResetExerciseRestoresOriginalTargetAndSetCount() throws {
+        var state = WorkoutPreviewState(plan: makeBodyweightPlan(coach: .good))
+        let exerciseId = firstExerciseId()
+        var draft = try XCTUnwrap(state.targetDraft(for: exerciseId))
+        draft.draftSetCount = 3
+        draft.draftTargetValue = 12
+        _ = state.applyTargetDraft(draft)
+
+        state.resetExerciseToOriginal(exerciseId)
+
+        XCTAssertFalse(state.hasUserEdits)
+        XCTAssertEqual(
+            state.displayPlan.blocks[0].exercises[0].sets.map(\.target),
+            [.reps(8), .reps(9)]
+        )
+    }
+
+    func testInvalidTargetValuesAreClampedToSafeBounds() throws {
+        let profile = makeProfile()
+        var state = WorkoutPreviewState(
+            plan: makeBodyweightPlan(coach: .good),
+            profile: profile
+        )
+        var draft = try XCTUnwrap(state.targetDraft(for: firstExerciseId()))
+
+        draft.draftSetCount = 0
+        draft.draftTargetValue = 99
+        let validation = state.applyTargetDraft(draft)
+
+        XCTAssertTrue(validation.isValid)
+        XCTAssertTrue(validation.didClamp)
+        let sets = state.displayPlan.blocks[0].exercises[0].sets
+        XCTAssertEqual(sets.count, 1)
+        XCTAssertEqual(sets.first?.target, .reps(20))
+    }
+
+    func testStartSessionUsesEditedPlanTarget() throws {
+        var state = WorkoutPreviewState(plan: makeBodyweightPlan(coach: .good))
+        var draft = try XCTUnwrap(state.targetDraft(for: firstExerciseId()))
+
+        draft.draftSetCount = 3
+        draft.draftTargetValue = 11
+        _ = state.applyTargetDraft(draft)
+
+        let context = try XCTUnwrap(state.startSessionContext())
+
+        XCTAssertEqual(context.target, .reps(11))
+        XCTAssertEqual(context.totalSets, 3)
+    }
+
+    func testEditingHoldAndTimedTargetsUpdatesPlan() throws {
+        var holdState = WorkoutPreviewState(plan: makeIsometricPlan(coach: .good))
+        var holdDraft = try XCTUnwrap(holdState.targetDraft(for: firstExerciseId()))
+        holdDraft.draftSetCount = 2
+        holdDraft.draftTargetValue = 35
+        _ = holdState.applyTargetDraft(holdDraft)
+
+        XCTAssertEqual(
+            holdState.displayPlan.blocks[0].exercises[0].sets.map(\.target),
+            [.hold(seconds: 35), .hold(seconds: 35)]
+        )
+        XCTAssertEqual(holdState.startSessionContext()?.target, .seconds(35))
+
+        var timedState = WorkoutPreviewState(plan: makeTimedPlan(coach: .good))
+        var timedDraft = try XCTUnwrap(timedState.targetDraft(for: firstExerciseId()))
+        timedDraft.draftTargetValue = 45
+        _ = timedState.applyTargetDraft(timedDraft)
+
+        XCTAssertEqual(timedState.displayPlan.blocks[0].exercises[0].sets.first?.target, .timed(seconds: 45))
+        XCTAssertEqual(timedState.startSessionContext()?.target, .seconds(45))
+    }
+
+    func testOpenTargetsAreNotEditableInPreview() {
+        let state = WorkoutPreviewState(plan: makeOpenPlan(coach: .good))
+
+        XCTAssertNil(state.targetDraft(for: firstExerciseId()))
+    }
 }
 
 private extension WorkoutPreviewTests {
+    func firstExerciseId() -> PlanExerciseIdentifier {
+        PlanExerciseIdentifier(blockIndex: 0, exerciseIndex: 0)
+    }
+
     func makeBodyweightPlan(coach: CoachPersonality) -> WorkoutPlanV2 {
         WorkoutPlanV2(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000000808") ?? UUID(),
@@ -168,6 +293,72 @@ private extension WorkoutPreviewTests {
             ],
             generatedAt: Date(timeIntervalSince1970: 1_776_000_000),
             planReason: "Generated locally for an isometric beginner plan.",
+            source: .generatedLocal
+        )
+    }
+
+    func makeTimedPlan(coach: CoachPersonality) -> WorkoutPlanV2 {
+        WorkoutPlanV2(
+            id: UUID(uuidString: "00000000-0000-0000-0000-00000000080A") ?? UUID(),
+            title: "Preview Timed",
+            subtitle: "Generated preview",
+            goal: "Build steady conditioning.",
+            estimatedMinutes: 7,
+            difficulty: .beginner,
+            coach: coach,
+            blocks: [
+                WorkoutBlock(
+                    title: "Timed Practice",
+                    type: .main,
+                    exercises: [
+                        PlannedExercise(
+                            exerciseType: .jumpingJack,
+                            sets: [
+                                PlannedSet(setIndex: 1, target: .timed(seconds: 30))
+                            ],
+                            restSeconds: 45,
+                            coachingFocus: "Move smoothly and stay visible.",
+                            cameraPosition: .front,
+                            allowSwap: true
+                        )
+                    ]
+                )
+            ],
+            generatedAt: Date(timeIntervalSince1970: 1_776_000_000),
+            planReason: "Generated locally for timed target editing.",
+            source: .generatedLocal
+        )
+    }
+
+    func makeOpenPlan(coach: CoachPersonality) -> WorkoutPlanV2 {
+        WorkoutPlanV2(
+            id: UUID(uuidString: "00000000-0000-0000-0000-00000000080B") ?? UUID(),
+            title: "Preview Open",
+            subtitle: "Generated preview",
+            goal: "Practice without a fixed target.",
+            estimatedMinutes: 7,
+            difficulty: .beginner,
+            coach: coach,
+            blocks: [
+                WorkoutBlock(
+                    title: "Open Practice",
+                    type: .main,
+                    exercises: [
+                        PlannedExercise(
+                            exerciseType: .pushup,
+                            sets: [
+                                PlannedSet(setIndex: 1, target: .open)
+                            ],
+                            restSeconds: 60,
+                            coachingFocus: "Stop manually when finished.",
+                            cameraPosition: .side,
+                            allowSwap: true
+                        )
+                    ]
+                )
+            ],
+            generatedAt: Date(timeIntervalSince1970: 1_776_000_000),
+            planReason: "Generated locally for open target editing.",
             source: .generatedLocal
         )
     }

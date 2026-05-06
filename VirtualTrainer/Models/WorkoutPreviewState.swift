@@ -1,7 +1,8 @@
 import Foundation
 
 nonisolated struct WorkoutPreviewState: Equatable {
-    private(set) var plan: WorkoutPlanV2
+    private(set) var originalPlan: WorkoutPlanV2
+    private(set) var editedPlan: WorkoutPlanV2
     let input: PlanGenerationInput?
     private(set) var selectedCoach: CoachPersonality
 
@@ -9,7 +10,8 @@ nonisolated struct WorkoutPreviewState: Equatable {
         plan: WorkoutPlanV2,
         profile: UserProfile? = nil
     ) {
-        self.plan = plan
+        self.originalPlan = plan
+        self.editedPlan = plan
         self.input = profile.map {
             PlanGenerationInput(
                 profile: $0,
@@ -20,7 +22,7 @@ nonisolated struct WorkoutPreviewState: Equatable {
     }
 
     var displayPlan: WorkoutPlanV2 {
-        plan.replacingCoach(selectedCoach)
+        editedPlan.replacingCoach(selectedCoach)
     }
 
     var exercises: [PlannedExercise] {
@@ -60,9 +62,13 @@ nonisolated struct WorkoutPreviewState: Equatable {
         return names.joined(separator: " -> ")
     }
 
+    var hasUserEdits: Bool {
+        editedPlan.replacingCoach(originalPlan.coach) != originalPlan
+    }
+
     mutating func selectCoach(_ coach: CoachPersonality) {
         selectedCoach = coach
-        plan = plan.replacingCoach(coach)
+        editedPlan = editedPlan.replacingCoach(coach)
     }
 
     mutating func swapExercise(
@@ -84,7 +90,7 @@ nonisolated struct WorkoutPreviewState: Equatable {
             reason: reason
         )
 
-        plan = updated.replacingCoach(selectedCoach)
+        editedPlan = updated.replacingCoach(selectedCoach)
         return updated != before
     }
 
@@ -99,8 +105,52 @@ nonisolated struct WorkoutPreviewState: Equatable {
             input: input
         )
 
-        plan = updated.replacingCoach(selectedCoach)
+        editedPlan = updated.replacingCoach(selectedCoach)
         return updated != before
+    }
+
+    func targetDraft(
+        for exerciseId: PlanExerciseIdentifier,
+        service: PlanTargetEditService = PlanTargetEditService()
+    ) -> TargetVolumeDraft? {
+        service.draft(
+            for: exerciseId,
+            in: displayPlan,
+            input: input
+        )
+    }
+
+    @discardableResult
+    mutating func applyTargetDraft(
+        _ draft: TargetVolumeDraft,
+        service: PlanTargetEditService = PlanTargetEditService()
+    ) -> TargetVolumeValidation {
+        let result = service.applying(
+            draft,
+            to: displayPlan
+        )
+
+        if result.validation.isValid {
+            editedPlan = result.plan.replacingCoach(selectedCoach)
+        }
+
+        return result.validation
+    }
+
+    mutating func resetToOriginalPlan() {
+        editedPlan = originalPlan.replacingCoach(selectedCoach)
+    }
+
+    mutating func resetExerciseToOriginal(
+        _ exerciseId: PlanExerciseIdentifier,
+        service: PlanTargetEditService = PlanTargetEditService()
+    ) {
+        editedPlan = service.resetExercise(
+            exerciseId: exerciseId,
+            in: displayPlan,
+            toOriginalFrom: originalPlan
+        )
+        .replacingCoach(selectedCoach)
     }
 
     func startSessionContext(startsActive: Bool = false) -> LiveSessionContext? {

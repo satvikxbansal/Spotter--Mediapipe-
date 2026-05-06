@@ -6,6 +6,7 @@ struct WorkoutPreviewView: View {
     @State private var previewState: WorkoutPreviewState
     @State private var activePlan: WorkoutPlanV2?
     @State private var statusMessage: String?
+    @State private var targetDraft: TargetVolumeDraft?
 
     init(plan: WorkoutPlanV2, profile: UserProfile? = nil) {
         _previewState = State(
@@ -41,6 +42,14 @@ struct WorkoutPreviewView: View {
         }
         .fullScreenCover(item: $activePlan) { plan in
             PlannedWorkoutSessionView(plan: plan)
+        }
+        .sheet(item: $targetDraft) { draft in
+            TargetVolumeEditSheetView(
+                draft: draft,
+                onSave: saveTargetDraft,
+                onReset: resetTargetToOriginal
+            )
+            .presentationDetents([.medium, .large])
         }
         .preferredColorScheme(.dark)
     }
@@ -168,7 +177,7 @@ struct WorkoutPreviewView: View {
                 .foregroundStyle(Theme.Colors.accent)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("Swaps are limited to keep this within the plan's camera-switch rule.")
+            Text("Camera order stays fixed for this preview; adjust sets or targets without changing movement setup.")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Theme.Colors.textSecondary)
         }
@@ -181,19 +190,21 @@ struct WorkoutPreviewView: View {
                 Text("Exercises")
                     .header(size: 24)
                 Spacer()
-                Button("Swap all") {
-                    swapAll()
+                if previewState.hasUserEdits {
+                    Text("Adjusted")
+                        .font(.system(size: 11, weight: .black))
+                        .tracking(0.8)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.Colors.accent)
                 }
-                .font(.system(size: 12, weight: .black))
-                .tracking(0.8)
-                .textCase(.uppercase)
-                .foregroundStyle(Theme.Colors.accent)
             }
 
-            ForEach(Array(plan.blocks.enumerated()), id: \.offset) { _, block in
+            ForEach(Array(plan.blocks.enumerated()), id: \.offset) { blockIndex, block in
                 WorkoutPreviewBlockView(
+                    blockIndex: blockIndex,
                     block: block,
-                    onSwap: swapExercise
+                    canAdjust: canAdjustExercise,
+                    onAdjust: openTargetEditor
                 )
             }
         }
@@ -236,20 +247,33 @@ struct WorkoutPreviewView: View {
         statusMessage = "\(previewState.selectedCoach.coachName) saved as default."
     }
 
-    private func swapExercise(_ exerciseType: ExerciseType) {
-        HapticsEngine.shared.buttonTap()
-        let didSwap = previewState.swapExercise(exerciseType)
-        statusMessage = didSwap
-            ? "Safe swap applied."
-            : "No safe swap found for this movement and equipment."
+    private func canAdjustExercise(_ exerciseId: PlanExerciseIdentifier) -> Bool {
+        previewState.targetDraft(for: exerciseId) != nil
     }
 
-    private func swapAll() {
+    private func openTargetEditor(_ exerciseId: PlanExerciseIdentifier) {
         HapticsEngine.shared.buttonTap()
-        let didSwap = previewState.swapAll()
-        statusMessage = didSwap
-            ? "Safe swaps applied where available."
-            : "No safe swap set found for this plan."
+        guard let draft = previewState.targetDraft(for: exerciseId) else {
+            statusMessage = "This target is not editable yet."
+            return
+        }
+
+        targetDraft = draft
+    }
+
+    private func saveTargetDraft(_ draft: TargetVolumeDraft) -> TargetVolumeValidation {
+        HapticsEngine.shared.buttonTap()
+        let validation = previewState.applyTargetDraft(draft)
+        statusMessage = validation.didClamp
+            ? validation.message
+            : "\(validation.draft.originalExerciseType.displayName) target updated."
+        return validation
+    }
+
+    private func resetTargetToOriginal(_ exerciseId: PlanExerciseIdentifier) {
+        HapticsEngine.shared.buttonTap()
+        previewState.resetExerciseToOriginal(exerciseId)
+        statusMessage = "Movement restored to the original plan."
     }
 
     private func startSession() {
@@ -263,8 +287,10 @@ struct WorkoutPreviewView: View {
 }
 
 private struct WorkoutPreviewBlockView: View {
+    let blockIndex: Int
     let block: WorkoutBlock
-    let onSwap: (ExerciseType) -> Void
+    let canAdjust: (PlanExerciseIdentifier) -> Bool
+    let onAdjust: (PlanExerciseIdentifier) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
@@ -273,10 +299,16 @@ private struct WorkoutPreviewBlockView: View {
                 .foregroundStyle(Theme.Colors.accent)
 
             VStack(spacing: Theme.Spacing.sm) {
-                ForEach(Array(block.exercises.enumerated()), id: \.offset) { _, exercise in
+                ForEach(Array(block.exercises.enumerated()), id: \.offset) { exerciseIndex, exercise in
+                    let exerciseId = PlanExerciseIdentifier(
+                        blockIndex: blockIndex,
+                        exerciseIndex: exerciseIndex
+                    )
                     WorkoutPreviewExerciseRow(
+                        exerciseId: exerciseId,
                         exercise: exercise,
-                        onSwap: onSwap
+                        canAdjust: canAdjust(exerciseId),
+                        onAdjust: onAdjust
                     )
                 }
             }
@@ -286,8 +318,10 @@ private struct WorkoutPreviewBlockView: View {
 }
 
 private struct WorkoutPreviewExerciseRow: View {
+    let exerciseId: PlanExerciseIdentifier
     let exercise: PlannedExercise
-    let onSwap: (ExerciseType) -> Void
+    let canAdjust: Bool
+    let onAdjust: (PlanExerciseIdentifier) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
@@ -305,17 +339,20 @@ private struct WorkoutPreviewExerciseRow: View {
                 Spacer(minLength: Theme.Spacing.sm)
 
                 Button {
-                    onSwap(exercise.exerciseType)
+                    onAdjust(exerciseId)
                 } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 15, weight: .black))
-                        .foregroundStyle(exercise.allowSwap ? Theme.Colors.accent : Theme.Colors.textTertiary)
-                        .frame(width: 36, height: 36)
+                    Text("Adjust")
+                        .font(.system(size: 11, weight: .black))
+                        .tracking(0.8)
+                        .textCase(.uppercase)
+                        .foregroundStyle(canAdjust ? Theme.Colors.accent : Theme.Colors.textTertiary)
+                        .padding(.horizontal, Theme.Spacing.sm)
+                        .frame(height: 34)
                         .background(Theme.Colors.surfaceRaised)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
-                .disabled(!exercise.allowSwap)
-                .accessibilityLabel("Swap \(exercise.exerciseType.displayName)")
+                .disabled(!canAdjust)
+                .accessibilityLabel("Adjust \(exercise.exerciseType.displayName)")
             }
 
             FlowLayout(spacing: Theme.Spacing.xs) {
