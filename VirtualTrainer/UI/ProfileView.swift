@@ -48,9 +48,29 @@ struct ProfileView: View {
     }
 
     private func profileContent(for profile: UserProfile) -> some View {
+        let now = Date()
         let stats = StatsEngine().makeStats(
             history: historyStore.summaries,
-            trophySnapshot: trophyStore.snapshot
+            trophySnapshot: trophyStore.snapshot,
+            now: now
+        )
+        let trendEngine = TrendEngine()
+        let trendSnapshot = trendEngine.buildSnapshot(
+            history: historyStore.summaries,
+            profile: profile,
+            trophies: trophyStore.snapshot,
+            now: now
+        )
+        let calendarSnapshot = trendEngine.monthSnapshot(
+            history: historyStore.summaries,
+            profile: profile,
+            now: now
+        )
+        let trainingSignals = SignalExtractor(trendEngine: trendEngine).extractSignals(
+            snapshot: trendSnapshot,
+            history: historyStore.summaries,
+            profile: profile,
+            trophies: trophyStore.snapshot
         )
 
         return ScrollView(.vertical, showsIndicators: false) {
@@ -79,12 +99,12 @@ struct ProfileView: View {
                 ProfileStatsGrid(stats: stats)
 
                 WorkoutSnapshotCard(
-                    stats: stats,
-                    summaries: historyStore.summaries,
+                    snapshot: trendSnapshot,
+                    calendarSnapshot: calendarSnapshot,
                     accent: themeStore.selectedTheme.accentColor
                 )
 
-                CoachInsightsCard(profile: profile, stats: stats)
+                CoachInsightsCard(profile: profile, signals: trainingSignals)
 
                 WorkoutHistorySection(
                     summaries: historyStore.fetchRecentSummaries(limit: 5),
@@ -506,129 +526,151 @@ private struct ProfileStatCard: View {
 }
 
 private struct WorkoutSnapshotCard: View {
-    let stats: UserStats
-    let summaries: [WorkoutSessionSummary]
+    let snapshot: UserTrainingTrendSnapshot
+    let calendarSnapshot: WorkoutCalendarSnapshot
     let accent: Color
-
-    private var calendar: Calendar { .current }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             ProfileSectionHeader(title: "Workout Snapshot")
 
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                HStack {
-                    Text(Date(), format: .dateTime.month(.wide).year())
-                        .font(.system(size: 16, weight: .black))
-                        .textCase(.uppercase)
-                        .foregroundStyle(Theme.Colors.textPrimary)
+            CalendarSnapshotView(snapshot: calendarSnapshot, accent: accent)
 
-                    Spacer()
-
-                    Text("\(stats.workoutsThisWeek) this week")
-                        .caption()
-                }
-
-                HStack(spacing: Theme.Spacing.xs) {
-                    ForEach(weekDays, id: \.self) { day in
-                        SnapshotDayTile(
-                            date: day,
-                            isActive: workoutDays.contains(calendar.startOfDay(for: day)),
-                            accent: accent
-                        )
-                    }
-                }
-
-                Text("Monthly consistency details will fill in as your saved history grows.")
-                    .caption()
-                    .fixedSize(horizontal: false, vertical: true)
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: Theme.Spacing.sm),
+                    GridItem(.flexible(), spacing: Theme.Spacing.sm)
+                ],
+                spacing: Theme.Spacing.sm
+            ) {
+                ProfileStatCard(
+                    label: "Form Trend",
+                    value: trendLabel(snapshot.overallFormTrend),
+                    detail: snapshot.improvingExercise?.displayName ?? "More scored reps refine this"
+                )
+                ProfileStatCard(
+                    label: "Volume",
+                    value: trendLabel(snapshot.volumeTrend),
+                    detail: snapshot.strongestExercise?.displayName ?? "Reps and holds combined"
+                )
             }
-            .padding(Theme.Spacing.md)
-            .background(Theme.Colors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         }
     }
 
-    private var workoutDays: Set<Date> {
-        Set(summaries.map { calendar.startOfDay(for: $0.endedAt) })
-    }
-
-    private var weekDays: [Date] {
-        let now = Date()
-        let start = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
-        return (0..<7).compactMap {
-            calendar.date(byAdding: .day, value: $0, to: start)
+    private func trendLabel(_ trend: TrainingTrendDirection) -> String {
+        switch trend {
+        case .unavailable:
+            return "N/A"
+        case .improving:
+            return "Up"
+        case .declining:
+            return "Down"
+        case .steady:
+            return "Steady"
+        case .increasing:
+            return "Rising"
+        case .decreasing:
+            return "Lower"
+        case .elevated:
+            return "High"
         }
-    }
-}
-
-private struct SnapshotDayTile: View {
-    let date: Date
-    let isActive: Bool
-    let accent: Color
-
-    var body: some View {
-        VStack(spacing: Theme.Spacing.xxs) {
-            Text(date, format: .dateTime.weekday(.narrow))
-            Text(date, format: .dateTime.day())
-                .monospacedDigit()
-        }
-        .font(.system(size: 11, weight: .black))
-        .foregroundStyle(isActive ? Theme.Colors.background : Theme.Colors.textSecondary)
-        .frame(maxWidth: .infinity, minHeight: 48)
-        .background(isActive ? accent : Theme.Colors.surfaceRaised)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 }
 
 private struct CoachInsightsCard: View {
     let profile: UserProfile
-    let stats: UserStats
+    let signals: [UserTrainingSignal]
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            ProfileSectionHeader(title: "Coach Insights")
+            ProfileSectionHeader(title: "Training Signals")
 
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                ForEach(insights, id: \.self) { insight in
-                    Label(insight, systemImage: "brain.head.profile")
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+            if signals.isEmpty {
+                EmptyProfileCard(
+                    systemImage: "brain.head.profile",
+                    title: "No trend signals yet",
+                    subtitle: "Save a planned workout or free-analysis session to build evidence-backed signals for \(profile.primaryGoal.displayName.lowercased())."
+                )
+            } else {
+                VStack(spacing: Theme.Spacing.sm) {
+                    ForEach(Array(signals.prefix(4))) { signal in
+                        TrainingSignalRow(signal: signal)
+                    }
                 }
+                .padding(Theme.Spacing.md)
+                .background(Theme.Colors.surface)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             }
-            .padding(Theme.Spacing.md)
-            .background(Theme.Colors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        }
+    }
+}
+
+private struct TrainingSignalRow: View {
+    let signal: UserTrainingSignal
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+            Image(systemName: iconName)
+                .font(.system(size: 13, weight: .black))
+                .foregroundStyle(tint)
+                .frame(width: 30, height: 30)
+                .background(tint.opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
+                Text(signal.title)
+                    .font(.system(size: 14, weight: .black))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(detailText)
+                    .caption()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: Theme.Spacing.xs)
         }
     }
 
-    private var insights: [String] {
-        if stats.totalWorkouts == 0 {
-            return [
-                "Your next generated plan will follow \(profile.primaryGoal.displayName.lowercased()) with \(profile.preferredCoach.displayName)'s coaching style.",
-                "Save a planned workout or free-analysis session to unlock trend insights."
-            ]
+    private var detailText: String {
+        var pieces = [signal.value]
+        if let comparisonValue = signal.comparisonValue {
+            pieces.append(comparisonValue)
         }
+        pieces.append(signal.confidence.rawValue.capitalized)
+        return pieces.joined(separator: " / ")
+    }
 
-        var values: [String] = []
-        if stats.currentStreak > 0 {
-            values.append("You are on a \(stats.currentStreak)-day training streak.")
-        } else if let lastWorkoutAt = stats.lastWorkoutAt {
-            values.append("Last saved session: \(lastWorkoutAt.formatted(date: .abbreviated, time: .omitted)).")
+    private var tint: Color {
+        switch signal.confidence {
+        case .high:
+            return Theme.Colors.accent
+        case .medium:
+            return Theme.Colors.positive
+        case .low:
+            return Theme.Colors.textSecondary
         }
+    }
 
-        if let average = stats.averageFormScore {
-            values.append("Average form is \(Int(average.rounded()))%; excellent reps add bonus XP.")
-        } else {
-            values.append("Form-score insights will appear as more scored reps are saved.")
+    private var iconName: String {
+        switch signal.type {
+        case .consistency, .completion:
+            return "flame.fill"
+        case .formImprovement, .volumeIncrease, .exerciseMastery:
+            return "chart.line.uptrend.xyaxis"
+        case .formDropOff, .volumeDrop, .exerciseStruggle, .planFit:
+            return "exclamationmark.triangle.fill"
+        case .fatigue, .restBehavior:
+            return "waveform.path.ecg"
+        case .skippedExercise:
+            return "forward.fill"
+        case .repeatedCue:
+            return "quote.bubble.fill"
+        case .trophyProximity:
+            return "trophy.fill"
+        case .cameraFriction:
+            return "camera.fill"
         }
-
-        if stats.workoutsThisWeek >= 3 {
-            values.append("You have already logged \(stats.workoutsThisWeek) sessions this week.")
-        }
-
-        return Array(values.prefix(2))
     }
 }
 
