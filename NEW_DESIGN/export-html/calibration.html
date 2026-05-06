@@ -147,7 +147,7 @@
 
           --background: #0D0D0D;
         --foreground: #F2F0EB;
-        --primary: #B8E600;
+        --primary: #C8FF00;
         --primary-foreground: #000000;
         --secondary: #262626;
         --secondary-foreground: #F2F0EB;
@@ -197,61 +197,70 @@
     </style>
   </head>
   <body>
-    <div class="relative w-full h-[100dvh] bg-black overflow-hidden font-sans text-white">
+    <div class="relative w-full h-[100dvh] bg-background overflow-hidden font-sans text-foreground">
       <div class="absolute inset-0 z-0">
         <img
           alt="Setup background"
           src="https://ggrhecslgdflloszjkwl.supabase.co/storage/v1/object/public/user-assets/jboVeCYRrx9/components/nh6aJcdq2mi.png"
-          class="w-full h-full object-cover opacity-60"
+          class="w-full h-full object-cover opacity-60 grayscale"
         />
         <div
           class="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80"
         ></div>
       </div>
-      <div class="absolute inset-x-0 bottom-0 z-50 animate-in slide-in-from-bottom duration-500">
+      <div class="absolute top-12 left-6 right-6 flex items-center justify-center z-10">
         <div
-          class="bg-black rounded-t-[40px] border-t border-white/10 px-8 pb-[env(safe-area-inset-bottom,24px)] pt-12 flex flex-col items-center text-center shadow-[0_-20px_60px_rgba(0,0,0,0.8)]"
+          class="bg-black/40 backdrop-blur-xl px-6 py-3 rounded-2xl border border-white/10 flex items-center gap-3"
         >
-          <div
-            class="w-12 h-1.5 bg-white/20 rounded-full mb-10 absolute top-4 left-1/2 -translate-x-1/2"
-          ></div>
+          <iconify-icon icon="ph:info-bold" class="text-[#C8FF00] text-lg"></iconify-icon>
+          <p class="text-[12px] font-black uppercase tracking-widest italic font-heading">
+            Position your phone
+          </p>
+        </div>
+      </div>
+      <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-40"></div>
+      <div
+        class="fixed bottom-0 left-0 right-0 z-50 bg-background border-t-2 border-border rounded-t-[40px] px-8 pt-4 pb-12 shadow-[0_-20px_50px_rgba(0,0,0,0.8)] animate-in slide-in-from-bottom duration-500"
+      >
+        <div class="w-16 h-1.5 bg-white/10 rounded-full mx-auto mb-10"></div>
+        <div class="flex flex-col items-center text-center">
           <div class="relative mb-8">
-            <div class="absolute inset-0 bg-accent/20 blur-3xl rounded-full"></div>
-            <iconify-icon
-              icon="ph:trophy-fill"
-              class="text-8xl text-accent relative z-10 drop-shadow-[0_0_15px_rgba(200,255,0,0.4)]"
-            ></iconify-icon>
-          </div>
-          <div class="space-y-3 mb-12">
-            <h1
-              class="font-heading text-4xl font-black uppercase leading-tight tracking-tighter text-white"
+            <div class="absolute inset-0 bg-[#C8FF00]/20 blur-3xl rounded-full"></div>
+            <div
+              class="size-24 bg-card border-2 border-[#C8FF00] rounded-[32px] flex items-center justify-center relative z-10 shadow-[8px_8px_0px_rgba(200,255,0,0.1)]"
             >
-              Earn your<br />first trophy
+              <iconify-icon
+                icon="ph:trophy-bold"
+                class="text-6xl text-[#C8FF00] drop-shadow-[0_0_15px_rgba(200,255,0,0.4)]"
+              ></iconify-icon>
+            </div>
+          </div>
+          <div class="space-y-4 mb-12">
+            <h1
+              class="font-heading text-5xl font-black uppercase italic leading-[0.9] tracking-tighter text-white"
+            >
+              Earn your<br /><span class="text-[#C8FF00]">first trophy</span>
             </h1>
-            <p class="text-white/60 text-lg font-medium">Track 3 Air squats to proceed.</p>
+            <p
+              class="text-white/60 text-sm font-black uppercase tracking-widest font-heading italic"
+            >
+              Track 3 Air squats to proceed
+            </p>
           </div>
           <button
             onclick="window.location.hash=&#39;#EBZ9EkYCzh2&#39;"
-            class="w-full h-16 bg-primary text-primary-foreground font-heading font-black uppercase tracking-tight text-xl rounded-2xl flex items-center justify-center hover:opacity-90 transition-all group shadow-[0_6px_0px_0px_#000000]"
+            class="w-full bg-[#C8FF00] text-black font-heading font-black uppercase text-2xl h-[72px] rounded-2xl flex items-center justify-center gap-4 shadow-[4px_4px_0px_0px_rgba(200,255,0,0.3)] hover:translate-y-[2px] hover:shadow-none transition-all"
           >
             Let's Go!<iconify-icon
               icon="ph:arrow-right-bold"
-              class="ml-2 text-xl transition-transform group-hover:translate-x-1"
+              class="text-2xl"
             ></iconify-icon></button
           ><button
-            onclick="window.location.hash=&#39;#CJvZu5u8q5X&#39;"
-            class="mt-8 py-2 text-white/40 hover:text-white/60 transition-colors font-mono text-[11px] font-black uppercase tracking-[0.3em]"
+            onclick="window.location.hash=&#39;#1Dur6Xqv0BW&#39;"
+            class="mt-8 pt-px text-white/40 hover:text-white/60 transition-colors font-heading text-[12px] font-black uppercase tracking-[0.2em] italic"
           >
             Skip for now
           </button>
-        </div>
-      </div>
-      <div class="absolute top-12 left-6 right-6 flex items-center justify-center">
-        <div
-          class="bg-black/40 backdrop-blur-md px-6 py-3 rounded-full border border-white/10 flex items-center gap-3"
-        >
-          <iconify-icon icon="ph:info-bold" class="text-accent text-lg"></iconify-icon>
-          <p class="text-[13px] font-bold uppercase tracking-wider">Position your phone</p>
         </div>
       </div>
     </div>

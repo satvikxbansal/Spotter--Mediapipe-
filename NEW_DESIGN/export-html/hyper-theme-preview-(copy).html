@@ -147,7 +147,7 @@
 
           --background: #0D0D0D;
         --foreground: #F2F0EB;
-        --primary: #B8E600;
+        --primary: #C8FF00;
         --primary-foreground: #000000;
         --secondary: #262626;
         --secondary-foreground: #F2F0EB;
@@ -268,21 +268,6 @@
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div
-            class="border-2 border-border rounded-2xl p-5 bg-card flex flex-col justify-between aspect-square shadow-[4px_4px_0px_0px_rgba(200,255,0,0.1)]"
-          >
-            <div
-              class="size-10 rounded-xl border-2 border-[#C8FF00] flex items-center justify-center"
-            >
-              <iconify-icon icon="ph:fire-bold" class="text-[#C8FF00] text-2xl"></iconify-icon>
-            </div>
-            <div>
-              <p class="text-4xl font-heading font-black leading-none">12</p>
-              <p class="text-[9px] font-black uppercase text-muted-foreground tracking-widest mt-2">
-                Day Streak
-              </p>
-            </div>
-          </div>
-          <div
             class="border-2 border-border rounded-2xl p-5 bg-card flex flex-col justify-between aspect-square shadow-[4px_4px_0px_0px_rgba(0,209,255,0.1)]"
           >
             <div
@@ -299,6 +284,37 @@
               </p>
             </div>
           </div>
+          <div
+            class="border-2 border-border rounded-[24px] p-5 bg-card flex flex-col justify-between aspect-square relative overflow-hidden group"
+          >
+            <div
+              class="size-10 rounded-xl border-2 border-primary flex items-center justify-center mb-4 group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
+            >
+              <iconify-icon icon="ph:fire-fill" class="text-2xl"></iconify-icon>
+            </div>
+            <div>
+              <p
+                class="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-1"
+              >
+                Consistency
+              </p>
+              <div class="flex gap-1.5 items-end">
+                <div class="w-2 h-6 bg-primary rounded-sm"></div>
+                <div class="w-2 h-8 bg-primary rounded-sm"></div>
+                <div class="w-2 h-10 bg-primary rounded-sm"></div>
+                <div class="w-2 h-4 bg-muted rounded-sm"></div>
+                <div class="w-2 h-7 bg-primary rounded-sm"></div>
+                <div class="w-2 h-2 bg-muted rounded-sm"></div>
+                <div class="w-2 h-5 border-2 border-primary/30 rounded-sm"></div>
+              </div>
+            </div>
+            <div class="absolute top-4 right-4 text-right">
+              <p class="text-3xl font-heading font-black leading-none">12</p>
+              <p class="text-[8px] font-black uppercase tracking-tighter text-primary">
+                Active Days
+              </p>
+            </div>
+          </div>
         </div>
         <div class="border-2 border-border rounded-2xl p-5 bg-card relative overflow-hidden mb-6">
           <div class="absolute -right-4 -top-4 opacity-10">
@@ -307,7 +323,7 @@
           <div class="flex items-center gap-2 mb-3">
             <iconify-icon icon="ph:sparkle-bold" class="text-[#00D1FF]"></iconify-icon>
             <h3 class="font-heading font-bold uppercase text-[10px] tracking-widest text-[#00D1FF]">
-              AI Insight
+              SPOTTER Insight
             </h3>
           </div>
           <p class="font-heading font-bold text-xl uppercase leading-[1.1] italic pr-8">

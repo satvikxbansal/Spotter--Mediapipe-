@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HyperThemePreviewCopyCopy</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100;200;300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@100;200;300;400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://code.iconify.design/iconify-icon/3.0.0/iconify-icon.min.js"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-background: var(--background);
+        --color-foreground: var(--foreground);
+        --color-primary: var(--primary);
+        --color-primary-foreground: var(--primary-foreground);
+        --color-secondary: var(--secondary);
+        --color-secondary-foreground: var(--secondary-foreground);
+        --color-muted: var(--muted);
+        --color-muted-foreground: var(--muted-foreground);
+        --color-accent: var(--accent);
+        --color-accent-foreground: var(--accent-foreground);
+        --color-destructive: var(--destructive);
+        --color-card: var(--card);
+        --color-card-foreground: var(--card-foreground);
+        --color-popover: var(--popover);
+        --color-popover-foreground: var(--popover-foreground);
+        --color-border: var(--border);
+        --color-input: var(--input);
+        --color-ring: var(--ring);
+        --color-chart-1: var(--chart-1);
+        --color-chart-2: var(--chart-2);
+        --color-chart-3: var(--chart-3);
+        --color-chart-4: var(--chart-4);
+        --color-chart-5: var(--chart-5);
+
+        --font-font-sans: var(--font-sans);
+        --font-font-heading: var(--font-heading);
+        --font-font-serif: var(--font-serif);
+        --font-font-mono: var(--font-mono);
+      }
+
+      @theme {
+        --radius-xs: calc(var(--radius) - 8px);
+        --radius-sm: calc(var(--radius) - 4px);
+        --radius-md: calc(var(--radius) - 2px);
+        --radius-lg: var(--radius);
+        --radius-xl: calc(var(--radius) + 4px);
+        --radius-2xl: calc(var(--radius) + 8px);
+        --radius-3xl: calc(var(--radius) + 16px);
+        --radius-4xl: calc(var(--radius) + 24px);
+      }
+
+      * {
+        corner-shape: var(--shape, round);
+      }
+
+      .rounded-full, .rounded-none,
+      .rounded-t-full, .rounded-t-none,
+      .rounded-r-full, .rounded-r-none,
+      .rounded-b-full, .rounded-b-none,
+      .rounded-l-full, .rounded-l-none,
+      .rounded-s-full, .rounded-s-none,
+      .rounded-e-full, .rounded-e-none,
+      .rounded-tl-full, .rounded-tl-none,
+      .rounded-tr-full, .rounded-tr-none,
+      .rounded-bl-full, .rounded-bl-none,
+      .rounded-br-full, .rounded-br-none,
+      .rounded-ss-full, .rounded-ss-none,
+      .rounded-se-full, .rounded-se-none,
+      .rounded-es-full, .rounded-es-none,
+      .rounded-ee-full, .rounded-ee-none {
+        corner-shape: round;
+      }
+
+      @utility rounded-* {
+        border-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-t-* {
+        border-top-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-top-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-r-* {
+        border-top-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-bottom-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-b-* {
+        border-bottom-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-bottom-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-l-* {
+        border-top-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-bottom-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-tl-* {
+        border-top-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-tr-* {
+        border-top-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-bl-* {
+        border-bottom-left-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-br-* {
+        border-bottom-right-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-s-* {
+        border-start-start-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-end-start-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-e-* {
+        border-start-end-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+        border-end-end-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-ss-* {
+        border-start-start-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-se-* {
+        border-start-end-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-es-* {
+        border-end-start-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+      @utility rounded-ee-* {
+        border-end-end-radius: calc(--value(--radius-*, [length], [percentage]) * var(--shape-multiplier, 1));
+      }
+
+      :root {
+        --shape: round;
+        --shape-multiplier: 1;
+
+          --background: #0D0D0D;
+        --foreground: #F2F0EB;
+        --primary: #C8FF00;
+        --primary-foreground: #000000;
+        --secondary: #262626;
+        --secondary-foreground: #F2F0EB;
+        --muted: #262626;
+        --muted-foreground: #A3A3A3;
+        --accent: #C8FF00;
+        --accent-foreground: #000000;
+        --destructive: #FF5C3A;
+        --card: #0D0D0D;
+        --card-foreground: #F2F0EB;
+        --popover: #0D0D0D;
+        --popover-foreground: #F2F0EB;
+        --border: #F2F0EB;
+        --input: #0D0D0D;
+        --ring: #C8FF00;
+        --chart-1: #00D1FF;
+        --chart-2: #C8FF00;
+        --chart-3: #FF5C3A;
+        --chart-4: #525252;
+        --chart-5: #262626;
+
+        --font-sans: "DM Sans";
+        --font-heading: "Space Grotesk";
+        --font-serif: "Playfair Display";
+        --font-mono: "JetBrains Mono";
+
+        --radius: 1rem;
+      }
+
+      /* Prevent layout shift for icons without explicit dimensions */
+      iconify-icon:not([width]):not([height]) {
+        display: inline-block;
+        width: 1em;
+        height: 1em;
+      }
+
+      /* Hide scrollbars */
+      *,
+      *::before,
+      *::after {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+      *::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      class="min-h-[100dvh] bg-background text-foreground flex flex-col font-sans pb-36 overflow-x-hidden"
+    >
+      <header class="p-6 pt-12 flex items-start justify-between">
+        <div class="flex flex-col">
+          <div class="flex items-center gap-2 mb-1">
+            <div
+              class="size-2.5 bg-primary rounded-full animate-pulse shadow-[0_0_12px_#C8FF00]"
+            ></div>
+            <span class="font-mono text-[10px] uppercase tracking-[0.4em] text-primary"
+              >SPOTTER AI</span
+            >
+          </div>
+          <h1
+            class="font-heading text-5xl font-black uppercase leading-[0.85] tracking-tighter italic"
+          >
+            Keep it up,<br />Satvik.
+          </h1>
+        </div>
+        <div class="relative group">
+          <div
+            class="size-16 rounded-[24px] border-4 border-white/5 rotate-6 overflow-hidden shadow-[8px_8px_0px_0px_rgba(255,255,255,0.05)] group-hover:rotate-0 transition-all duration-500"
+          >
+            <img
+              src="https://lh3.googleusercontent.com/a/ACg8ocKW_1w5VXgX8YB8Gz2Ci4yV5Ip7GKJLoC062N2EMKe4eS56G0nK=s96-c"
+              class="w-full h-full object-cover scale-110"
+            />
+          </div>
+          <div
+            class="absolute -bottom-2 -right-2 size-7 bg-primary border-4 border-background rounded-full flex items-center justify-center shadow-lg"
+          >
+            <iconify-icon icon="ph:lightning-fill" class="text-xs text-black"></iconify-icon>
+          </div>
+        </div>
+      </header>
+      <main class="px-6 flex flex-col gap-6">
+        <section
+          class="relative border-4 border-border rounded-[40px] bg-card overflow-hidden shadow-[12px_12px_0px_0px_rgba(200,255,0,0.15)] group active:translate-x-1 active:translate-y-1 active:shadow-none transition-all duration-300"
+        >
+          <div class="absolute inset-0 z-0">
+            <img
+              src="https://ggrhecslgdflloszjkwl.supabase.co/storage/v1/object/public/user-assets/jboVeCYRrx9/components/BtOLrlysoe1.png"
+              class="w-full h-full object-cover opacity-60 grayscale group-hover:grayscale-0 group-hover:scale-105 transition-all duration-1000"
+            />
+            <div
+              class="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent"
+            ></div>
+          </div>
+          <div class="relative z-10 p-6 pt-24">
+            <div class="flex flex-col gap-5 mb-6">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span
+                    class="bg-primary text-black font-heading font-black text-[9px] px-2 py-0.5 rounded-sm uppercase tracking-tighter italic"
+                    >Day 12</span
+                  ><span class="text-white/40 font-mono text-[8px] uppercase tracking-[0.2em]"
+                    >Power Build</span
+                  >
+                </div>
+                <div class="flex items-center gap-4">
+                  <div class="flex items-center gap-1.5">
+                    <iconify-icon icon="ph:timer-bold" class="text-primary text-base"></iconify-icon
+                    ><span class="text-white font-heading font-black italic text-xl leading-none"
+                      >42<span
+                        class="text-[8px] uppercase tracking-tighter not-italic ml-0.5 text-muted-foreground"
+                        >min</span
+                      ></span
+                    >
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <iconify-icon
+                      icon="ph:barbell-bold"
+                      class="text-primary text-base"
+                    ></iconify-icon
+                    ><span class="text-white font-heading font-black italic text-xl leading-none"
+                      >8<span
+                        class="text-[8px] uppercase tracking-tighter not-italic ml-0.5 text-muted-foreground"
+                        >moves</span
+                      ></span
+                    >
+                  </div>
+                </div>
+              </div>
+              <h2
+                class="font-heading text-5xl font-black uppercase leading-[0.85] tracking-tighter italic"
+              >
+                Lower Body<br /><span class="text-primary">Dominance.</span>
+              </h2>
+            </div>
+            <button
+              class="w-full bg-primary text-black font-heading font-black uppercase text-xl h-[68px] rounded-2xl flex items-center justify-center gap-3 shadow-[0_8px_32px_-8px_rgba(200,255,0,0.5)] active:shadow-none active:scale-[0.95] transition-all group/btn"
+            >
+              Start Engine<iconify-icon
+                icon="ph:play-fill"
+                class="text-2xl group-hover/btn:scale-110 transition-transform"
+              ></iconify-icon>
+            </button>
+          </div>
+        </section>
+        <div class="grid grid-cols-2 gap-4">
+          <div
+            class="border-4 border-border rounded-[32px] p-6 bg-card flex flex-col justify-between aspect-square relative overflow-hidden group hover:border-chart-1 transition-colors"
+          >
+            <div
+              class="size-12 rounded-2xl bg-chart-1/10 flex items-center justify-center border-2 border-chart-1/20"
+            >
+              <iconify-icon icon="ph:gauge-fill" class="text-3xl text-chart-1"></iconify-icon>
+            </div>
+            <div>
+              <p
+                class="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-1"
+              >
+                Form Quality
+              </p>
+              <p class="text-5xl font-heading font-black leading-none text-chart-1">
+                98<span class="text-2xl">%</span>
+              </p>
+            </div>
+            <div class="absolute -bottom-2 -right-2 opacity-5">
+              <iconify-icon icon="ph:sketch-logo-fill" class="text-8xl text-chart-1"></iconify-icon>
+            </div>
+          </div>
+          <div
+            class="border-4 border-border rounded-[32px] p-6 bg-card flex flex-col justify-between aspect-square relative overflow-hidden group hover:border-primary transition-all"
+          >
+            <div
+              class="size-12 rounded-2xl bg-primary/10 flex items-center justify-center border-2 border-primary/20"
+            >
+              <iconify-icon icon="ph:fire-fill" class="text-3xl text-primary"></iconify-icon>
+            </div>
+            <div>
+              <p
+                class="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-1"
+              >
+                CURRENT STREAK
+              </p>
+              <div class="flex items-baseline gap-1">
+                <p class="text-5xl font-heading font-black leading-none italic text-primary">14</p>
+                <p class="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                  Days
+                </p>
+              </div>
+            </div>
+            <div
+              class="absolute -bottom-2 -right-2 opacity-10 group-hover:opacity-20 transition-opacity"
+            >
+              <iconify-icon
+                icon="ph:chart-line-up-fill"
+                class="text-8xl text-primary"
+              ></iconify-icon>
+            </div>
+          </div>
+        </div>
+        <div
+          class="border-4 border-border rounded-[32px] p-8 bg-card relative overflow-hidden group"
+        >
+          <div
+            class="absolute -right-8 -top-8 rotate-12 opacity-10 group-hover:rotate-0 transition-transform duration-700"
+          >
+            <iconify-icon icon="ph:sparkle-fill" class="text-[160px] text-chart-1"></iconify-icon>
+          </div>
+          <div class="flex items-center gap-3 mb-6">
+            <h3 class="font-heading font-black uppercase text-xs tracking-[0.3em] text-chart-1">
+              Spotter Intelligence
+            </h3>
+            <iconify-icon icon="ph:sparkle-bold" class="text-[#00D1FF]"></iconify-icon>
+          </div>
+          <p
+            class="font-heading font-bold text-3xl uppercase leading-[0.9] italic tracking-tighter"
+          >
+            "Mobility is up <span class="text-chart-1">12%</span>. Your center of gravity in Squats
+            is now
+            <span class="text-primary underline decoration-primary/30 decoration-4">Locked In</span
+            >."
+          </p>
+        </div>
+        <section class="flex flex-col gap-5 mt-4">
+          <div class="flex items-center justify-between px-1">
+            <h3 class="font-heading font-black uppercase text-2xl italic tracking-tighter">
+              Hall of <span class="text-primary">Gains</span>
+            </h3>
+            <button
+              class="font-mono text-[10px] uppercase tracking-widest text-muted-foreground border-b border-muted-foreground/30 pb-0.5"
+            >
+              View Cabinet
+            </button>
+          </div>
+          <div class="flex flex-col gap-4">
+            <div
+              class="bg-white/5 border-2 border-white/10 rounded-[32px] p-6 flex items-center gap-6 relative overflow-hidden"
+            >
+              <div
+                class="absolute inset-0 bg-gradient-to-r from-primary/5 to-transparent pointer-events-none"
+              ></div>
+              <div class="relative size-24 shrink-0">
+                <div class="absolute inset-0 bg-primary/20 blur-2xl rounded-full"></div>
+                <img
+                  src="https://ggrhecslgdflloszjkwl.supabase.co/storage/v1/object/public/user-assets/jboVeCYRrx9/components/iuSP3ZeKnBX.png"
+                  style="animation-duration: 4s;"
+                  class="w-full h-full object-contain relative z-10 animate-bounce-slow"
+                />
+              </div>
+              <div class="flex-1">
+                <span
+                  class="text-[10px] font-black uppercase tracking-widest text-primary mb-1 block italic"
+                  >New Achievement Unlocked</span
+                >
+                <h4
+                  class="font-heading font-black text-2xl uppercase leading-none tracking-tight mb-2 italic"
+                >
+                  Depth Charge
+                </h4>
+                <p class="text-muted-foreground text-xs font-medium leading-tight">
+                  Performed 50 squats with perfect depth in a single session.
+                </p>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+              <div
+                class="bg-card border-2 border-dashed border-border/20 rounded-2xl p-4 flex flex-col items-center gap-3 grayscale opacity-60"
+              >
+                <img
+                  src="https://ggrhecslgdflloszjkwl.supabase.co/storage/v1/object/public/user-assets/jboVeCYRrx9/components/ciIdrIxkQGp.png"
+                  class="size-12 object-contain"
+                />
+                <div class="text-center">
+                  <p class="text-[8px] font-black uppercase tracking-tighter leading-none mb-1">
+                    Steel Core
+                  </p>
+                  <p
+                    class="text-[7px] font-mono text-muted-foreground uppercase leading-none italic"
+                  >
+                    Locked
+                  </p>
+                </div>
+              </div>
+              <div
+                class="bg-card border-2 border-dashed border-border/20 rounded-2xl p-4 flex flex-col items-center gap-3 grayscale opacity-60"
+              >
+                <img
+                  src="https://ggrhecslgdflloszjkwl.supabase.co/storage/v1/object/public/user-assets/jboVeCYRrx9/components/ciIdrIxkQGp.png"
+                  class="size-12 object-contain"
+                />
+                <div class="text-center">
+                  <p class="text-[8px] font-black uppercase tracking-tighter leading-none mb-1">
+                    Gravity Defier
+                  </p>
+                  <p
+                    class="text-[7px] font-mono text-muted-foreground uppercase leading-none italic"
+                  >
+                    Locked
+                  </p>
+                </div>
+              </div>
+              <div
+                class="bg-card border-2 border-dashed border-border/20 rounded-2xl p-4 flex flex-col items-center gap-3 grayscale opacity-60"
+              >
+                <img
+                  src="https://ggrhecslgdflloszjkwl.supabase.co/storage/v1/object/public/user-assets/jboVeCYRrx9/components/ciIdrIxkQGp.png"
+                  class="size-12 object-contain"
+                />
+                <div class="text-center">
+                  <p class="text-[8px] font-black uppercase tracking-tighter leading-none mb-1">
+                    Streak Master
+                  </p>
+                  <p
+                    class="text-[7px] font-mono text-muted-foreground uppercase leading-none italic"
+                  >
+                    Locked
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+      <nav
+        class="fixed bottom-6 left-6 right-6 bg-card/80 backdrop-blur-xl border-2 border-border rounded-full flex justify-between items-center h-20 px-4 z-50 shadow-[0_20px_40px_-12px_rgba(0,0,0,0.5)]"
+      >
+        <button class="flex-1 flex items-center justify-center text-primary transition-all">
+          <iconify-icon icon="ph:house-fill" class="text-3xl"></iconify-icon></button
+        ><button class="flex-1 flex items-center justify-center">
+          <div
+            class="size-16 bg-primary rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(200,255,0,0.4)] active:scale-95 transition-all"
+          >
+            <iconify-icon icon="ph:camera-fill" class="text-black text-4xl"></iconify-icon>
+          </div></button
+        ><button
+          class="flex-1 flex items-center justify-center text-muted-foreground hover:text-foreground transition-all"
+        >
+          <iconify-icon icon="ph:user-bold" class="text-3xl"></iconify-icon>
+        </button>
+      </nav>
+    </div>
+  </body>
+</html>
