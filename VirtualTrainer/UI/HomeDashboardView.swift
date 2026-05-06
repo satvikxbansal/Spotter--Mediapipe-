@@ -69,9 +69,14 @@ struct HomeDashboardView: View {
                 if let dashboardContent {
                     DashboardHeader(content: dashboardContent)
 
-                    SmartStartCard(summary: dashboardContent.smartStart) {
-                        openPreview(for: dashboardContent.smartStart.plan)
-                    }
+                    SmartStartCard(
+                        variant: dashboardContent.currentSmartStart,
+                        totalVariants: dashboardContent.smartStartDeck.variants.count,
+                        onStart: {
+                            openPreview(for: dashboardContent.currentSmartStart.plan)
+                        },
+                        onSwap: cycleSmartStartPlan
+                    )
 
                     DailyPlanCard(summary: dashboardContent.dailyPlan) {
                         openPreview(for: dashboardContent.dailyPlan.plan)
@@ -124,6 +129,15 @@ struct HomeDashboardView: View {
         HapticsEngine.shared.buttonTap()
         previewPlan = plan
         isShowingPlanPreview = true
+    }
+
+    private func cycleSmartStartPlan() {
+        guard var content = dashboardContent else { return }
+        HapticsEngine.shared.buttonTap()
+        content.advanceSmartStartPlan()
+        withAnimation(Theme.Motion.snappy) {
+            dashboardContent = content
+        }
     }
 
     private func handleQuickAction(_ action: DashboardQuickAction) {
@@ -186,13 +200,19 @@ private struct DashboardHeader: View {
 // ────────────────────────────────────────────────────────────────────
 
 private struct SmartStartCard: View {
-    let summary: DashboardPlanSummary
+    let variant: QuickStartPlanVariant
+    let totalVariants: Int
     let onStart: () -> Void
+    let onSwap: () -> Void
+
+    private var summary: DashboardPlanSummary {
+        DashboardPlanSummary(plan: variant.plan)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             HStack {
-                DashboardBadge(text: "Recommended")
+                DashboardBadge(text: variant.intensityLabel.displayName)
                 Spacer()
                 Text(summary.durationText)
                     .caption()
@@ -210,10 +230,24 @@ private struct SmartStartCard: View {
                     .lineLimit(3)
             }
 
-            Button("Start", action: onStart)
+            HStack(spacing: Theme.Spacing.sm) {
+                if totalVariants > 1 {
+                    Button(action: onSwap) {
+                        Label("Shuffle", systemImage: "shuffle")
+                    }
+                    .buttonStyle(SecondaryCTAStyle())
+                    .accessibilityHint("Show another Quick Start plan")
+                }
+
+                Button(action: onStart) {
+                    Label("Start", systemImage: "play.fill")
+                }
                 .buttonStyle(PrimaryCTAStyle())
+            }
         }
         .dashboardCard()
+        .id(variant.id)
+        .transition(.opacity.combined(with: .scale(scale: 0.98)))
     }
 }
 

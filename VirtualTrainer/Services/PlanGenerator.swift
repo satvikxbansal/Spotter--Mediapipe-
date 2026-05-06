@@ -289,6 +289,13 @@ nonisolated private extension PlanGenerator {
         if metadata.preferredTagsIntersection(slot.preferredTags).isEmpty {
             score += 10
         }
+        if !input.focusBodyRegions.isEmpty {
+            score += input.focusBodyRegions.contains(metadata.bodyRegion) ? -28 : 8
+        }
+        if !input.focusMovementPatterns.isEmpty,
+           input.focusMovementPatterns.contains(metadata.movementPattern) {
+            score -= 18
+        }
         if metadata.difficulty == .intermediate {
             score += input.fitnessLevel == .intermediate ? 4 : 80
         }
@@ -312,6 +319,9 @@ nonisolated private extension PlanGenerator {
         }
         if input.recentWorkoutHistory.contains(where: { $0.exerciseType == metadata.exerciseType }) {
             score += 12
+        }
+        if let variantSeed = input.variantSeed {
+            score += Int(DeterministicHash.hash64("\(variantSeed)|\(metadata.exerciseType.rawValue)") % 17)
         }
 
         return score

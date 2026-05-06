@@ -59,11 +59,33 @@ nonisolated struct DashboardContent: Equatable {
     let greeting: String
     let athleteName: String
     let streak: DashboardStreak
-    let smartStart: DashboardPlanSummary
+    let smartStartDeck: QuickStartDeck
+    var selectedSmartStartIndex: Int
+    let smartStartFallback: DashboardPlanSummary
     let dailyPlan: DashboardPlanSummary
     let quickActions: [DashboardQuickAction]
     let trophyTeaserText: String
     let recentWorkout: DashboardRecentWorkout?
+
+    var currentSmartStart: QuickStartPlanVariant {
+        smartStartDeck.variant(at: selectedSmartStartIndex) ?? QuickStartPlanVariant(
+            id: smartStartFallback.plan.id.uuidString,
+            title: smartStartFallback.title,
+            subtitle: smartStartFallback.subtitle,
+            intensityLabel: smartStartFallback.plan.difficulty == .beginner ? .beginner : .intermediate,
+            plan: smartStartFallback.plan,
+            reason: smartStartFallback.reason,
+            deckIndex: 0
+        )
+    }
+
+    var smartStart: DashboardPlanSummary {
+        DashboardPlanSummary(plan: currentSmartStart.plan)
+    }
+
+    mutating func advanceSmartStartPlan() {
+        selectedSmartStartIndex = smartStartDeck.index(after: selectedSmartStartIndex)
+    }
 }
 
 nonisolated final class DashboardContentFactory {
@@ -84,7 +106,12 @@ nonisolated final class DashboardContentFactory {
         recentWorkoutHistory: [RecentWorkoutHistoryItem] = [],
         currentStreakDayCount: Int? = nil
     ) -> DashboardContent {
-        let smartStart = planService.generateSmartStart(
+        let smartStartDeck = planService.generateQuickStartDeck(
+            profile: profile,
+            recentWorkoutHistory: recentWorkoutHistory,
+            now: now
+        )
+        let smartStartFallback = smartStartDeck.variants.first?.plan ?? planService.generateSmartStart(
             profile: profile,
             recentWorkoutHistory: recentWorkoutHistory
         )
@@ -102,7 +129,9 @@ nonisolated final class DashboardContentFactory {
                     now: now
                 )
             ),
-            smartStart: DashboardPlanSummary(plan: smartStart),
+            smartStartDeck: smartStartDeck,
+            selectedSmartStartIndex: 0,
+            smartStartFallback: DashboardPlanSummary(plan: smartStartFallback),
             dailyPlan: DashboardPlanSummary(plan: dailyPlan),
             quickActions: Self.quickActions,
             trophyTeaserText: "Milestones will unlock as you train.",

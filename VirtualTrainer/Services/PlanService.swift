@@ -3,13 +3,16 @@ import Foundation
 nonisolated final class PlanService {
     private let generator: PlanGenerator
     private let swapService: PlanSwapService
+    private let quickStartDeckService: QuickStartPlanDeckService
 
     init(
         generator: PlanGenerator = PlanGenerator(),
-        swapService: PlanSwapService = PlanSwapService()
+        swapService: PlanSwapService = PlanSwapService(),
+        quickStartDeckService: QuickStartPlanDeckService? = nil
     ) {
         self.generator = generator
         self.swapService = swapService
+        self.quickStartDeckService = quickStartDeckService ?? QuickStartPlanDeckService(generator: generator)
     }
 
     func generateSmartStart(
@@ -22,6 +25,32 @@ nonisolated final class PlanService {
                 sessionLength: .seven,
                 recentWorkoutHistory: recentWorkoutHistory
             )
+        )
+    }
+
+    func generateSmartStart(
+        profile: UserProfile,
+        variantSeed: String,
+        recentWorkoutHistory: [RecentWorkoutHistoryItem] = [],
+        now: Date = Date()
+    ) -> WorkoutPlanV2 {
+        quickStartDeckService.generateSmartStart(
+            profile: profile,
+            variantSeed: variantSeed,
+            recentWorkoutHistory: recentWorkoutHistory,
+            now: now
+        )
+    }
+
+    func generateQuickStartDeck(
+        profile: UserProfile,
+        recentWorkoutHistory: [RecentWorkoutHistoryItem] = [],
+        now: Date = Date()
+    ) -> QuickStartDeck {
+        quickStartDeckService.generateDeck(
+            profile: profile,
+            recentWorkoutHistory: recentWorkoutHistory,
+            now: now
         )
     }
 

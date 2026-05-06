@@ -238,7 +238,7 @@ nonisolated final class FormFeedbackEngine {
             jointList = missingNames.joined(separator: " and ")
         } else {
             let allButLast = missingNames.dropLast().joined(separator: ", ")
-            jointList = "\(allButLast), and \(missingNames.last!)"
+            jointList = "\(allButLast), and \(missingNames.last ?? "body")"
         }
 
         messages.append(Feedback(

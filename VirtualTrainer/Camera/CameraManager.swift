@@ -85,7 +85,10 @@ final class CameraManager: NSObject, ObservableObject {
         session.sessionPreset = .high
 
         guard configureInputAndOutput() else {
+            session.inputs.forEach { session.removeInput($0) }
+            session.outputs.forEach { session.removeOutput($0) }
             session.commitConfiguration()
+            DispatchQueue.main.async { self.isRunning = false }
             return
         }
 
@@ -113,6 +116,7 @@ final class CameraManager: NSObject, ObservableObject {
         videoOutput.setSampleBufferDelegate(self, queue: videoOutputQueue)
 
         guard session.canAddOutput(videoOutput) else {
+            session.removeInput(input)
             return false
         }
         session.addOutput(videoOutput)

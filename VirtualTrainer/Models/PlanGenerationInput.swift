@@ -85,6 +85,9 @@ nonisolated struct PlanGenerationInput: Codable, Equatable {
     let preferredCoach: CoachPreference
     let recentWorkoutHistory: [RecentWorkoutHistoryItem]
     let excludedExercises: Set<ExerciseType>
+    let focusBodyRegions: Set<BodyRegion>
+    let focusMovementPatterns: Set<MovementPattern>
+    let variantSeed: String?
 
     var effectiveEquipment: Set<EquipmentOption> {
         var effective = equipment
@@ -94,32 +97,50 @@ nonisolated struct PlanGenerationInput: Codable, Equatable {
 
     init(
         profile: UserProfile,
+        goal: FitnessGoal? = nil,
+        fitnessLevel: FitnessLevel? = nil,
         sessionLength: PlanSessionLength = .twentyFive,
         recentWorkoutHistory: [RecentWorkoutHistoryItem] = [],
-        excludedExercises: Set<ExerciseType> = []
+        excludedExercises: Set<ExerciseType> = [],
+        focusBodyRegions: Set<BodyRegion> = [],
+        focusMovementPatterns: Set<MovementPattern> = [],
+        variantSeed: String? = nil
     ) {
         self.profile = profile
-        self.goal = profile.primaryGoal
-        self.fitnessLevel = profile.fitnessLevel
+        self.goal = goal ?? profile.primaryGoal
+        self.fitnessLevel = fitnessLevel ?? profile.fitnessLevel
         self.ageBracket = profile.ageBracket
         self.equipment = Set(profile.equipment)
         self.sessionLength = sessionLength
         self.preferredCoach = profile.preferredCoach
         self.recentWorkoutHistory = recentWorkoutHistory
         self.excludedExercises = excludedExercises
+        self.focusBodyRegions = focusBodyRegions
+        self.focusMovementPatterns = focusMovementPatterns
+        self.variantSeed = variantSeed
     }
 
     init(
         profile: UserProfile,
+        goal: FitnessGoal? = nil,
+        fitnessLevel: FitnessLevel? = nil,
         sessionLengthMinutes: Int,
         recentWorkoutHistory: [RecentWorkoutHistoryItem] = [],
-        excludedExercises: Set<ExerciseType> = []
+        excludedExercises: Set<ExerciseType> = [],
+        focusBodyRegions: Set<BodyRegion> = [],
+        focusMovementPatterns: Set<MovementPattern> = [],
+        variantSeed: String? = nil
     ) {
         self.init(
             profile: profile,
+            goal: goal,
+            fitnessLevel: fitnessLevel,
             sessionLength: PlanSessionLength(rawMinutes: sessionLengthMinutes),
             recentWorkoutHistory: recentWorkoutHistory,
-            excludedExercises: excludedExercises
+            excludedExercises: excludedExercises,
+            focusBodyRegions: focusBodyRegions,
+            focusMovementPatterns: focusMovementPatterns,
+            variantSeed: variantSeed
         )
     }
 }
