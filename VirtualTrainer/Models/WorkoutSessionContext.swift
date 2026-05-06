@@ -78,7 +78,7 @@ nonisolated struct PlannedWorkoutRestResult: Equatable {
     }
 }
 
-nonisolated enum PlannedSetCompletionSource: String {
+nonisolated enum PlannedSetCompletionSource: String, Codable, Equatable {
     case targetMet
     case manual
 }
@@ -103,6 +103,8 @@ nonisolated struct PlannedWorkoutSetSummary: Identifiable {
     let worstCue: CoachCue?
     let cueEvents: [CueEvent]
     let completionSource: PlannedSetCompletionSource
+    let repQualityEvents: [RepQualityEvent]
+    let qualitySummary: SetQualitySummary?
 
     init(
         id: UUID = UUID(),
@@ -123,7 +125,9 @@ nonisolated struct PlannedWorkoutSetSummary: Identifiable {
         bestCue: CoachCue? = nil,
         worstCue: CoachCue? = nil,
         cueEvents: [CueEvent] = [],
-        completionSource: PlannedSetCompletionSource
+        completionSource: PlannedSetCompletionSource,
+        repQualityEvents: [RepQualityEvent] = [],
+        qualitySummary: SetQualitySummary? = nil
     ) {
         self.id = id
         self.planId = planId
@@ -144,5 +148,7 @@ nonisolated struct PlannedWorkoutSetSummary: Identifiable {
         self.worstCue = worstCue
         self.cueEvents = cueEvents
         self.completionSource = completionSource
+        self.repQualityEvents = repQualityEvents
+        self.qualitySummary = qualitySummary
     }
 }

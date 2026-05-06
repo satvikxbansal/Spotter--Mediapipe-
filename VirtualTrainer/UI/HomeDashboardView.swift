@@ -101,7 +101,8 @@ struct HomeDashboardView: View {
         .refreshable {
             dashboardContent = contentFactory.makeContent(
                 profile: profile,
-                recentWorkoutHistory: historyStore.recentWorkoutHistoryItems()
+                recentWorkoutHistory: historyStore.recentWorkoutHistoryItems(),
+                currentStreakDayCount: historyStore.aggregateStats().currentStreak
             )
         }
     }
@@ -114,7 +115,8 @@ struct HomeDashboardView: View {
 
         dashboardContent = contentFactory.makeContent(
             profile: profile,
-            recentWorkoutHistory: historyStore.recentWorkoutHistoryItems()
+            recentWorkoutHistory: historyStore.recentWorkoutHistoryItems(),
+            currentStreakDayCount: historyStore.aggregateStats().currentStreak
         )
     }
 

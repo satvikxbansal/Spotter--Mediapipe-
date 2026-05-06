@@ -71,6 +71,19 @@ nonisolated struct LiveSessionContext: Identifiable, Equatable {
         setIndex: Int = 0,
         coach: CoachPersonality = .good
     ) -> LiveSessionContext {
+        guard !workout.exercises.isEmpty else {
+            return LiveSessionContext(
+                mode: .plannedWorkout,
+                exerciseType: .squat,
+                target: .open,
+                setIndex: nil,
+                totalSets: 0,
+                planId: workout.id,
+                title: workout.title,
+                coach: coach
+            )
+        }
+
         let safeIndex = workout.exercises.indices.contains(setIndex) ? setIndex : 0
         let set = workout.exercises[safeIndex]
         let definition = set.exerciseType.definition
@@ -151,6 +164,8 @@ nonisolated struct FreeAnalysisSummary: Identifiable {
     let peakEffort: Double
     let lastCue: CoachCue?
     let cueEvents: [CueEvent]
+    let repQualityEvents: [RepQualityEvent]
+    let qualitySummary: SetQualitySummary?
 
     init(
         id: UUID = UUID(),
@@ -164,7 +179,9 @@ nonisolated struct FreeAnalysisSummary: Identifiable {
         latestFormScore: FormScore?,
         peakEffort: Double,
         lastCue: CoachCue?,
-        cueEvents: [CueEvent] = []
+        cueEvents: [CueEvent] = [],
+        repQualityEvents: [RepQualityEvent] = [],
+        qualitySummary: SetQualitySummary? = nil
     ) {
         self.id = id
         self.exerciseType = exerciseType
@@ -178,6 +195,8 @@ nonisolated struct FreeAnalysisSummary: Identifiable {
         self.peakEffort = max(0, min(peakEffort, 1))
         self.lastCue = lastCue
         self.cueEvents = cueEvents
+        self.repQualityEvents = repQualityEvents
+        self.qualitySummary = qualitySummary
     }
 
     var durationText: String {

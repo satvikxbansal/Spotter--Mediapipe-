@@ -81,15 +81,27 @@ nonisolated final class DashboardContentFactory {
     func makeContent(
         profile: UserProfile,
         now: Date = Date(),
-        recentWorkoutHistory: [RecentWorkoutHistoryItem] = []
+        recentWorkoutHistory: [RecentWorkoutHistoryItem] = [],
+        currentStreakDayCount: Int? = nil
     ) -> DashboardContent {
-        let smartStart = planService.generateSmartStart(profile: profile)
-        let dailyPlan = planService.generateDailyPlan(profile: profile)
+        let smartStart = planService.generateSmartStart(
+            profile: profile,
+            recentWorkoutHistory: recentWorkoutHistory
+        )
+        let dailyPlan = planService.generateDailyPlan(
+            profile: profile,
+            recentWorkoutHistory: recentWorkoutHistory
+        )
 
         return DashboardContent(
             greeting: timeBasedGreeting(at: now),
             athleteName: profile.firstName,
-            streak: DashboardStreak(dayCount: currentStreakDays(from: recentWorkoutHistory, now: now)),
+            streak: DashboardStreak(
+                dayCount: currentStreakDayCount ?? currentStreakDays(
+                    from: recentWorkoutHistory,
+                    now: now
+                )
+            ),
             smartStart: DashboardPlanSummary(plan: smartStart),
             dailyPlan: DashboardPlanSummary(plan: dailyPlan),
             quickActions: Self.quickActions,

@@ -624,3 +624,69 @@ Preserved the previous summary list before mutation and restored it when persist
 Local persistence APIs should keep memory and disk semantics aligned: if a user-facing save returns failure, rollback observable state or make the partial in-memory state explicit.
 
 **Pattern Tags:** #history #persistence #tests
+
+---
+
+### [DL-029] Keep Isometric Hold Time Separate From Rep Counts
+**Date:** 2026-05-06
+**Severity:** critical
+**Category:** rep-counter
+**File(s):** `VirtualTrainer/RepCounting/UniversalRepCounter.swift`, `VirtualTrainerTests/UniversalRepCounterTests.swift`
+
+**Error:**
+Plank, wall-sit, yoga pose, and other isometric exercises could report elapsed hold seconds through `repCount` because `processIsometric` returned `repCount: Int(liveHold)`. That made hold seconds look like reps to downstream session summaries, rep-quality evidence, haptics/voice rep-count paths, and any rep-based dashboard aggregation.
+
+**Root Cause:**
+The isometric state machine measured hold time correctly in `holdDuration`, but it also overloaded the generic `repCount` output with that same live hold duration. A missing primary-angle frame during an active isometric hold also returned the generic fallback output, which did not preserve/pause hold semantics cleanly.
+
+**Fix Applied:**
+Changed isometric counter output to return the real internal `repCount` while exposing hold progress only through `holdDuration` and `isHolding`. Added a shared live-hold-duration helper, and when primary-angle data is missing during an isometric hold, the counter now banks elapsed hold time, pauses the hold, and returns the preserved duration without continuing to accrue time while posture evidence is absent. Added regression tests for hold duration not polluting rep count and for missing-angle pause behavior.
+
+**Prevention Rule:**
+Never use `repCount` as a transport for timed/isometric progress. Timed progress must flow through `holdDuration` or elapsed session time, and missing pose evidence during a hold should pause timing rather than silently crediting unobserved seconds.
+
+**Pattern Tags:** #rep-counter #isometric #hold-timer #planned-workout #tests
+
+---
+
+### [DL-030] Reset Live Session Engines At Session Start
+**Date:** 2026-05-06
+**Severity:** warning
+**Category:** state-management
+**File(s):** `VirtualTrainer/UI/TrainerSessionView.swift`
+
+**Error:**
+Re-entering a trainer session could briefly carry stale live UI/session state such as rep count, phase, hold duration, form score, angle overlays, cue history, rep-quality events, motivation scale, exertion smoothing, or form-feedback cooldowns from a previous view lifetime.
+
+**Root Cause:**
+`TrainerSessionView` owns several `@State` values and long-lived helper engines. SwiftUI can reuse view state across appearances, while only some camera/gesture/coordinator resources were reset on disappear. The visible form-score reset was not enough to reset the underlying form, exertion, and motivation engines.
+
+**Fix Applied:**
+Expanded `.onAppear` initialization to reset scalar live state, cue/evidence buffers, overlays, hold state, form score, motivation scale, and the exertion/motivation/form engines before creating the fresh `UniversalRepCounter` and starting camera, pose, hand, and face pipelines.
+
+**Prevention Rule:**
+For camera-driven workout screens, reset both displayed state and the helper engines that produce it at session start. Do not rely only on disappear-time cleanup, because SwiftUI view identity and navigation timing can keep old state alive.
+
+**Pattern Tags:** #state-management #trainer-session #form-feedback #effort #rep-evidence
+
+---
+
+### [DL-031] Guard Empty Voice Rep Prefetch Range
+**Date:** 2026-05-06
+**Severity:** warning
+**Category:** crash-prevention
+**File(s):** `VirtualTrainer/Coaching/VoiceCoachManager.swift`
+
+**Error:**
+Calling `prefetchRepCounts(upTo: 0, personality:)` or passing a negative count could build the invalid range `1...count`, which traps in Swift before a workout starts.
+
+**Root Cause:**
+The voice coach assumed all callers would prefetch at least one rep phrase. Hold/timed/open-ended sessions and future target plumbing can reasonably produce zero rep targets.
+
+**Fix Applied:**
+Added an early guard for `count > 0`, clearing `repPhrases` and returning before constructing the closed range.
+
+**Prevention Rule:**
+Any range built from user, plan, or target counts must guard the lower/upper bounds before constructing a closed range. Prefer empty collections for zero-work cases.
+
+**Pattern Tags:** #crash-prevention #voice-coach #range #planned-workout

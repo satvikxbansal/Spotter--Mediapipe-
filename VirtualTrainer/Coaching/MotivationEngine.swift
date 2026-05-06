@@ -163,6 +163,8 @@ final class MotivationEngine: ObservableObject {
 
     private func nextPhrase() -> String {
         let pool = activePhrases
+        guard !pool.isEmpty else { return "" }
+
         var index: Int
         if let last = lastPhraseIndex {
             index = (last + 1) % pool.count

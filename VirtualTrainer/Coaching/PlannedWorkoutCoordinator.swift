@@ -3,6 +3,7 @@ import Foundation
 nonisolated struct PlannedWorkoutCoordinator {
     let plan: WorkoutPlanV2
     let startedAt: Date
+    let historySummaryId: UUID
 
     private(set) var currentBlockIndex: Int
     private(set) var currentExerciseIndex: Int
@@ -12,9 +13,10 @@ nonisolated struct PlannedWorkoutCoordinator {
     private(set) var sessionState: WorkoutSessionState
     private(set) var completedAt: Date?
 
-    init(plan: WorkoutPlanV2, startedAt: Date = Date()) {
+    init(plan: WorkoutPlanV2, startedAt: Date = Date(), historySummaryId: UUID = UUID()) {
         self.plan = plan
         self.startedAt = startedAt
+        self.historySummaryId = historySummaryId
         self.completedSetSummaries = []
         self.restOutcomes = [:]
         self.completedAt = nil
@@ -143,6 +145,7 @@ nonisolated struct PlannedWorkoutCoordinator {
 
     func workoutSessionSummary(completedAt fallbackCompletedAt: Date = Date()) -> WorkoutSessionSummary {
         WorkoutSessionSummary.plannedWorkout(
+            id: historySummaryId,
             plan: plan,
             startedAt: startedAt,
             completedSets: completedSetSummaries,

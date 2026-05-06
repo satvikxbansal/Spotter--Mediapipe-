@@ -103,6 +103,28 @@ final class DashboardContentTests: XCTestCase {
         XCTAssertEqual(content.recentWorkout?.exerciseType, .squat)
         XCTAssertEqual(content.recentWorkout?.completedAt, today)
     }
+
+    func testDashboardCanUseStoreComputedCurrentStreak() throws {
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 5, hour: 12)))
+        let oldWorkout = try XCTUnwrap(calendar.date(byAdding: .day, value: -14, to: today))
+        let history = [
+            RecentWorkoutHistoryItem(
+                id: UUID(uuidString: "00000000-0000-0000-0000-000000000804") ?? UUID(),
+                exerciseType: .pushup,
+                completedAt: oldWorkout
+            )
+        ]
+
+        let content = factory.makeContent(
+            profile: makeProfile(goal: .strength),
+            now: today,
+            recentWorkoutHistory: history,
+            currentStreakDayCount: 9
+        )
+
+        XCTAssertEqual(content.streak.dayCount, 9)
+        XCTAssertEqual(content.recentWorkout?.exerciseType, .pushup)
+    }
 }
 
 private extension DashboardContentTests {

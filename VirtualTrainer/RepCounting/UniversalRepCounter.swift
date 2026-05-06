@@ -164,10 +164,16 @@ nonisolated final class UniversalRepCounter: RepCounter {
         lastAngles = smoothed
 
         guard let primaryAngle = smoothed[definition.primaryAngleKey] else {
+            if definition.movementType == .isometric {
+                pauseIsometricHoldIfNeeded()
+            }
+
             return RepCounterOutput(
                 repCount: repCount,
                 phase: currentPhase,
-                cues: []
+                cues: [],
+                holdDuration: definition.movementType == .isometric ? liveHoldDuration : 0,
+                isHolding: false
             )
         }
 
@@ -330,20 +336,29 @@ nonisolated final class UniversalRepCounter: RepCounter {
             currentPhase = .idle
         }
 
-        let liveHold: TimeInterval
-        if let start = holdStartTime {
-            liveHold = holdDuration + Date().timeIntervalSince(start)
-        } else {
-            liveHold = holdDuration
-        }
-
         return RepCounterOutput(
-            repCount: Int(liveHold),
+            repCount: repCount,
             phase: currentPhase,
             cues: [],
-            holdDuration: liveHold,
+            holdDuration: liveHoldDuration,
             isHolding: currentPhase == .down
         )
+    }
+
+    private var liveHoldDuration: TimeInterval {
+        if let start = holdStartTime {
+            return holdDuration + Date().timeIntervalSince(start)
+        }
+        return holdDuration
+    }
+
+    private func pauseIsometricHoldIfNeeded() {
+        guard currentPhase == .down else { return }
+        if let start = holdStartTime {
+            holdDuration += Date().timeIntervalSince(start)
+        }
+        holdStartTime = nil
+        currentPhase = .idle
     }
 
     // MARK: - Threshold Checks

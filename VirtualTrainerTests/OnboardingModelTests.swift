@@ -63,6 +63,23 @@ final class OnboardingModelTests: XCTestCase {
         XCTAssertEqual(context.coach, .drill)
     }
 
+    func testPlannedWorkoutContextHandlesEmptyLegacyWorkoutWithoutCrashing() {
+        let workout = WorkoutPlan(
+            title: "Empty Legacy Flow",
+            subtitle: "Legacy plan without sets",
+            exercises: [],
+            estimatedMinutes: 0
+        )
+        let context = LiveSessionContext.plannedWorkout(workout: workout)
+
+        XCTAssertEqual(context.mode, SessionMode.plannedWorkout)
+        XCTAssertEqual(context.exerciseType, ExerciseType.squat)
+        XCTAssertEqual(context.target, SessionTarget.open)
+        XCTAssertNil(context.setIndex)
+        XCTAssertEqual(context.totalSets, 0)
+        XCTAssertEqual(context.planId, workout.id)
+    }
+
     private func temporaryProfileURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

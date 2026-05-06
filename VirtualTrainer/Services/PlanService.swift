@@ -12,20 +12,28 @@ nonisolated final class PlanService {
         self.swapService = swapService
     }
 
-    func generateSmartStart(profile: UserProfile) -> WorkoutPlanV2 {
+    func generateSmartStart(
+        profile: UserProfile,
+        recentWorkoutHistory: [RecentWorkoutHistoryItem] = []
+    ) -> WorkoutPlanV2 {
         generator.generate(
             input: PlanGenerationInput(
                 profile: profile,
-                sessionLength: .seven
+                sessionLength: .seven,
+                recentWorkoutHistory: recentWorkoutHistory
             )
         )
     }
 
-    func generateDailyPlan(profile: UserProfile) -> WorkoutPlanV2 {
+    func generateDailyPlan(
+        profile: UserProfile,
+        recentWorkoutHistory: [RecentWorkoutHistoryItem] = []
+    ) -> WorkoutPlanV2 {
         generator.generate(
             input: PlanGenerationInput(
                 profile: profile,
-                sessionLength: .twentyFive
+                sessionLength: .twentyFive,
+                recentWorkoutHistory: recentWorkoutHistory
             )
         )
     }

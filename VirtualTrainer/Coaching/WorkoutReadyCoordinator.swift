@@ -354,6 +354,6 @@ final class WorkoutReadyCoordinator: ObservableObject {
 
     private func randomMessage(good: [String], drill: [String]) -> String {
         let pool = personality == .good ? good : drill
-        return pool.randomElement() ?? pool[0]
+        return pool.randomElement() ?? ""
     }
 }

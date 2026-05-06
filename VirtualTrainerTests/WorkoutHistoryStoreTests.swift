@@ -91,6 +91,167 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(decoded, summary)
     }
 
+    func testOldWorkoutSessionSummaryJSONDecodesWithEvidenceDefaults() throws {
+        let json = """
+        {
+          "id": "00000000-0000-0000-0000-000000001040",
+          "mode": "plannedWorkout",
+          "planId": "00000000-0000-0000-0000-000000001041",
+          "title": "Legacy Strength",
+          "goal": "Build clean strength.",
+          "coach": "good",
+          "startedAt": "2026-05-05T10:00:00Z",
+          "endedAt": "2026-05-05T10:20:00Z",
+          "durationSeconds": 1200,
+          "totalReps": 12,
+          "totalHoldSeconds": 0,
+          "averageFormScore": 88,
+          "completionPercent": 1,
+          "exerciseSummaries": [
+            {
+              "exerciseType": "squat",
+              "setIndex": 0,
+              "achievedReps": 12,
+              "achievedHoldSeconds": 0,
+              "averageFormScore": 88,
+              "cueEvents": [
+                {
+                  "timestamp": "2026-05-05T10:05:00Z",
+                  "exerciseType": "squat",
+                  "cueMessage": "Drive through the floor",
+                  "severity": "info",
+                  "metricKey": null
+                }
+              ],
+              "restExtended": false,
+              "skipped": false
+            }
+          ],
+          "topCue": null,
+          "effortSummary": "Peak effort reached 50%. Solid working intensity.",
+          "createdAt": "2026-05-05T10:20:01Z"
+        }
+        """.data(using: .utf8) ?? Data()
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let decoded = try decoder.decode(WorkoutSessionSummary.self, from: json)
+
+        XCTAssertEqual(decoded.summarySchemaVersion, 1)
+        XCTAssertEqual(decoded.workoutOutcome, .completed)
+        XCTAssertNil(decoded.structuredEffortSummary)
+        XCTAssertEqual(decoded.totalGoodFormReps, 0)
+        XCTAssertEqual(decoded.totalExcellentFormReps, 0)
+        XCTAssertEqual(decoded.totalHighSeverityCues, 0)
+        XCTAssertTrue(decoded.exerciseSummaries.first?.repQualityEvents.isEmpty ?? false)
+        XCTAssertNotNil(decoded.exerciseSummaries.first?.cueEvents.first?.id)
+    }
+
+    func testOlderWorkoutSessionSummaryJSONDecodesWithoutCreatedAt() throws {
+        let json = """
+        {
+          "id": "00000000-0000-0000-0000-000000001045",
+          "mode": "freeAnalysis",
+          "title": "Push-Up",
+          "coach": "good",
+          "startedAt": "2026-05-05T10:00:00Z",
+          "endedAt": "2026-05-05T10:03:00Z",
+          "durationSeconds": 180,
+          "totalReps": 8,
+          "totalHoldSeconds": 0,
+          "averageFormScore": 82,
+          "completionPercent": null,
+          "exerciseSummaries": [
+            {
+              "exerciseType": "pushup",
+              "achievedReps": 8,
+              "achievedHoldSeconds": 0,
+              "averageFormScore": 82
+            }
+          ],
+          "topCue": null,
+          "effortSummary": "No face-effort signal was captured for this session."
+        }
+        """.data(using: .utf8) ?? Data()
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let decoded = try decoder.decode(WorkoutSessionSummary.self, from: json)
+
+        XCTAssertEqual(decoded.createdAt, decoded.endedAt)
+        XCTAssertEqual(decoded.workoutOutcome, .freeAnalysisSaved)
+        XCTAssertEqual(decoded.exerciseSummaries.first?.cueEvents, [])
+    }
+
+    func testRepQualityEventCodableRoundtrip() throws {
+        let event = RepQualityEvent(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001050") ?? UUID(),
+            exerciseType: .pushup,
+            setIndex: 1,
+            repIndex: 4,
+            timestamp: Date(timeIntervalSince1970: 1_776_300_000),
+            secondsIntoSet: 18.4,
+            formScore: 91,
+            formGrade: "A",
+            phase: "up",
+            cueMessageNearRep: "Keep your core braced",
+            cueSeverityNearRep: .warning,
+            effortAtRep: 0.62
+        )
+        let encoder = JSONEncoder()
+        let decoder = JSONDecoder()
+        encoder.dateEncodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .iso8601
+
+        let data = try encoder.encode(event)
+        let decoded = try decoder.decode(RepQualityEvent.self, from: data)
+
+        XCTAssertEqual(decoded, event)
+    }
+
+    func testSetQualitySummaryClassifiesTrendAndCountsFormReps() {
+        let improved = SetQualitySummary.build(
+            repQualityEvents: [
+                makeRepEvent(repIndex: 1, score: 70),
+                makeRepEvent(repIndex: 2, score: 74),
+                makeRepEvent(repIndex: 3, score: 86),
+                makeRepEvent(repIndex: 4, score: 92, cue: "Brace", severity: .warning)
+            ],
+            cueEvents: [
+                CueEvent(
+                    timestamp: Date(timeIntervalSince1970: 1_776_300_010),
+                    exerciseType: .squat,
+                    cueMessage: "Brace",
+                    severity: .critical
+                )
+            ]
+        )
+        let faded = SetQualitySummary.build(
+            repQualityEvents: [
+                makeRepEvent(repIndex: 1, score: 92),
+                makeRepEvent(repIndex: 2, score: 90),
+                makeRepEvent(repIndex: 3, score: 78),
+                makeRepEvent(repIndex: 4, score: 74)
+            ]
+        )
+        let stable = SetQualitySummary.build(
+            repQualityEvents: [
+                makeRepEvent(repIndex: 1, score: 83),
+                makeRepEvent(repIndex: 2, score: 85),
+                makeRepEvent(repIndex: 3, score: 84),
+                makeRepEvent(repIndex: 4, score: 86)
+            ]
+        )
+
+        XCTAssertEqual(improved.qualityTrend, .improved)
+        XCTAssertEqual(improved.goodFormReps, 2)
+        XCTAssertEqual(improved.excellentFormReps, 1)
+        XCTAssertEqual(improved.highSeverityCueCount, 1)
+        XCTAssertEqual(improved.mostRepeatedCue, "Brace")
+        XCTAssertEqual(faded.qualityTrend, .faded)
+        XCTAssertEqual(stable.qualityTrend, .stable)
+    }
+
     func testAggregateStats() {
         let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
         store.addSummary(
@@ -124,6 +285,117 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(stats.averageFormScore, 85)
         XCTAssertEqual(stats.averageCompletionPercent, 1)
         XCTAssertEqual(stats.mostTrainedExerciseType, .squat)
+    }
+
+    func testAggregateStatsComputesEvidenceTotalsAndStreaks() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 6, hour: 12)))
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+        let twoDaysAgo = try XCTUnwrap(calendar.date(byAdding: .day, value: -2, to: today))
+        let fourDaysAgo = try XCTUnwrap(calendar.date(byAdding: .day, value: -4, to: today))
+        let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL(), calendar: calendar)
+
+        store.addSummary(makeEvidenceSummary(idSuffix: "1061", endedAt: fourDaysAgo, scores: [72, 80], highSeverityCues: 0))
+        store.addSummary(makeEvidenceSummary(idSuffix: "1062", endedAt: twoDaysAgo, scores: [78, 82], highSeverityCues: 1))
+        store.addSummary(makeEvidenceSummary(idSuffix: "1063", endedAt: yesterday, scores: [84, 91], highSeverityCues: 1))
+        store.addSummary(makeEvidenceSummary(idSuffix: "1064", endedAt: today, scores: [88, 94], highSeverityCues: 0))
+
+        let stats = store.aggregateStats(now: today)
+
+        XCTAssertEqual(stats.currentStreak, 3)
+        XCTAssertEqual(stats.longestStreak, 3)
+        XCTAssertEqual(stats.workoutsThisWeek, 3)
+        XCTAssertEqual(stats.totalGoodFormReps, 6)
+        XCTAssertEqual(stats.totalExcellentFormReps, 2)
+        XCTAssertEqual(stats.totalHighSeverityCues, 2)
+        XCTAssertEqual(stats.mostImprovedExerciseType, .squat)
+    }
+
+    func testPlannedWorkoutSummaryIncludesRepEvidence() throws {
+        let plan = makePlan()
+        let setSummary = makeSetSummary(
+            planId: plan.id,
+            repQualityEvents: [
+                makeRepEvent(repIndex: 1, score: 84),
+                makeRepEvent(repIndex: 2, score: 93, effort: 0.7)
+            ]
+        )
+
+        let summary = WorkoutSessionSummary.plannedWorkout(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001070") ?? UUID(),
+            plan: plan,
+            startedAt: Date(timeIntervalSince1970: 1_776_200_000),
+            completedSets: [setSummary],
+            completedAt: Date(timeIntervalSince1970: 1_776_200_060)
+        )
+
+        XCTAssertEqual(summary.summarySchemaVersion, WorkoutSessionSummary.currentSchemaVersion)
+        XCTAssertEqual(summary.workoutOutcome, .completed)
+        XCTAssertEqual(summary.planTitle, plan.title)
+        XCTAssertEqual(summary.exerciseSummaries.first?.repQualityEvents.count, 2)
+        XCTAssertEqual(summary.exerciseSummaries.first?.qualitySummary?.goodFormReps, 2)
+        XCTAssertEqual(summary.exerciseSummaries.first?.qualitySummary?.excellentFormReps, 1)
+        XCTAssertEqual(summary.totalGoodFormReps, 2)
+        XCTAssertEqual(summary.totalExcellentFormReps, 1)
+        XCTAssertEqual(summary.structuredEffortSummary?.source, .faceBlendshapeProxy)
+        XCTAssertEqual(summary.exerciseSummaries.first?.completionSource, .targetMet)
+    }
+
+    func testFreeAnalysisSummaryIncludesRepEvidence() {
+        let freeSummary = makeFreeAnalysisSummary(
+            repQualityEvents: [
+                makeRepEvent(exerciseType: .pushup, setIndex: nil, repIndex: 1, score: 81),
+                makeRepEvent(exerciseType: .pushup, setIndex: nil, repIndex: 2, score: 94)
+            ]
+        )
+
+        let summary = WorkoutSessionSummary.freeAnalysis(from: freeSummary)
+
+        XCTAssertEqual(summary.mode, .freeAnalysis)
+        XCTAssertEqual(summary.workoutOutcome, .freeAnalysisSaved)
+        XCTAssertEqual(summary.exerciseSummaries.first?.repQualityEvents.count, 2)
+        XCTAssertEqual(summary.exerciseSummaries.first?.qualitySummary?.goodFormReps, 2)
+        XCTAssertEqual(summary.totalExcellentFormReps, 1)
+    }
+
+    func testNoDuplicateSaveWhenPlannedSummaryIsRequestedMultipleTimes() throws {
+        var coordinator = PlannedWorkoutCoordinator(
+            plan: makePlan(),
+            startedAt: Date(timeIntervalSince1970: 1_776_200_000),
+            historySummaryId: UUID(uuidString: "00000000-0000-0000-0000-000000001080") ?? UUID()
+        )
+        let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
+        coordinator.startSession()
+        let context = try XCTUnwrap(coordinator.currentContext)
+        XCTAssertTrue(
+            coordinator.completeCurrentSet(
+                with: PlannedWorkoutSetSummary(
+                    planId: context.planId,
+                    exerciseType: context.exerciseType,
+                    target: context.target,
+                    setIndex: context.setIndex,
+                    totalSets: context.totalSets,
+                    exerciseIndex: context.exerciseIndex,
+                    totalExercises: context.totalExercises,
+                    duration: 55,
+                    reps: 12,
+                    holdDuration: 0,
+                    latestFormScore: formScore(92),
+                    peakEffort: 0.4,
+                    lastCue: nil,
+                    completionSource: .targetMet
+                )
+            )
+        )
+
+        let firstSummary = coordinator.workoutSessionSummary()
+        let secondSummary = coordinator.workoutSessionSummary()
+        XCTAssertTrue(store.addSummary(firstSummary))
+        XCTAssertTrue(store.addSummary(secondSummary))
+
+        XCTAssertEqual(firstSummary.id, secondSummary.id)
+        XCTAssertEqual(store.fetchRecentSummaries().count, 1)
     }
 
     func testFailedSaveDoesNotExposeUnsavedSummary() throws {
@@ -179,7 +451,10 @@ private extension WorkoutHistoryStoreTests {
         )
     }
 
-    func makeSetSummary(planId: UUID) -> PlannedWorkoutSetSummary {
+    func makeSetSummary(
+        planId: UUID,
+        repQualityEvents: [RepQualityEvent] = []
+    ) -> PlannedWorkoutSetSummary {
         let cue = CueEvent(
             timestamp: Date(timeIntervalSince1970: 1_776_200_045),
             exerciseType: .squat,
@@ -204,11 +479,14 @@ private extension WorkoutHistoryStoreTests {
             peakEffort: 0.48,
             lastCue: CoachCue(message: cue.cueMessage, severity: cue.severity),
             cueEvents: [cue],
-            completionSource: .targetMet
+            completionSource: .targetMet,
+            repQualityEvents: repQualityEvents
         )
     }
 
-    func makeFreeAnalysisSummary() -> FreeAnalysisSummary {
+    func makeFreeAnalysisSummary(
+        repQualityEvents: [RepQualityEvent] = []
+    ) -> FreeAnalysisSummary {
         let cue = CoachCue(message: "Keep your core braced", severity: .warning)
         return FreeAnalysisSummary(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000001012") ?? UUID(),
@@ -229,7 +507,8 @@ private extension WorkoutHistoryStoreTests {
                     cueMessage: cue.message,
                     severity: cue.severity
                 )
-            ]
+            ],
+            repQualityEvents: repQualityEvents
         )
     }
 
@@ -269,6 +548,90 @@ private extension WorkoutHistoryStoreTests {
             topCue: nil,
             effortSummary: "Peak effort reached 50%. Solid working intensity.",
             createdAt: endedAt
+        )
+    }
+
+    func makeEvidenceSummary(
+        idSuffix: String,
+        endedAt: Date,
+        scores: [Int],
+        highSeverityCues: Int
+    ) -> WorkoutSessionSummary {
+        let events = scores.enumerated().map { index, score in
+            makeRepEvent(
+                repIndex: index + 1,
+                score: score,
+                cue: index < highSeverityCues ? "Brace" : nil,
+                severity: index < highSeverityCues ? .warning : nil
+            )
+        }
+        let cueEvents = (0..<highSeverityCues).map { index in
+            CueEvent(
+                timestamp: endedAt.addingTimeInterval(TimeInterval(index)),
+                exerciseType: .squat,
+                cueMessage: "Brace",
+                severity: .warning
+            )
+        }
+        let qualitySummary = SetQualitySummary.build(
+            repQualityEvents: events,
+            cueEvents: cueEvents
+        )
+
+        return WorkoutSessionSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-00000000\(idSuffix)") ?? UUID(),
+            mode: .plannedWorkout,
+            planId: UUID(uuidString: "00000000-0000-0000-0000-000000001090"),
+            title: "Evidence",
+            goal: "Build clean strength.",
+            coach: .good,
+            startedAt: endedAt.addingTimeInterval(-600),
+            endedAt: endedAt,
+            durationSeconds: 600,
+            totalReps: scores.count,
+            totalHoldSeconds: 0,
+            averageFormScore: qualitySummary.averageFormScore,
+            completionPercent: 1,
+            exerciseSummaries: [
+                ExerciseSetSummary(
+                    exerciseType: .squat,
+                    setIndex: 0,
+                    target: .reps(scores.count),
+                    achievedReps: scores.count,
+                    achievedHoldSeconds: 0,
+                    averageFormScore: qualitySummary.averageFormScore,
+                    cueEvents: cueEvents,
+                    qualitySummary: qualitySummary,
+                    repQualityEvents: events
+                )
+            ],
+            topCue: cueEvents.first,
+            effortSummary: "No face-effort signal was captured for this session.",
+            createdAt: endedAt
+        )
+    }
+
+    func makeRepEvent(
+        exerciseType: ExerciseType = .squat,
+        setIndex: Int? = 0,
+        repIndex: Int,
+        score: Int,
+        cue: String? = nil,
+        severity: CoachCue.Severity? = nil,
+        effort: Double? = nil
+    ) -> RepQualityEvent {
+        RepQualityEvent(
+            exerciseType: exerciseType,
+            setIndex: setIndex,
+            repIndex: repIndex,
+            timestamp: Date(timeIntervalSince1970: 1_776_300_000 + TimeInterval(repIndex)),
+            secondsIntoSet: TimeInterval(repIndex * 5),
+            formScore: score,
+            formGrade: FormScore.Grade.from(score: score).rawValue,
+            phase: RepPhase.up.rawValue,
+            cueMessageNearRep: cue,
+            cueSeverityNearRep: severity,
+            effortAtRep: effort
         )
     }
 

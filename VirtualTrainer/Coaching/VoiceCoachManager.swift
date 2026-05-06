@@ -27,6 +27,11 @@ final class VoiceCoachManager: ObservableObject {
     func prefetchRepCounts(upTo count: Int, personality: CoachPersonality) {
         repPersonality = personality
         lastCueSpokenAt.removeAll()
+        guard count > 0 else {
+            repPhrases = [:]
+            return
+        }
+
         repPhrases = Dictionary(uniqueKeysWithValues: (1...count).map { value in
             (value, makeUtterance(text: "\(value)", personality: personality, kind: .repCount))
         })

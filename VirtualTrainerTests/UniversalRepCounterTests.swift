@@ -40,6 +40,44 @@ final class UniversalRepCounterTests: XCTestCase {
         XCTAssertFalse(outOfBand.isHolding)
     }
 
+    func testIsometricHoldDurationDoesNotPolluteRepCount() {
+        let definition = counterDefinition(
+            movementType: .isometric,
+            down: PhaseThreshold(angleKey: "kneeAngle", enterBelow: 100, enterAbove: nil),
+            up: PhaseThreshold(angleKey: "kneeAngle", enterBelow: nil, enterAbove: 150),
+            holdRange: 80...100
+        )
+        let counter = UniversalRepCounter(definition: definition)
+
+        _ = counter.process(angles: ["kneeAngle": 90])
+        Thread.sleep(forTimeInterval: 1.05)
+        let holding = counter.process(angles: ["kneeAngle": 90])
+
+        XCTAssertTrue(holding.holdDuration >= 1)
+        XCTAssertEqual(holding.repCount, 0)
+    }
+
+    func testIsometricHoldPausesWhenPrimaryAngleDropsOut() {
+        let definition = counterDefinition(
+            movementType: .isometric,
+            down: PhaseThreshold(angleKey: "kneeAngle", enterBelow: 100, enterAbove: nil),
+            up: PhaseThreshold(angleKey: "kneeAngle", enterBelow: nil, enterAbove: 150),
+            holdRange: 80...100
+        )
+        let counter = UniversalRepCounter(definition: definition)
+
+        _ = counter.process(angles: ["kneeAngle": 90])
+        Thread.sleep(forTimeInterval: 1.05)
+        let pausedWithoutAngle = counter.process(angles: [:])
+        Thread.sleep(forTimeInterval: 0.2)
+        let stillPausedWithoutAngle = counter.process(angles: [:])
+
+        XCTAssertTrue(pausedWithoutAngle.holdDuration >= 1)
+        XCTAssertLessThan(stillPausedWithoutAngle.holdDuration - pausedWithoutAngle.holdDuration, 0.1)
+        XCTAssertEqual(pausedWithoutAngle.repCount, 0)
+        XCTAssertFalse(pausedWithoutAngle.isHolding)
+    }
+
     func testHalfRepDoesNotCount() {
         let definition = counterDefinition(
             down: PhaseThreshold(angleKey: "kneeAngle", enterBelow: 150, enterAbove: nil),

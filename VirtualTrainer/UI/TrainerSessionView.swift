@@ -40,6 +40,7 @@ struct TrainerSessionView: View {
     @State private var coachCues: [CoachCue] = []
     @State private var cueHistory: [CoachCue] = []
     @State private var cueEventHistory: [CueEvent] = []
+    @State private var repQualityEvents: [RepQualityEvent] = []
     @State private var debugAngle: Double?
     @State private var motivationScale: CGFloat = 0.3
     @State private var holdDuration: TimeInterval = 0
@@ -135,12 +136,27 @@ struct TrainerSessionView: View {
         .statusBarHidden()
         .onAppear {
             didCompletePlannedSet = false
+            repCount = 0
+            previousRepCount = 0
+            currentPhase = .idle
+            coachCues = []
+            debugAngle = nil
+            holdDuration = 0
+            isHolding = false
+            lastFormScore = nil
+            angleOverlays = []
+            violatedJoints = []
             sessionStartedAt = context.startsActive ? Date() : nil
             elapsedSeconds = 0
             currentEffortScore = 0
             peakEffort = 0
+            motivationScale = 0.3
             cueHistory = []
             cueEventHistory = []
+            repQualityEvents = []
+            exertionAnalyzer.reset()
+            motivationEngine.reset()
+            formEngine.reset()
             repCounter = UniversalRepCounter(exerciseType: exerciseType)
             motivationEngine.personality = coachPersonality
             readyCoordinator.setPersonality(coachPersonality)
@@ -261,6 +277,10 @@ struct TrainerSessionView: View {
             )
 
             if repCount > previousRepCount {
+                recordRepQualityEvents(
+                    fromExclusive: previousRepCount,
+                    through: repCount
+                )
                 previousRepCount = repCount
                 HapticsEngine.shared.repTick()
                 motivationEngine.evaluateEffort(
@@ -1058,6 +1078,10 @@ struct TrainerSessionView: View {
     private func endFreeAnalysis() {
         let endedAt = Date()
         let startedAt = sessionStartedAt ?? endedAt.addingTimeInterval(-elapsedSeconds)
+        let qualitySummary = SetQualitySummary.build(
+            repQualityEvents: repQualityEvents,
+            cueEvents: cueEventHistory
+        )
         let summary = FreeAnalysisSummary(
             exerciseType: exerciseType,
             coach: coachPersonality,
@@ -1069,7 +1093,9 @@ struct TrainerSessionView: View {
             latestFormScore: lastFormScore,
             peakEffort: peakEffort,
             lastCue: coachCues.first,
-            cueEvents: cueEventHistory
+            cueEvents: cueEventHistory,
+            repQualityEvents: repQualityEvents,
+            qualitySummary: qualitySummary
         )
         stopLivePipelines()
         onFreeAnalysisEnded?(summary)
@@ -1113,6 +1139,10 @@ struct TrainerSessionView: View {
         stopLivePipelines()
         HapticsEngine.shared.successRipple()
 
+        let qualitySummary = SetQualitySummary.build(
+            repQualityEvents: repQualityEvents,
+            cueEvents: cueEventHistory
+        )
         let summary = PlannedWorkoutSetSummary(
             planId: workoutSessionContext.planId,
             exerciseType: exerciseType,
@@ -1130,7 +1160,9 @@ struct TrainerSessionView: View {
             bestCue: bestCueForSummary,
             worstCue: worstCueForSummary,
             cueEvents: cueEventHistory,
-            completionSource: source
+            completionSource: source,
+            repQualityEvents: repQualityEvents,
+            qualitySummary: qualitySummary
         )
         onPlannedSetCompleted?(summary)
     }
@@ -1150,7 +1182,11 @@ struct TrainerSessionView: View {
                     timestamp: Date(),
                     exerciseType: exerciseType,
                     cueMessage: cue.message,
-                    severity: cue.severity
+                    severity: cue.severity,
+                    setIndex: workoutSessionContext?.setIndex,
+                    repIndex: repCount > 0 ? repCount : nil,
+                    secondsIntoSet: elapsedSeconds,
+                    formScoreAtEvent: lastFormScore?.score
                 )
             )
         }
@@ -1170,6 +1206,48 @@ struct TrainerSessionView: View {
 
     private var worstCueForSummary: CoachCue? {
         cueHistory.max { $0.severity < $1.severity }
+    }
+
+    private func recordRepQualityEvents(
+        fromExclusive previousCount: Int,
+        through currentCount: Int
+    ) {
+        guard currentCount > previousCount else { return }
+
+        let cueNearRep = activeCueNearCurrentRep()
+        for repIndex in (previousCount + 1)...currentCount {
+            repQualityEvents.append(
+                RepQualityEvent(
+                    exerciseType: exerciseType,
+                    setIndex: workoutSessionContext?.setIndex,
+                    repIndex: repIndex,
+                    timestamp: Date(),
+                    secondsIntoSet: elapsedSeconds,
+                    formScore: lastFormScore?.score,
+                    formGrade: lastFormScore?.grade.rawValue,
+                    phase: currentPhase.rawValue,
+                    cueMessageNearRep: cueNearRep?.message,
+                    cueSeverityNearRep: cueNearRep?.severity,
+                    effortAtRep: currentEffortScore > 0 ? currentEffortScore : nil
+                )
+            )
+        }
+    }
+
+    private func activeCueNearCurrentRep() -> CoachCue? {
+        if let activeCue = coachCues.first {
+            return activeCue
+        }
+
+        guard let recentCue = cueEventHistory.last,
+              Date().timeIntervalSince(recentCue.timestamp) <= 6
+        else { return nil }
+
+        return CoachCue(
+            id: recentCue.id,
+            message: recentCue.cueMessage,
+            severity: recentCue.severity
+        )
     }
 
     // MARK: - Debug Angle
