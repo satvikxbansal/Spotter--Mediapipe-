@@ -49,9 +49,11 @@ nonisolated enum FramePositionAnalyzer {
         let w = mask.width
         let h = mask.height
         guard w > 0, h > 0 else { return nil }
+        guard w <= Int.max / h else { return nil }
 
         let totalPixels = w * h
         let data = mask.data
+        guard data.count >= totalPixels else { return nil }
 
         var bodyCount = 0
         var sumX: Double = 0
@@ -90,8 +92,10 @@ nonisolated enum FramePositionAnalyzer {
 
         let coverage = Double(bodyCount) / Double(totalPixels)
 
-        let centroidX = totalWeight > 0 ? sumX / totalWeight / Double(w - 1) : 0.5
-        let centroidY = totalWeight > 0 ? sumY / totalWeight / Double(h - 1) : 0.5
+        let centroidDenominatorX = Double(max(w - 1, 1))
+        let centroidDenominatorY = Double(max(h - 1, 1))
+        let centroidX = totalWeight > 0 ? sumX / totalWeight / centroidDenominatorX : 0.5
+        let centroidY = totalWeight > 0 ? sumY / totalWeight / centroidDenominatorY : 0.5
 
         let bbox = CGRect(
             x: Double(minX) / Double(w),

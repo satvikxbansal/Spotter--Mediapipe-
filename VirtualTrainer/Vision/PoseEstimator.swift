@@ -234,8 +234,8 @@ final class PoseEstimator: NSObject, ObservableObject {
         if let firstMask = result.segmentationMasks.first {
             let w = Int(firstMask.width)
             let h = Int(firstMask.height)
-            let count = w * h
-            if count > 0 {
+            if w > 0, h > 0, w <= Int.max / h {
+                let count = w * h
                 let srcPtr = firstMask.float32Data
                 let copied = Array(UnsafeBufferPointer(start: srcPtr, count: count))
                 maskData = SegmentationMaskData(width: w, height: h, data: copied)

@@ -16,6 +16,18 @@ final class VisibilityAndExerciseInvariantTests: XCTestCase {
         XCTAssertEqual(result?.guidance, .bodyClipped(edges: [.top, .bottom, .left, .right]))
     }
 
+    func testFrameAnalyzerRejectsMalformedMaskDataWithoutCrashing() {
+        let mask = SegmentationMaskData(width: 10, height: 10, data: Array(repeating: Float(1), count: 20))
+        XCTAssertNil(FramePositionAnalyzer.analyze(mask))
+    }
+
+    func testFrameAnalyzerHandlesSinglePixelMaskWithoutInvalidCentroid() throws {
+        let mask = SegmentationMaskData(width: 1, height: 1, data: [1])
+        let result = try XCTUnwrap(FramePositionAnalyzer.analyze(mask))
+        XCTAssertTrue(result.centroid.x.isFinite)
+        XCTAssertTrue(result.centroid.y.isFinite)
+    }
+
     func testEveryExerciseTypeHasDefinition() {
         for type in ExerciseType.allCases {
             XCTAssertNotNil(type.definition, "\(type.rawValue) is missing an ExerciseLibrary definition")

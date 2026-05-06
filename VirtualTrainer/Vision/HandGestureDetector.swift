@@ -81,7 +81,7 @@ final class HandGestureDetector: NSObject, ObservableObject {
     private var isProcessingFrame = false
     private var activeFrameTimestampMs: Int?
     private let stateLock = NSLock()
-    private let minimumFrameIntervalMs = 125
+    private let minimumFrameIntervalMs = 90
     private let frameTimeoutSeconds: TimeInterval = 1.0
 
     private let logger = Logger(

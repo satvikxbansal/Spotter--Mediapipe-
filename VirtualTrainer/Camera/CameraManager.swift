@@ -42,19 +42,31 @@ final class CameraManager: NSObject, ObservableObject {
     private let videoOutput = AVCaptureVideoDataOutput()
     private let frameHandlerLock = NSLock()
     private var frameHandler: ((CMSampleBuffer) -> Void)?
+    private var isStartRequested = false
 
     // MARK: - Public API
 
     func start() {
+        sessionQueue.async { [weak self] in
+            self?.isStartRequested = true
+        }
         checkPermission { [weak self] granted in
-            guard let self, granted else { return }
-            self.sessionQueue.async { self.configureSession() }
+            guard let self else { return }
+            guard granted else {
+                DispatchQueue.main.async { self.isRunning = false }
+                return
+            }
+            self.sessionQueue.async {
+                guard self.isStartRequested else { return }
+                self.configureSession()
+            }
         }
     }
 
     func stop() {
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            self.isStartRequested = false
             self.session.stopRunning()
             DispatchQueue.main.async { self.isRunning = false }
         }
@@ -153,6 +165,11 @@ final class CameraManager: NSObject, ObservableObject {
     }
 
     private func startConfiguredSession() {
+        guard isStartRequested else {
+            DispatchQueue.main.async { self.isRunning = false }
+            return
+        }
+
         if !session.isRunning {
             session.startRunning()
         }
