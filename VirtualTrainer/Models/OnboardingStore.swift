@@ -217,17 +217,64 @@ final class OnboardingStore: ObservableObject {
         }
     }
 
-    func updatePreferredCoach(_ coach: CoachPreference) {
+    @discardableResult
+    func updatePrimaryGoal(_ goal: FitnessGoal) -> Bool {
         guard var profile else {
             persistenceError = "No profile exists yet."
-            return
+            return false
         }
 
-        guard profile.preferredCoach != coach else { return }
+        guard profile.primaryGoal != goal else { return true }
+
+        profile.primaryGoal = goal
+        profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
+        profile.updatedAt = Date()
+        return save(profile)
+    }
+
+    @discardableResult
+    func updatePreferredCoach(_ coach: CoachPreference) -> Bool {
+        guard var profile else {
+            persistenceError = "No profile exists yet."
+            return false
+        }
+
+        guard profile.preferredCoach != coach else { return true }
 
         profile.preferredCoach = coach
+        profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
         profile.updatedAt = Date()
-        save(profile)
+        return save(profile)
+    }
+
+    @discardableResult
+    func updateSelectedTheme(_ theme: SpotterThemeOption) -> Bool {
+        guard var profile else {
+            persistenceError = "No profile exists yet."
+            return false
+        }
+
+        guard profile.selectedTheme != theme else { return true }
+
+        profile.selectedTheme = theme
+        profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
+        profile.updatedAt = Date()
+        return save(profile)
+    }
+
+    @discardableResult
+    func updatePreferredSessionLength(_ sessionLength: PlanSessionLength) -> Bool {
+        guard var profile else {
+            persistenceError = "No profile exists yet."
+            return false
+        }
+
+        guard profile.preferredSessionLength != sessionLength else { return true }
+
+        profile.preferredSessionLength = sessionLength
+        profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
+        profile.updatedAt = Date()
+        return save(profile)
     }
 
     private var canCompleteProfile: Bool {
@@ -273,7 +320,8 @@ final class OnboardingStore: ObservableObject {
         }
     }
 
-    private func save(_ profile: UserProfile) {
+    @discardableResult
+    private func save(_ profile: UserProfile) -> Bool {
         do {
             try FileManager.default.createDirectory(
                 at: fileURL.deletingLastPathComponent(),
@@ -283,8 +331,10 @@ final class OnboardingStore: ObservableObject {
             try data.write(to: fileURL, options: [.atomic])
             self.profile = profile
             persistenceError = nil
+            return true
         } catch {
             persistenceError = "Could not save profile: \(error.localizedDescription)"
+            return false
         }
     }
 

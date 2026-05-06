@@ -103,6 +103,38 @@ enum Theme {
     }
 }
 
+extension SpotterThemeOption {
+    var accentColor: Color {
+        switch self {
+        case .hyper:
+            return Color(red: 0.78, green: 1.0, blue: 0.0)
+        case .hotGirl:
+            return Color(red: 1.0, green: 0.0, blue: 0.72)
+        case .warm:
+            return Color(red: 1.0, green: 0.69, blue: 0.0)
+        case .spicy:
+            return Color(red: 1.0, green: 0.36, blue: 0.0)
+        }
+    }
+
+    var secondaryAccentColor: Color {
+        switch self {
+        case .hyper:
+            return Color(red: 0.0, green: 0.82, blue: 1.0)
+        case .hotGirl:
+            return Color(red: 0.0, green: 1.0, blue: 0.92)
+        case .warm:
+            return Color(red: 0.49, green: 0.23, blue: 0.93)
+        case .spicy:
+            return Color(red: 0.0, green: 1.0, blue: 0.76)
+        }
+    }
+
+    var accentMutedColor: Color {
+        accentColor.opacity(0.20)
+    }
+}
+
 // ────────────────────────────────────────────────────────────────────
 // MARK: - Typography · View Modifiers
 // ────────────────────────────────────────────────────────────────────

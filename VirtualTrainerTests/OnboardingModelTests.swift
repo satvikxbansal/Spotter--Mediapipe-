@@ -123,6 +123,120 @@ final class OnboardingModelTests: XCTestCase {
         }
     }
 
+    func testChangingGoalUpdatesProfileAndNextGeneratedPlan() async {
+        await MainActor.run {
+            let store = OnboardingStore(fileURL: temporaryProfileURL())
+            store.draft = validDraft()
+            store.completeOnboarding()
+
+            store.updatePrimaryGoal(.longevity)
+
+            guard let profile = store.profile else {
+                XCTFail("Expected completed profile")
+                return
+            }
+            let plan = PlanService().generateDailyPlan(profile: profile)
+            XCTAssertEqual(profile.primaryGoal, .longevity)
+            XCTAssertEqual(plan.title, "25-Minute Longevity")
+        }
+    }
+
+    func testChangingCoachUpdatesProfileAndNextGeneratedPlan() async {
+        await MainActor.run {
+            let store = OnboardingStore(fileURL: temporaryProfileURL())
+            store.draft = validDraft()
+            store.completeOnboarding()
+
+            store.updatePreferredCoach(.fletcher)
+
+            guard let profile = store.profile else {
+                XCTFail("Expected completed profile")
+                return
+            }
+            let plan = PlanService().generateDailyPlan(profile: profile)
+            XCTAssertEqual(profile.preferredCoach, .fletcher)
+            XCTAssertEqual(plan.coach, .drill)
+        }
+    }
+
+    func testChangingThemeUpdatesProfileAndThemeStore() async {
+        await MainActor.run {
+            let profileURL = temporaryProfileURL()
+            let themeURL = temporaryThemeURL()
+            let store = OnboardingStore(fileURL: profileURL)
+            let themeStore = ThemeStore(fileURL: themeURL)
+            store.draft = validDraft()
+            store.completeOnboarding()
+
+            store.updateSelectedTheme(.hotGirl)
+            themeStore.updateSelectedTheme(.hotGirl)
+
+            let reloadedProfileStore = OnboardingStore(fileURL: profileURL)
+            let reloadedThemeStore = ThemeStore(fileURL: themeURL)
+            XCTAssertEqual(reloadedProfileStore.profile?.selectedTheme, .hotGirl)
+            XCTAssertEqual(reloadedThemeStore.selectedTheme, .hotGirl)
+        }
+    }
+
+    func testThemeStoreSyncsWithProfileTheme() async {
+        await MainActor.run {
+            let store = OnboardingStore(fileURL: temporaryProfileURL())
+            let themeStore = ThemeStore(fileURL: temporaryThemeURL(), defaultTheme: .spicy)
+            store.draft = validDraft()
+            store.completeOnboarding()
+            store.updateSelectedTheme(.warm)
+
+            themeStore.sync(with: store.profile)
+
+            XCTAssertEqual(themeStore.selectedTheme, .warm)
+        }
+    }
+
+    func testThemeStorePersistsProfileThemeEvenWhenItMatchesDefault() async {
+        await MainActor.run {
+            let url = temporaryThemeURL()
+            let store = OnboardingStore(fileURL: temporaryProfileURL())
+            let themeStore = ThemeStore(fileURL: url, defaultTheme: .hyper)
+            store.draft = validDraft()
+            store.completeOnboarding()
+
+            XCTAssertTrue(themeStore.sync(with: store.profile))
+
+            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+            XCTAssertEqual(ThemeStore(fileURL: url).selectedTheme, .hyper)
+        }
+    }
+
+    func testFailedThemeProfileUpdateDoesNotMutateInMemoryProfile() async throws {
+        try await MainActor.run {
+            let url = temporaryProfileURL()
+            let store = OnboardingStore(fileURL: url)
+            store.draft = validDraft()
+            store.completeOnboarding()
+            XCTAssertEqual(store.profile?.selectedTheme, .hyper)
+
+            let parentURL = url.deletingLastPathComponent()
+            try FileManager.default.removeItem(at: parentURL)
+            try Data().write(to: parentURL)
+
+            XCTAssertFalse(store.updateSelectedTheme(.spicy))
+            XCTAssertEqual(store.profile?.selectedTheme, .hyper)
+            XCTAssertNotNil(store.persistenceError)
+        }
+    }
+
+    func testChangingPreferredSessionLengthUpdatesProfile() async {
+        await MainActor.run {
+            let store = OnboardingStore(fileURL: temporaryProfileURL())
+            store.draft = validDraft()
+            store.completeOnboarding()
+
+            store.updatePreferredSessionLength(.thirtyFive)
+
+            XCTAssertEqual(store.profile?.preferredSessionLength, .thirtyFive)
+        }
+    }
+
     func testFreeAnalysisContextIsOpenTarget() {
         let context = LiveSessionContext.freeAnalysis(exerciseType: .pushup, coach: .good)
 
@@ -168,6 +282,12 @@ final class OnboardingModelTests: XCTestCase {
         FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathComponent("UserProfile.json")
+    }
+
+    private func temporaryThemeURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("Theme.json")
     }
 
     private func validDraft() -> OnboardingDraft {
