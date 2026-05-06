@@ -21,6 +21,8 @@ struct TrainerSessionView: View {
     private let context: LiveSessionContext
     private let workoutSessionContext: WorkoutSessionContext?
     private let onFreeAnalysisEnded: ((FreeAnalysisSummary) -> Void)?
+    private let onCalibrationCompleted: ((CalibrationRecord) -> Void)?
+    private let onCalibrationFailed: ((CalibrationRecord) -> Void)?
     private let onPlannedSetCompleted: ((PlannedWorkoutSetSummary) -> Void)?
     private let onPlannedSessionCancelled: (() -> Void)?
 
@@ -51,6 +53,8 @@ struct TrainerSessionView: View {
     @State private var currentEffortScore: Double = 0
     @State private var peakEffort: Double = 0
     @State private var didCompletePlannedSet = false
+    @State private var didCompleteCalibration = false
+    @State private var hasPassedVisibility = false
     @State private var visibilityResult = BodyVisibilityChecker.Result(
         isReady: false,
         visibility: 0,
@@ -67,6 +71,8 @@ struct TrainerSessionView: View {
         )
         self.workoutSessionContext = nil
         self.onFreeAnalysisEnded = nil
+        self.onCalibrationCompleted = nil
+        self.onCalibrationFailed = nil
         self.onPlannedSetCompleted = nil
         self.onPlannedSessionCancelled = nil
     }
@@ -78,6 +84,22 @@ struct TrainerSessionView: View {
         self.context = context
         self.workoutSessionContext = nil
         self.onFreeAnalysisEnded = onFreeAnalysisEnded
+        self.onCalibrationCompleted = nil
+        self.onCalibrationFailed = nil
+        self.onPlannedSetCompleted = nil
+        self.onPlannedSessionCancelled = nil
+    }
+
+    init(
+        calibrationContext context: LiveSessionContext,
+        onCalibrationCompleted: ((CalibrationRecord) -> Void)? = nil,
+        onCalibrationFailed: ((CalibrationRecord) -> Void)? = nil
+    ) {
+        self.context = context
+        self.workoutSessionContext = nil
+        self.onFreeAnalysisEnded = nil
+        self.onCalibrationCompleted = onCalibrationCompleted
+        self.onCalibrationFailed = onCalibrationFailed
         self.onPlannedSetCompleted = nil
         self.onPlannedSessionCancelled = nil
     }
@@ -90,6 +112,8 @@ struct TrainerSessionView: View {
         self.context = context.liveSessionContext
         self.workoutSessionContext = context
         self.onFreeAnalysisEnded = nil
+        self.onCalibrationCompleted = nil
+        self.onCalibrationFailed = nil
         self.onPlannedSetCompleted = onPlannedSetCompleted
         self.onPlannedSessionCancelled = onPlannedSessionCancelled
     }
@@ -150,6 +174,8 @@ struct TrainerSessionView: View {
             elapsedSeconds = 0
             currentEffortScore = 0
             peakEffort = 0
+            didCompleteCalibration = false
+            hasPassedVisibility = context.startsActive
             motivationScale = 0.3
             cueHistory = []
             cueEventHistory = []
@@ -207,6 +233,9 @@ struct TrainerSessionView: View {
                 for: exerciseType,
                 personality: coachPersonality
             )
+            if visibilityResult.isReady {
+                hasPassedVisibility = true
+            }
 
             // Feed visibility into ready coordinator
             if visibilityResult.isReady {
@@ -292,6 +321,7 @@ struct TrainerSessionView: View {
             }
 
             completePlannedSetIfTargetMet()
+            completeCalibrationIfTargetMet()
         }
         .onChange(of: handGesture.currentGesture) {
             readyCoordinator.handleGesture(handGesture.currentGesture)
@@ -526,6 +556,9 @@ struct TrainerSessionView: View {
                     if context.isFreeAnalysis {
                         endFreeAnalysisButton
                     }
+                    if context.isCalibration {
+                        cancelCalibrationButton
+                    }
                     if onPlannedSessionCancelled != nil {
                         cancelPlannedSessionButton
                     }
@@ -629,12 +662,18 @@ struct TrainerSessionView: View {
     }
 
     private var sessionEyebrow: String {
-        context.isFreeAnalysis ? "Free analysis" : context.title
+        if context.isFreeAnalysis { return "Free analysis" }
+        if context.isCalibration { return "Calibration" }
+        return context.title
     }
 
     private var sessionDetailText: String? {
         if context.isFreeAnalysis {
             return "Open practice"
+        }
+
+        if context.isCalibration {
+            return "\(calibrationTargetReps) air squats • Camera check"
         }
 
         if let workoutSessionContext {
@@ -679,7 +718,7 @@ struct TrainerSessionView: View {
     }
 
     private var shouldShowElapsedTimeBadge: Bool {
-        if context.isFreeAnalysis { return true }
+        if context.isFreeAnalysis || context.isCalibration { return true }
 
         guard let target = workoutSessionContext?.target else { return false }
         switch target {
@@ -703,6 +742,20 @@ struct TrainerSessionView: View {
                 .background(Theme.Colors.accent)
                 .clipShape(Capsule())
         }
+    }
+
+    private var cancelCalibrationButton: some View {
+        Button {
+            failCalibration(notes: "Calibration was cancelled before the target reps were completed.")
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 12, weight: .black))
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .frame(width: 32, height: 32)
+                .background(Color.black.opacity(0.58))
+                .clipShape(Circle())
+        }
+        .accessibilityLabel("Cancel calibration")
     }
 
     private var cancelPlannedSessionButton: some View {
@@ -1099,6 +1152,76 @@ struct TrainerSessionView: View {
         )
         stopLivePipelines()
         onFreeAnalysisEnded?(summary)
+        dismiss()
+    }
+
+    private func completeCalibrationIfTargetMet() {
+        guard context.isCalibration,
+              readyCoordinator.state == .exerciseActive,
+              calibrationTargetReps > 0,
+              repCount >= calibrationTargetReps
+        else { return }
+
+        completeCalibration()
+    }
+
+    private var calibrationTargetReps: Int {
+        guard case .reps(let reps) = context.target else {
+            return CalibrationDefaults.targetReps
+        }
+        return max(reps, 0)
+    }
+
+    private func completeCalibration() {
+        guard context.isCalibration, !didCompleteCalibration else { return }
+
+        didCompleteCalibration = true
+        let endedAt = Date()
+        let startedAt = sessionStartedAt ?? endedAt.addingTimeInterval(-elapsedSeconds)
+        let qualitySummary = SetQualitySummary.build(
+            repQualityEvents: repQualityEvents,
+            cueEvents: cueEventHistory
+        )
+        let record = CalibrationRecord.completed(
+            exerciseType: exerciseType,
+            targetReps: calibrationTargetReps,
+            completedReps: repCount,
+            startedAt: startedAt,
+            completedAt: endedAt,
+            visibilityPassed: hasPassedVisibility,
+            averageFormScore: qualitySummary.averageFormScore ?? lastFormScore.map { Double($0.score) }
+        )
+
+        stopLivePipelines()
+        HapticsEngine.shared.successRipple()
+        onCalibrationCompleted?(record)
+        dismiss()
+    }
+
+    private func failCalibration(notes: String) {
+        guard context.isCalibration, !didCompleteCalibration else { return }
+
+        didCompleteCalibration = true
+        let endedAt = Date()
+        let startedAt = sessionStartedAt ?? endedAt.addingTimeInterval(-elapsedSeconds)
+        let qualitySummary = SetQualitySummary.build(
+            repQualityEvents: repQualityEvents,
+            cueEvents: cueEventHistory
+        )
+        let record = CalibrationRecord.failed(
+            exerciseType: exerciseType,
+            targetReps: calibrationTargetReps,
+            completedReps: repCount,
+            startedAt: startedAt,
+            completedAt: endedAt,
+            visibilityPassed: hasPassedVisibility,
+            averageFormScore: qualitySummary.averageFormScore ?? lastFormScore.map { Double($0.score) },
+            notes: notes
+        )
+
+        stopLivePipelines()
+        HapticsEngine.shared.warningPulse()
+        onCalibrationFailed?(record)
         dismiss()
     }
 
