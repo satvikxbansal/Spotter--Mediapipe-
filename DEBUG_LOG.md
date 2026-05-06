@@ -690,3 +690,25 @@ Added an early guard for `count > 0`, clearing `repPhrases` and returning before
 Any range built from user, plan, or target counts must guard the lower/upper bounds before constructing a closed range. Prefer empty collections for zero-work cases.
 
 **Pattern Tags:** #crash-prevention #voice-coach #range #planned-workout
+
+---
+
+### [DL-032] Bridge 10.5E Foundation Audit
+**Date:** 2026-05-06
+**Severity:** warning
+**Category:** audit
+**File(s):** `README.md`, `VirtualTrainer/Camera/CameraManager.swift`, `VirtualTrainer/Services/ElevenLabsService.swift`, `VirtualTrainer.xcodeproj/project.pbxproj`
+
+**Error:**
+The docs still described Phase 9 coordinator/rest/history work as upcoming, the camera privacy copy did not explicitly state the no-storage/no-upload boundary, and the camera frame handler could be cleared from SwiftUI lifecycle code while the capture queue was still delivering late frames.
+
+**Root Cause:**
+Phase 9/10/10.5 implementation moved faster than the README, and the camera manager exposed its frame callback as a plain mutable closure shared between the main lifecycle path and the video-output queue.
+
+**Fix Applied:**
+Updated the README to reflect planned sessions, rest, summaries/history, calibration, Quick Start deck cycling, deferred plan-detail swapping, current Phase 11/13/14 direction, and the local privacy/storage boundary. Hardened the generated camera permission string, added a backend-secrets note to the dormant ElevenLabs client, and made `CameraManager` frame-handler access lock-protected. Re-ran secret/privacy scans, `xcodebuild test`, and `xcodebuild build` on the iPhone 17 simulator.
+
+**Prevention Rule:**
+After each bridge, docs should be checked against the actual current user flow, and camera lifecycle state shared across capture queues should be synchronized before adding more planned-workout or insight surfaces.
+
+**Pattern Tags:** #audit #privacy #docs #camera #crash-prevention
