@@ -1,67 +1,129 @@
 # Spotter
 
-Spotter is an iPhone fitness coach that watches your movement, understands the exercise, counts the work, and gives form feedback while you train.
+Spotter is an iPhone fitness coach that watches you train, counts your work, checks your form, and uses that evidence to decide what should happen next.
 
-The app is being built around one promise:
+The promise of the app is simple:
 
 ```text
 Do not just count reps. Understand the session.
 ```
 
-That means Spotter should know what the user is trying to do, what the camera can see, whether the rep was clean, when form starts breaking down, what kind of workout makes sense next, and how to explain all of that in simple language.
+That means Spotter should know what exercise you are doing, what the camera can see, whether the rep was clean, where form started to break, how hard the session felt, what you have done recently, and what workout makes sense next.
 
-This repository is the SwiftUI + MediaPipe version of Spotter. It has moved beyond the original camera demo and is now a local-first training product with onboarding, calibration, free camera analysis, Quick Start plans, generated plans, editable workout previews, planned workout sessions, rest flow, workout summaries, and local history.
+This repo is the SwiftUI and MediaPipe version of Spotter. It has grown from a camera demo into a local-first training product with onboarding, calibration, live form analysis, generated plans, editable workout previews, planned workout sessions, rest flow, workout summaries, history, trophies, profile stats, trends, and evidence-backed coach insights.
+
+## The Short Version
+
+Spotter can currently:
+
+- Run a SwiftUI iOS app with onboarding, calibration, dashboard, camera, trophies, and profile tabs.
+- Track 47 home-friendly exercises across upper body, lower body, full body, core, yoga, and mobility.
+- Use MediaPipe Pose Landmarker for 2D and 3D body landmarks.
+- Use MediaPipe hand and gesture models for simple workout gestures.
+- Use MediaPipe face landmarks as an optional effort signal when the face model is available.
+- Count reps and holds with a universal, data-driven rep counter.
+- Score form using exercise-specific rules.
+- Give real-time cues, haptics, local voice coaching, and motivation.
+- Generate local workout plans from profile, goal, level, age, equipment, limitations, history, and session length.
+- Offer a 7-minute Quick Start deck with several safe variants that can be cycled from the dashboard.
+- Offer Daily Plans using the user's preferred session length.
+- Let the user preview a plan, choose a coach, adjust sets and targets, and start a planned session.
+- Run planned workouts through the same live camera engine used by free analysis.
+- Save workout summaries with rep-level and set-level evidence.
+- Compute trophies, XP, streaks, profile stats, trend snapshots, training signals, and coach insights locally.
+- Keep raw camera frames, raw video, raw face images, and raw pose streams out of persistent storage.
+
+The product is still not finished. The next big work is backend abstraction, optional Firebase sync, the final design-system revamp, beta hardening, and a careful Running Analysis research phase.
+
+## Why Spotter Exists
+
+Most fitness apps ask you to follow a video or log a workout by hand.
+
+Spotter is different because the camera is part of the coaching loop.
+
+It should be able to say:
+
+```text
+I saw the rep.
+I understood the form.
+I know what changed.
+I know what we should do next.
+```
+
+That is the heart of the app. The "AI" is not meant to be a random chatbot sitting beside a workout app. The goal is a coach that observes training and turns observation into better feedback, better plans, and better progress.
 
 ## Current Product State
 
-The latest code includes:
+The app now has two first-class training flows.
 
-- A SwiftUI iOS app shell with local onboarding and calibration.
-- A 47-exercise tracking library.
-- MediaPipe pose detection with 2D and 3D body landmarks.
-- A live camera trainer with skeleton overlay, rep counting, form scoring, cues, haptics, voice, motivation, hand gestures, and optional face/exertion analysis.
-- A first-class Camera tab for free exercise analysis.
-- Exercise metadata for planning, equipment rules, movement patterns, safety tags, default rest, and targets.
-- Workout Plan V2 models that support reps, holds, timed work, AMRAP, and open mode.
-- A deterministic local plan generator.
-- Quick Start deck, Smart Start, and Daily Plan generation from the user's profile.
-- Dashboard V0 with generated plan cards, deck cycling, quick actions, trophy teaser, recent history, and running-analysis placeholder.
-- Workout Preview V0 with coach selection, save-as-default coach, target/set editing, camera-switch visibility, plan insight placeholder, and Start Session.
-- Planned workout sessions that run each planned set through the existing live trainer, then advance through rest, up-next, completion, summary, and local history.
-- Live session HUD updates that make the active exercise name and target visible in camera view.
-- Camera pipeline stability guards for pose, hand, and face processing so stale frames do not hang the app.
-- Unit tests for onboarding, calibration, exercise metadata, plan generation, dashboard content, Quick Start cycling, workout preview, target editing, workout plan V2, planned coordination, history/evidence, angle math, form feedback, and rep counting.
+### 1. Free Analysis
 
-Some screens are intentionally raw. The goal right now is to make the product logic real before spending too much time polishing UI.
+Free Analysis is the open camera mode.
 
-## What Makes Spotter Different
+Use it when the user wants to quickly check one movement:
 
-Most fitness apps ask the user to follow a video or manually log a workout.
+- "Check my squat form."
+- "Count a set of curls."
+- "Let me practice push-ups without starting a full plan."
 
-Spotter is different because the camera is part of the workout loop.
+Flow:
 
-It can:
+```text
+Camera tab
+-> choose an exercise
+-> pass camera readiness
+-> train
+-> tap Done
+-> see and save a lightweight summary
+```
 
-- See whether the user's body is visible enough to track.
-- Adapt the session to front-view or side-view exercises.
-- Count reps from actual movement.
-- Score form from exercise-specific biomechanical rules.
-- Give cues when knees, hips, shoulders, spine, tempo, or range of motion drift.
-- Use hand gestures during readiness and live sessions.
-- Use facial blendshapes as an optional effort signal when the face model is present.
-- Generate plans that respect goal, level, age, equipment, impact, and camera friction.
+Free Analysis uses the full live trainer stack:
 
-The long-term goal is not "AI as a chatbot." The goal is an app that observes training and turns that observation into better decisions.
+- Camera preview
+- Pose detection
+- Skeleton overlay
+- Hand landmarks
+- Gesture recognition
+- Universal rep counter
+- Form feedback engine
+- Haptics
+- Local voice coaching
+- Motivation engine
+- Body visibility checks
+- Optional face/exertion analysis
+- Rep-quality evidence
+- Summary save into local history
 
-## Main User Flows
+### 2. Planned Workouts
 
-### 1. Onboarding
+Planned Workouts are generated from the user's profile and training history.
 
-The app starts with onboarding when no local profile exists.
+Flow:
 
-The onboarding flow collects:
+```text
+Dashboard
+-> Quick Start or Daily Plan
+-> Workout Preview
+-> adjust coach, sets, or targets
+-> Start Session
+-> live camera set
+-> rest screen
+-> next set
+-> workout summary
+-> local history, trophies, stats, trends, and insights update
+```
 
-- Display name
+The important engineering choice is that planned workouts do not have a second pose engine. They reuse the same live camera analysis stack as Free Analysis.
+
+## Main App Screens
+
+### Onboarding
+
+Onboarding creates a local profile.
+
+It collects:
+
+- Name
 - Gender identity
 - Age
 - Height and weight
@@ -69,387 +131,366 @@ The onboarding flow collects:
 - Primary goal
 - Fitness level
 - Available equipment
+- Physical limitations
+- Preferred session length
+- Workout days per week
+- Reminder preference
 - Preferred coach
 - Theme choice
 
 The three goals are:
 
-- Strength: muscle, control, and progressive reps.
-- Performance: stamina, athleticism, pace, and circuit capacity.
-- Longevity: mobility, balance, and joint-friendly consistency.
+- Strength: build muscle, control, and progressive reps.
+- Performance: build stamina, athleticism, and circuit capacity.
+- Longevity: build mobility, balance, joint-friendly strength, and consistency.
 
-Gender is stored for the profile, but it does not drive exercise selection in the current version. Age is used through age-aware planning rules.
+Profile data is stored locally under app support storage in the `Spotter` folder. Existing profile JSON is decoded with defaults so older local users do not lose their profile when new fields are added.
 
-The profile is saved locally at app support storage under `Spotter/UserProfile.json`.
+### Calibration
 
-### 2. Dashboard
+After onboarding, Spotter can show a lightweight calibration gate.
 
-After onboarding, the user lands on the dashboard.
+The default calibration asks the user to complete 3 squats. This verifies that the camera can see the body and that the basic tracking loop works in the user's space.
 
-Dashboard V0 currently shows:
+Calibration can be completed, skipped, failed, and reset in debug tools. The result is stored locally and can unlock the Calibrated trophy.
 
-- Time-based greeting.
-- Athlete name.
-- Current streak from saved workout history.
-- Quick Start deck card with five locally generated 7-minute variants and cycling.
-- Smart Start summary for the selected Quick Start deck plan.
-- Daily Plan card.
-- Quick actions.
-- Trophy teaser.
-- Recent workout card when history is available.
+### Dashboard
 
-Quick Start and Smart Start are 7-minute generated plans. Daily Plan uses the user's preferred session length, with 25 minutes as the default. All plans are created locally through `PlanService`, `QuickStartPlanDeckService`, and `PlanGenerator`.
+The dashboard is the training home.
 
-The quick actions are:
+It shows:
 
-- Form Check: enabled and routes into free camera analysis.
-- Running Analysis: visible but disabled as Coming Soon.
-- Trophies: currently a teaser screen.
+- Time-based greeting
+- Athlete name
+- Current streak from real local workout history
+- Quick Start plan deck
+- Daily Plan
+- Coach Insight card when evidence exists
+- Quick actions
+- Trophy teaser
+- Recent workout card
 
-### 3. Free Analysis
+Quick actions:
 
-The Camera tab is the open-ended training flow.
+- Form Check: opens Free Analysis exercise selection.
+- Running Analysis: visible as Coming Soon.
+- Trophies: opens the trophy area.
 
-User flow:
+### Quick Start
 
-```text
-Camera tab
--> choose an exercise
--> pass camera readiness
--> start free analysis
--> train until Done
--> see a lightweight summary
-```
+Quick Start is a 7-minute plan deck.
 
-This flow has no plan, target, rest screen, or set structure. It is for moments like:
+The deck can contain up to 5 variants. It is generated locally and seeded by profile, goal, day, and deck version. This makes it feel fresh while keeping tests stable.
 
-- "Check my push-up form."
-- "Count squats for a quick set."
-- "Let me practice one exercise without starting a whole workout."
+Quick Start respects:
 
-Free Analysis still uses the real trainer stack:
-
-- Camera preview
-- Pose estimator
-- Skeleton overlay
-- Hand landmarks
-- Universal rep counter
-- Form feedback engine
-- Haptics
-- Voice coach
-- Motivation engine
-- Body visibility banner
-- Effort tracking when face landmarks are available
-
-### 4. Generated Plans
-
-Spotter now generates local plans from user profile data.
-
-Inputs include:
-
-- User profile
-- Fitness goal
-- Fitness level
-- Age bracket
 - Equipment
-- Session length
-- Preferred coach
-- Recent workout history from local summaries
-- Excluded exercises
+- Age rules
+- Physical limitations
+- Fitness level
+- Camera-switch limits
+- Recent workout history
 
-Supported session lengths:
+The dashboard can cycle through the deck. This gives the app energy without exposing exercise-level swapping inside plan details too early.
 
-- 7 minutes
+### Daily Plan
+
+Daily Plan uses the user's preferred session length:
+
 - 15 minutes
 - 25 minutes
 - 35 minutes
 
-The generator filters exercises first, then scores them.
+The plan generator can also make 7-minute plans for Quick Start.
 
-It filters by:
+The generator filters exercises first, then scores them. It avoids unsafe or unavailable choices before it tries to make the workout interesting.
 
-- Planned-workout support
-- Required equipment
-- Difficulty
-- Beginner friendliness
+It considers:
+
+- Goal
+- Fitness level
+- Age bracket
+- Equipment
+- Physical limitations
+- Session length
+- Preferred coach
+- Recent workout history
 - Excluded exercises
-- Dumbbell availability
-
-It scores by:
-
-- Goal match
-- Preferred movement tags
-- Impact level
-- Age policy
-- Bodyweight-first rules
-- Balance and mobility bias
-- Recent exercise repetition
-- Dumbbell strength preference for intermediate users
+- Camera setup friction
 
 It also limits camera switching:
 
-- 7-minute plans: no camera switch
-- 15-minute plans: up to one switch
-- 25-minute plans: up to two switches
-- 35-minute plans: up to two switches
+- 7-minute plans: 0 switches
+- 15-minute plans: up to 1 switch
+- 25-minute plans: up to 2 switches
+- 35-minute plans: up to 2 switches
 
-This matters because a technically correct plan can still feel bad if the user has to keep moving the phone.
+This matters because a plan can be correct on paper and still feel bad if the user has to move the phone every two minutes.
 
-### 5. Workout Preview
+### Workout Preview
 
-Generated plans can be previewed and edited from the dashboard.
+Workout Preview is the bridge between "the app generated a plan" and "the user is ready to train."
 
-The current preview shows:
+It shows:
 
 - Plan title
-- Subtitle
+- Goal
 - Duration
 - Difficulty
 - Coach
-- Why this plan was generated
+- Exercise count
+- Plan insight
+- Camera setup sequence
 - Blocks
 - Exercises
-- Coaching focus
 - Sets and targets
-- Camera orientation
 - Rest timing
-- Camera-switch count and sequence
-- Plan insight placeholder
+- Coaching focus
 
-The preview is now interactive:
+The user can:
 
 - Pick Coach Bennett or Coach Fletcher for this plan.
-- Save the selected coach as the user's new default.
-- Edit target volume and set count for supported rep, hold, timed, and AMRAP targets.
-- Reset edited targets back to the generated plan.
+- Save the selected coach as the profile default.
+- Adjust set count.
+- Adjust rep targets.
+- Adjust hold or timed targets when supported.
+- Reset an exercise back to the generated plan.
 - Start the planned session.
 
-Plan-detail exercise swapping is currently hidden/deferred in the UI. `PlanSwapService` remains in the codebase as a guarded foundation for later safe swaps, where replacements must preserve equipment, difficulty, movement pattern, target style, and camera-switch constraints.
+Exercise swapping is intentionally hidden for now. `PlanSwapService` still exists as a foundation, but the current product keeps plan details focused on volume editing.
 
-Starting a plan opens the planned workout coordinator. Each set is run inside the existing live trainer, then the app moves through rest, up-next, completion, summary, and local history save.
+### Live Trainer
 
-## Built So Far By Phase
+The live trainer owns the camera workout experience.
 
-### Phase 1 and 2: App Shell, Onboarding, Profile
+It uses:
 
-Built:
+- `CameraManager` for `AVCaptureSession`
+- `PoseEstimator` for MediaPipe pose landmarks
+- `HandGestureDetector` for gestures
+- `FaceLandmarkerService` for optional face blendshapes
+- `BodyVisibilityChecker` for required joints
+- `FramePositionAnalyzer` for body framing from segmentation masks
+- `AngleCalculator` for 2D and 3D biomechanics
+- `UniversalRepCounter` for reps and holds
+- `FormFeedbackEngine` for cues
+- `ExertionAnalyzer` for effort proxy
+- `MotivationEngine` for coach copy
+- `VoiceCoachManager` for local spoken rep counts and cues
+- `HapticsEngine` for touch feedback
+- `WorkoutReadyCoordinator` for readiness and countdown
 
-- Onboarding gate in `VirtualTrainerApp`.
-- `OnboardingStore`.
-- `UserProfile`.
-- `OnboardingDraft`.
-- Profile validation.
-- Local JSON persistence.
-- Main tab shell.
-- Debug profile view with reset.
+Recent camera and biomechanics fixes include:
 
-Important files:
+- One-frame-at-a-time processing guards for pose, hand, and face work.
+- Frame timeout cleanup so stale results do not freeze the session.
+- MediaPipe sample timestamps from `CMSampleBuffer` presentation time.
+- Smoothed overlay landmarks separate from raw landmarks used for rep counting.
+- Aspect-fill coordinate mapping so the skeleton lines up with the camera preview.
+- Visibility-aware side selection for `.bestAvailable` angles.
+- 3D paths for knee-valgus approximation and signed body-line checks, with 2D fallback.
+- Lock-protected camera frame handler access.
 
-- `VirtualTrainer/VirtualTrainerApp.swift`
-- `VirtualTrainer/Models/UserProfile.swift`
-- `VirtualTrainer/Models/OnboardingStore.swift`
-- `VirtualTrainer/UI/OnboardingViews.swift`
-- `VirtualTrainer/UI/MainTabView.swift`
+### Rest Screen
 
-### Phase 3: Camera Tab Free Analysis
+Planned workouts move through rest between sets.
 
-Built:
+The rest screen supports:
 
-- `CameraTabView`.
-- Exercise selection by category.
-- Searchable form-check list.
-- Camera readiness screen.
-- `LiveSessionContext`.
-- Free-analysis mode in `TrainerSessionView`.
-- Lightweight free-analysis summary sheet.
-
-Important files:
-
-- `VirtualTrainer/UI/CameraTabView.swift`
-- `VirtualTrainer/Models/LiveSessionContext.swift`
-- `VirtualTrainer/UI/TrainerSessionView.swift`
-- `VirtualTrainer/Coaching/WorkoutReadyCoordinator.swift`
-
-### Phase 4: Exercise Planning Metadata
-
-Built:
-
-- `ExercisePlanMetadata`.
-- `ExerciseMetadataCatalog`.
-- Planning metadata for every supported exercise.
-- Coverage tests that every `ExerciseType` has metadata and maps back to `ExerciseLibrary`.
-
-Important files:
-
-- `VirtualTrainer/Models/ExercisePlanMetadata.swift`
-- `VirtualTrainer/Models/ExerciseMetadataCatalog.swift`
-- `VirtualTrainerTests/ExerciseMetadataCatalogTests.swift`
-
-### Phase 5: Workout Plan V2
-
-Built:
-
-- `WorkoutTarget`
-- `WorkoutPlanV2`
-- `WorkoutBlock`
-- `PlannedExercise`
-- `PlannedSet`
-- `PlanSource`
-- Legacy plan conversion helpers
-- Target formatting
-- Codable roundtrip tests
-
-The old `WorkoutPlan` and `WorkoutSet` still exist for compatibility while the planned workout flow is being migrated.
-
-Important files:
-
-- `VirtualTrainer/Models/WorkoutData.swift`
-- `VirtualTrainerTests/WorkoutPlanV2Tests.swift`
-
-### Phase 6: Local Plan Generation
-
-Built:
-
-- `PlanGenerationInput`
-- `PlanSessionLength`
-- `PlanGenerationRules`
-- `PlanGenerator`
-- `PlanService`
-- `PlanSwapService`
-- Deterministic templates for Strength, Performance, and Longevity
-- Age-aware intensity/rest rules
-- Equipment-safe filtering
-- Camera-switch limits
-- Deterministic swap logic foundation
-- Plan generation tests
-
-Important files:
-
-- `VirtualTrainer/Models/PlanGenerationInput.swift`
-- `VirtualTrainer/Models/PlanGenerationRules.swift`
-- `VirtualTrainer/Services/PlanGenerator.swift`
-- `VirtualTrainer/Services/PlanService.swift`
-- `VirtualTrainer/Services/PlanSwapService.swift`
-- `VirtualTrainerTests/PlanGeneratorTests.swift`
-
-### Phase 7: Dashboard V0
-
-Built:
-
-- `DashboardContentFactory`
-- Quick Start deck generation and cycle state
-- Smart Start plan card
-- Daily Plan card
-- Quick actions
-- Running Analysis coming-soon placeholder
-- Trophy teaser
-- Recent workout and streak from local history when available
-- Dashboard route into generated plan preview
-- Dashboard tests
-
-Important files:
-
-- `VirtualTrainer/Models/DashboardData.swift`
-- `VirtualTrainer/Services/QuickStartPlanDeckService.swift`
-- `VirtualTrainer/UI/HomeDashboardView.swift`
-- `VirtualTrainer/UI/WorkoutPreviewView.swift`
-- `VirtualTrainerTests/DashboardContentTests.swift`
-
-### Phase 8: Workout Preview V0
-
-Built:
-
-- `WorkoutPreviewState`
-- Coach selection for a generated plan
-- Save selected coach as the profile default
-- Target volume and set-count editing
-- Reset edited targets back to generated values
-- Plan insight placeholder
-- Camera setup card with switch count and sequence
-- Start Session button
-- Workout Plan V2 to `LiveSessionContext` bridge
-- Active exercise name and target in the live camera HUD
-- Preview tests for rendering, coach changes, profile coach persistence, target editing, and planned-session context creation
-
-Exercise swapping is hidden/deferred in the UI. The swap service remains as a later-phase foundation, but the current user-facing plan-detail path is target adjustment.
-
-Important files:
-
-- `VirtualTrainer/Models/WorkoutPreviewState.swift`
-- `VirtualTrainer/Models/LiveSessionContext.swift`
-- `VirtualTrainer/Services/PlanTargetEditService.swift`
-- `VirtualTrainer/UI/WorkoutPreviewView.swift`
-- `VirtualTrainer/UI/TargetVolumeEditSheetView.swift`
-- `VirtualTrainer/UI/TrainerSessionView.swift`
-- `VirtualTrainerTests/WorkoutPreviewTests.swift`
-
-### Phase 9 and 10: Planned Sessions, Rest, Summary, History
-
-Built:
-
-- `PlannedWorkoutCoordinator`
-- Planned set lifecycle through the existing live trainer
-- Rest screen with skip and add-time controls
+- Countdown
+- Skip rest
+- Add time
 - Up-next exercise state
-- Workout completion state
-- Workout summary view
+- Rest outcome capture
+
+Rest behavior is saved into the workout summary and can later power fatigue, plan-fit, and insight logic.
+
+### Workout Summary And History
+
+When a workout ends, Spotter builds a local summary.
+
+Summaries store derived evidence such as:
+
+- Workout mode
+- Plan title
+- Started and ended time
+- Duration
+- Total reps
+- Total hold seconds
+- Average form score
+- Completion percent
+- Set summaries
+- Cue events
+- Rep-quality events
+- Good-form reps
+- Excellent-form reps
+- High-severity cue count
+- Rest extensions
+- Skipped sets
+- Structured effort summary
+- Workout outcome
+
+Spotter does not store raw camera frames, raw video, raw face images, raw pose streams, or raw biometric face data by default.
+
+### Trophies
+
+The trophy system is deterministic and local.
+
+It includes:
+
+- Trophy definitions
+- Trophy progress
+- Trophy unlock events
+- Trophy store
+- Trophy engine
+- Trophy collection screen
+- Dashboard trophy teaser
+- Workout-summary trophy feedback
+
+Trophy categories include:
+
+- Starter
+- Consistency
+- Form
+- Volume
+- Muscle group
+- Goal
+- Calibration
+- Time of day
+- Elite
+- Coming Soon
+
+The system is honest about unavailable metrics. For example, trophies that require real heart-rate data, external load, or unsupported exercises can be marked Coming Soon instead of faking progress from weak signals.
+
+### Profile
+
+The profile tab is now a real product hub, not just a debug screen.
+
+It shows:
+
+- User identity
+- Level and XP
+- Trophy strip
+- Theme selector
+- Goal selector
+- Coach selector
+- Preferred session length
+- Stats cards
+- Calendar snapshot
+- Coach insights
+- Recent workout history
 - Workout detail sheet
-- Local workout history persistence
-- Derived evidence capture for set summaries, rep-quality events, cue events, and aggregate stats
-- Coordinator, summary, evidence, history, and persistence tests
+- Debug reset tools in a lower-priority section
 
-Important files:
+Stats are built from real local history and trophy progress.
 
-- `VirtualTrainer/Coaching/PlannedWorkoutCoordinator.swift`
-- `VirtualTrainer/Models/WorkoutSessionContext.swift`
-- `VirtualTrainer/Models/WorkoutSessionSummary.swift`
-- `VirtualTrainer/Models/WorkoutSummaryBuilder.swift`
-- `VirtualTrainer/Models/WorkoutHistoryStore.swift`
-- `VirtualTrainer/Models/WorkoutEvidenceModels.swift`
-- `VirtualTrainer/UI/PlannedWorkoutSessionView.swift`
-- `VirtualTrainer/UI/RestScreenView.swift`
-- `VirtualTrainer/UI/WorkoutSummaryView.swift`
-- `VirtualTrainer/UI/WorkoutDetailSheetView.swift`
-- `VirtualTrainerTests/PlannedWorkoutCoordinatorTests.swift`
-- `VirtualTrainerTests/WorkoutHistoryStoreTests.swift`
+Current stats include:
 
-### Phase 10.5: Profile Preferences, Quick Start, Calibration Foundation
+- Total workouts
+- Planned workouts
+- Free Analysis sessions
+- Total reps
+- Total hold seconds
+- Good-form reps
+- Excellent-form reps
+- Current streak
+- Longest streak
+- Average form score
+- Total duration
+- Workouts this week
+- XP
+- Level
+- Trophies earned
+- Last workout date
 
-Built:
+### Trends And Signals
 
-- Expanded profile preferences for session length, intensity, injury constraints, training location, and coaching style.
-- Quick Start deck rotation from Bridge 10.5B2.
-- Plan-detail swapping hidden/deferred from Bridge 10.5B1.
-- Calibration intro and persistence foundation.
-- Calibration store tests and live-session compatibility tests.
+Spotter now has a trend and signal layer.
 
-Important files:
+This is important because the insight engine should not rummage through raw history every time it needs something to say. It should consume structured facts.
 
-- `VirtualTrainer/Models/CalibrationRecord.swift`
-- `VirtualTrainer/Models/CalibrationStore.swift`
-- `VirtualTrainer/UI/CalibrationViews.swift`
-- `VirtualTrainerTests/CalibrationStoreTests.swift`
+The trend engine can build:
 
-### Camera Stability Pass
+- Current streak
+- Longest streak
+- Workouts this week
+- Weekly consistency status
+- Daily workout counts
+- Daily reps
+- Daily hold seconds
+- Daily average form
+- Daily duration
+- Month calendar snapshot
+- Exercise trend summaries
+- Strongest exercise
+- Improving exercise
+- Struggling exercise
+- Most repeated cue
+- Trophy near misses
+- Camera friction count
 
-Recent fixes made the live camera stack more resilient:
+The signal extractor can produce signals for:
 
-- Pose, hand, and face processors now reserve one frame at a time instead of piling up async work.
-- Hand and face processing are throttled so they do not steal too much frame budget.
-- Frame timeouts clear stale pose, hand, and face state instead of leaving the app stuck.
-- Voice and motivation paths were adjusted to reduce session hangs.
+- Consistency
+- Form improvement
+- Form drop-off
+- Volume increase or drop
+- Completion
+- Fatigue
+- Rest behavior
+- Skipped exercises
+- Repeated cues
+- Exercise mastery
+- Exercise struggles
+- Plan fit
+- Trophy proximity
+- Camera friction
+- Progression readiness
+- Target fit
+- Session fit
+- Quality PRs
 
-Important files:
+### Coach Insights
 
-- `VirtualTrainer/Vision/PoseEstimator.swift`
-- `VirtualTrainer/Vision/HandGestureDetector.swift`
-- `VirtualTrainer/Vision/FaceLandmarkerService.swift`
-- `VirtualTrainer/Coaching/VoiceCoachManager.swift`
-- `VirtualTrainer/Coaching/MotivationEngine.swift`
+The AI Coach Insight Engine is local and deterministic right now.
+
+It does not call OpenAI, ChatGPT, Firebase, Supabase, or any external LLM. That is intentional.
+
+The engine creates evidence-backed insights for:
+
+- Dashboard
+- Workout Preview
+- Workout Summary
+- Profile
+- Trophy screen
+
+Good insights should feel specific and useful:
+
+```text
+Push-up form dropped after rep 8, so the next upper-body block should use an easier target before increasing volume.
+```
+
+Bad insights are generic:
+
+```text
+Great job today. Keep going.
+```
+
+The insight system uses:
+
+- `TrendEngine`
+- `SignalExtractor`
+- `InsightCandidateBuilder`
+- `InsightRanker`
+- `InsightNarrativeBuilder`
+- `InsightEngine`
+- `InsightStore`
+
+`InsightStore` persists recent insights, dedupes by key, expires stale insights, and avoids repeating the same idea too often.
 
 ## Exercise Library
 
-Spotter currently supports 47 exercises across four groups.
+Spotter currently supports 47 exercises.
 
 ### Upper Body
 
@@ -484,7 +525,7 @@ Spotter currently supports 47 exercises across four groups.
 - Step Up
 - Donkey Kick
 
-### Full Body and Core
+### Full Body And Core
 
 - Jumping Jack
 - Knee Raise
@@ -498,7 +539,7 @@ Spotter currently supports 47 exercises across four groups.
 - Bird Dog
 - Side Plank
 
-### Yoga and Mobility
+### Yoga And Mobility
 
 - Downward Dog
 - Warrior
@@ -512,13 +553,13 @@ Spotter currently supports 47 exercises across four groups.
 
 `ExerciseLibrary` is the biomechanics source of truth. It defines setup instructions, camera position, required joints, phases, angles, thresholds, form rules, and feedback cues.
 
-`ExerciseMetadataCatalog` is the planning source of truth. It defines difficulty, equipment, movement pattern, body region, plan tags, contraindication tags, rest, targets, and whether the exercise works for free analysis or planned workouts.
+`ExerciseMetadataCatalog` is the planning source of truth. It defines difficulty, equipment, movement pattern, body region, planning tags, contraindication tags, rest, targets, and whether an exercise works in Free Analysis or Planned Workouts.
 
-Keep those responsibilities separate.
+Keep those two responsibilities separate.
 
 ## Architecture
 
-The important split is:
+The most important split is:
 
 ```text
 ExerciseLibrary
@@ -527,31 +568,44 @@ ExerciseLibrary
 ExerciseMetadataCatalog
   -> how an exercise is selected for a plan
 
-TrainerSessionView + live analysis stack
-  -> how the camera session runs
+TrainerSessionView and the live analysis stack
+  -> how camera training runs
 
-PlanGenerator + PlanService
-  -> how today's workout is chosen
+PlanGenerator and PlanService
+  -> how workouts are generated
 
 DashboardContentFactory
-  -> how generated plans become dashboard content
+  -> how generated workouts become dashboard content
 
-WorkoutPreviewState
-  -> how a generated plan is edited before launch
+WorkoutPreviewState and PlanTargetEditService
+  -> how a generated workout is adjusted before launch
 
 PlannedWorkoutCoordinator
   -> how planned sets, rest, and completion move forward
 
 WorkoutHistoryStore
-  -> how local summaries and derived evidence are saved
+  -> how local summaries and evidence are saved
+
+TrophyEngine and TrophyStore
+  -> how milestones are computed and persisted
+
+TrendEngine and SignalExtractor
+  -> how history becomes structured training facts
+
+InsightEngine and InsightStore
+  -> how structured facts become useful coach insights
 ```
 
-The camera stack should stay shared between free analysis and planned workouts.
+Rules that should stay true:
 
-Do not create a second pose pipeline for plans.
-Do not duplicate rep counting for plans.
-Do not put planning rules inside `TrainerSessionView`.
-Do not let plan editing violate equipment, difficulty, movement-pattern, or camera-switch constraints.
+- Keep camera analysis shared between Free Analysis and Planned Workouts.
+- Do not create a second pose pipeline for plans.
+- Keep business logic out of SwiftUI views when practical.
+- Keep `ExerciseLibrary` focused on tracking.
+- Keep `ExerciseMetadataCatalog` focused on planning.
+- Use deterministic local logic before adding external AI.
+- Do not store or upload raw camera data by default.
+- Do not ship real API keys or service-role secrets in the iOS client.
 
 ## Project Structure
 
@@ -571,20 +625,26 @@ VirtualTrainer/
     WorkoutReadyCoordinator.swift
 
   DesignSystem/
-    Theme.swift
     LiquidGlass.swift
+    Theme.swift
 
   Models/
+    AIInsightModels.swift
     CalibrationRecord.swift
     CalibrationStore.swift
     DashboardData.swift
     ExerciseLibrary.swift
     ExerciseMetadataCatalog.swift
     ExercisePlanMetadata.swift
+    InsightStore.swift
     LiveSessionContext.swift
     OnboardingStore.swift
     PlanGenerationInput.swift
     PlanGenerationRules.swift
+    StatsEngine.swift
+    ThemeStore.swift
+    TrainingTrendModels.swift
+    TrophyModels.swift
     UserProfile.swift
     WorkoutData.swift
     WorkoutEvidenceModels.swift
@@ -600,23 +660,33 @@ VirtualTrainer/
 
   Services/
     ElevenLabsService.swift
+    InsightCandidateBuilder.swift
+    InsightEngine.swift
+    InsightNarrativeBuilder.swift
+    InsightRanker.swift
     PlanGenerator.swift
     PlanService.swift
     PlanSwapService.swift
     PlanTargetEditService.swift
     QuickStartPlanDeckService.swift
+    SignalExtractor.swift
+    TrendEngine.swift
 
   UI/
+    BodyVisibilityBannerView.swift
+    CalendarSnapshotView.swift
     CalibrationViews.swift
     CameraTabView.swift
     HomeDashboardView.swift
     MainTabView.swift
     OnboardingViews.swift
     PlannedWorkoutSessionView.swift
+    ProfileView.swift
     RestScreenView.swift
     TargetVolumeEditSheetView.swift
     TrainerOverlayView.swift
     TrainerSessionView.swift
+    TrophiesView.swift
     WorkoutDetailSheetView.swift
     WorkoutPreviewView.swift
     WorkoutSummaryView.swift
@@ -632,163 +702,60 @@ VirtualTrainer/
     PoseEstimator.swift
 
 VirtualTrainerTests/
-  Unit tests for planning, dashboard content, onboarding, calibration,
-  metadata, workout preview, target editing, planned coordination,
-  history/evidence, angle math, form feedback, visibility, and rep counting.
+  Unit tests for onboarding, calibration, planning, dashboard content,
+  workout preview, target editing, planned coordination, history,
+  evidence, trophies, stats, trends, insights, angle math, form feedback,
+  visibility, exertion, and rep counting.
 
 NEW_DESIGN/
-  HTML and screenshots for the future visual design system.
+  HTML exports and screenshots for the future visual design system.
 
-FitCount-main/
-  Legacy QuickPose sample kept only for reference.
+WorkoutClassifier.mlproj/
+  CreateML workout-classifier experiment. It is not integrated into the app yet.
 ```
 
-## Design Direction
+## Tech Stack
 
-The current app uses a dark "No-Fluff Noir" theme:
+- Platform: iOS
+- Minimum iOS: 17.0
+- Language: Swift 5
+- UI: SwiftUI
+- Camera: AVFoundation
+- Pose, hand, gesture, and face models: MediaPipe Tasks Vision
+- Dependency manager: CocoaPods
+- Haptics: CoreHaptics and UIKit haptic fallbacks
+- Local voice: `AVSpeechSynthesizer`
+- Optional remote TTS client: ElevenLabs service shell, configured through `ELEVENLABS_API_KEY` if used later
+- Persistence: local JSON files in app support storage
+- Tests: XCTest
 
-- Near-black background
-- Bone-white text
-- Warm amber accent
-- Heavy uppercase headers
-- Compact cards
-- Haptic, camera-first feel
-
-The future design-system revamp will use the HTML reference in `NEW_DESIGN/`.
-
-Theme options already exist in profile data:
-
-- Hyper
-- Hot Girl
-- Warm
-- Spicy
-
-They are stored today. Full runtime theming is still upcoming.
-
-## Roadmap From Here
-
-### Next: Phase 11
-
-Build the trophy/profile layer on top of the local history foundation.
-
-Planned work:
-
-- Trophy engine.
-- Trophy progress persistence.
-- Profile stats, XP, streaks, and calendar.
-- Trophy/profile UI states that read from workout history without needing backend sync.
-
-### Then: Phase 13 and 14
-
-Build deterministic insights and trends.
-
-Planned work:
-
-- Evidence-backed insight facts from summaries, sets, cue events, rep-quality events, rest behavior, effort, and streaks.
-- Day-over-day and week-over-week trends.
-- Local insight rendering before any language model rewrite layer.
-- No invented facts; generated prose later must only rewrite structured facts.
-
-### Later Phases
-
-After trophies and deterministic insights work locally:
-
-- Backend abstraction.
-- Firebase or Supabase sync.
-- Full design-system revamp.
-- Privacy, safety, performance, and beta hardening.
-
-## AI Coach Insight Strategy
-
-The insight engine should be built locally and deterministically first.
-
-Bad insight:
+The app uses CocoaPods for MediaPipe. Open the workspace, not just the project file.
 
 ```text
-Great job today. Keep going.
+Use:  VirtualTrainer.xcworkspace
+Avoid: VirtualTrainer.xcodeproj for normal development
 ```
 
-Good insight:
+## MediaPipe Models
 
-```text
-Your push-up form dropped after rep 8, so the next upper-body plan should start with incline push-ups and only progress if form stays above target.
+Run this before the first build:
+
+```sh
+./download_models.sh
 ```
 
-Great Spotter insights should be:
+It downloads these files into `VirtualTrainer/Models/`:
 
-- Specific
-- Evidence-backed
-- Short
-- Actionable
-- Non-shaming
-- Connected to the next plan
+- `pose_landmarker_full.task`
+- `hand_landmarker.task`
+- `gesture_recognizer.task`
+- `face_landmarker.task`
 
-The first version should use:
+These model files are runtime assets and should not be treated like app source code.
 
-- Rep count
-- Hold seconds
-- Form score
-- Cue frequency
-- Cue timing
-- Skipped sets
-- Rest extensions
-- Completion percentage
-- Effort trend
-- Streak
-- Recent exercise history
-
-A language model can rewrite structured insight facts later. It should not invent the facts.
-
-## Backend Strategy
-
-Stay local-first for now.
-
-The app should have these working locally before backend integration:
-
-- Profile
-- Generated plans
-- Planned workout summaries
-- Free-analysis summaries
-- Workout history
-- Trophies
-- Stats
-- Insights
-- Theme selection
-
-Only after that should the app add repository protocols and then Firebase or Supabase behind a feature flag.
-
-Recommended storage boundary:
-
-Good to store locally:
-
-- Profile and preferences
-- Generated and edited plans
-- Workout summaries
-- Set summaries
-- Rep-quality events
-- Cue events and cue categories
-- Derived effort summaries
-- Calibration status and selected calibration baselines
-- Trophy progress later
-- Insight evidence later
-
-Do not store or upload by default:
-
-- Raw video
-- Camera frames
-- Face images
-- Raw pose streams
-- Raw biometric face data
-
-Current camera, pose, hand, and face streams are processed in memory. Workout history stores derived workout evidence, not raw frames or raw landmark streams. Third-party secrets such as OpenAI keys, ElevenLabs keys, Firebase private keys, Supabase service-role keys, and similar credentials must not ship in the iOS client. Future services that need those secrets should live behind backend functions.
+If the gesture recognizer is missing, hand features can fall back to hand-landmark logic. If the face model is missing, face and effort features disable gracefully.
 
 ## Running The App
-
-You need:
-
-- Xcode
-- CocoaPods
-- A physical iPhone for the real camera experience
 
 Install pods:
 
@@ -796,7 +763,7 @@ Install pods:
 pod install
 ```
 
-Download the MediaPipe models:
+Download MediaPipe models:
 
 ```sh
 ./download_models.sh
@@ -808,20 +775,9 @@ Open the workspace:
 open VirtualTrainer.xcworkspace
 ```
 
-Then select the `VirtualTrainer` scheme and run on a device.
+Then select the `VirtualTrainer` scheme and run.
 
-Do not open only `VirtualTrainer.xcodeproj` for normal development. Use the workspace so CocoaPods and MediaPipe are wired correctly.
-
-## MediaPipe Models
-
-`download_models.sh` downloads:
-
-- `pose_landmarker_full.task`
-- `hand_landmarker.task`
-- `gesture_recognizer.task`
-- `face_landmarker.task`
-
-If the gesture recognizer is missing, hand gestures fall back to hand-landmark heuristics. If the face model is missing, face/exertion features disable gracefully.
+A physical iPhone is best for real camera testing. The simulator can run much of the app, but it is not a complete substitute for the live camera workout experience.
 
 ## Running Tests
 
@@ -836,30 +792,157 @@ xcodebuild test \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
-The live camera path still needs a physical device.
+## Privacy Boundary
+
+Spotter is local-first right now.
+
+Good to store locally:
+
+- Profile and preferences
+- Calibration status
+- Generated plans
+- Edited plan targets
+- Workout summaries
+- Set summaries
+- Rep-quality events
+- Cue events
+- Rest behavior
+- Derived effort summaries
+- Trophy progress
+- Stats
+- Trend snapshots and signals
+- Insight history and delivery records
+- Theme selection
+
+Do not store or upload by default:
+
+- Raw video
+- Camera frames
+- Face images
+- Raw pose streams
+- Raw biometric face data
+
+Third-party secrets must not ship in the iOS client. That includes OpenAI keys, ElevenLabs keys, Firebase private keys, Supabase service-role keys, and similar credentials. Future services that need secrets should live behind backend functions.
+
+## Current Roadmap
+
+The attached product plan and the recent codebase now line up like this:
+
+Done or mostly done:
+
+- Bridge 10.5A2: richer workout evidence
+- Bridge 10.5B1: target editing instead of visible plan-detail swaps
+- Bridge 10.5B2: Quick Start deck cycling
+- Bridge 10.5C: expanded profile preferences
+- Bridge 10.5D: calibration foundation
+- Bridge 10.5E: foundation audit fixes
+- Phase 11: trophy engine
+- Phase 12: real profile hub, stats, themes, history, and trophy showcase
+- Phase 13: trend and signal engine
+- Phase 14: deterministic local coach insight engine
+
+Next work:
+
+### Phase 15: Backend Abstraction
+
+Add repository protocols and local implementations before integrating any backend SDK.
+
+Planned repositories:
+
+- Auth
+- Profile
+- Plans
+- Workouts
+- Trophies
+- Insights
+- Themes
+- Calibration
+
+The app should still work fully offline in local mode.
+
+### Phase 16: Firebase Behind A Feature Flag
+
+Add Firebase only after the repository layer exists.
+
+Start with:
+
+- `BackendMode.local`
+- `BackendMode.firebase`
+- Anonymous auth for internal testing
+- Firestore repositories
+- Graceful behavior when Firebase config is missing
+
+Store summaries and aggregates. Do not upload raw camera/video/pose/face data.
+
+### Phase 17: Supabase Alternative
+
+Use this only if the product decision changes away from Firebase.
+
+Do not build Firebase and Supabase at the same time.
+
+### Phase 18: Design System Revamp
+
+The app already has functional themes, but the full visual polish is still ahead.
+
+The design revamp should use `NEW_DESIGN/` as the reference and create a real runtime theme system for:
+
+- Hyper
+- Hot Girl
+- Warm
+- Spicy
+
+The revamp should preserve all existing product logic. It should not rewrite the camera pipeline.
+
+### Phase 19: Beta Hardening
+
+This is the stability pass before real testers.
+
+Focus areas:
+
+- Camera lifecycle
+- Permission-denied states
+- Missing model states
+- Duplicate save prevention
+- Trophy event dedupe
+- Insight repeat prevention
+- Performance
+- Privacy copy
+- Secret scanning
+- Build and test health
+
+### Phase 20: Running Analysis Research
+
+Running Analysis should stay Coming Soon for now.
+
+It is a different product problem from home workout rep counting. It needs separate research around phone placement, gait capture, cadence, stride asymmetry, impact approximation, validation, and safety copy.
+
+Do not ship injury-risk claims from unvalidated gait signals.
 
 ## Development Notes
 
-Use these rules when extending the app:
+Use these rules when extending Spotter:
 
-- Keep camera analysis shared between free analysis and planned workouts.
-- Keep business logic out of SwiftUI views.
-- Keep `ExerciseLibrary` focused on tracking and biomechanics.
-- Keep `ExerciseMetadataCatalog` focused on planning.
-- Prefer deterministic local logic before adding external AI.
-- Do not upload raw camera data by default.
-- Do not ship real API keys in source.
-- Keep the app compiling after each phase.
+- Read the existing model and service first.
+- Prefer small, testable changes.
+- Keep the live camera pipeline shared.
+- Keep plan generation deterministic.
+- Keep insights evidence-backed.
+- Keep trophies honest about unavailable data.
+- Keep local JSON backward compatible.
+- Keep secrets out of source.
+- Add tests when behavior changes.
+- Update this README when the product phase changes.
 
-## Current North Star
+## North Star
 
-Spotter should become the training app that can say:
+Spotter should become the home training app that watches carefully, speaks plainly, and gets smarter every session.
+
+Not louder. Not more complicated. Smarter.
+
+The app should earn trust by showing its work:
 
 ```text
-I saw the rep.
-I understood the form.
-I know what changed.
-I know what we should do next.
+Because I saw this, I recommend that.
 ```
 
-That is the product: a coach that watches carefully, speaks plainly, and gets smarter every session.
+That is the product.
