@@ -10,7 +10,7 @@ Do not just count reps. Understand the session.
 
 That means Spotter should know what exercise you are doing, what the camera can see, whether the rep was clean, where form started to break, how hard the session felt, what you have done recently, and what workout makes sense next.
 
-This repo is the SwiftUI and MediaPipe version of Spotter. It has grown from a camera demo into a local-first training product with onboarding, calibration, live form analysis, generated plans, editable workout previews, planned workout sessions, rest flow, workout summaries, history, trophies, profile stats, trends, and evidence-backed coach insights.
+This repo is the SwiftUI and MediaPipe version of Spotter. It has grown from a camera demo into a local-first training product with onboarding, calibration, live form analysis, generated plans, editable workout previews, planned workout sessions, rest flow, workout summaries, history, trophies, profile stats, trends, workout recaps, weekly recaps, evidence drill-downs, and evidence-backed coach insights.
 
 ## The Short Version
 
@@ -30,7 +30,13 @@ Spotter can currently:
 - Let the user preview a plan, choose a coach, adjust sets and targets, and start a planned session.
 - Run planned workouts through the same live camera engine used by free analysis.
 - Save workout summaries with rep-level and set-level evidence.
-- Compute trophies, XP, streaks, profile stats, trend snapshots, training signals, and coach insights locally.
+- Compute trophies, XP, streaks, profile stats, trend snapshots, training signals, workout recaps, weekly recaps, and coach insights locally.
+- Build useful coach feedback even for the first few saved sessions through bootstrap signals and per-workout recap logic.
+- Normalize and cluster repeated form cues through one shared cue taxonomy.
+- Apply recent-window policies so old cue and camera-friction history does not dominate current coaching.
+- Track insight impressions and lightweight engagement separately, so cooldowns start when an insight is actually shown.
+- Let users open evidence sheets from insight cards and workout detail cards.
+- Keep a no-network LLM rewrite seam behind a default-off feature flag for future coach-copy experiments.
 - Keep raw camera frames, raw video, raw face images, and raw pose streams out of persistent storage.
 
 The product is still not finished. The next big work is backend abstraction, optional Firebase sync, the final design-system revamp, beta hardening, and a careful Running Analysis research phase.
@@ -109,7 +115,7 @@ Dashboard
 -> live camera set
 -> rest screen
 -> next set
--> workout summary
+-> workout recap and optional coach insight
 -> local history, trophies, stats, trends, and insights update
 ```
 
@@ -165,6 +171,7 @@ It shows:
 - Current streak from real local workout history
 - Quick Start plan deck
 - Daily Plan
+- Weekly recap card when the weekly window is eligible
 - Coach Insight card when evidence exists
 - Quick actions
 - Trophy teaser
@@ -175,6 +182,8 @@ Quick actions:
 - Form Check: opens Free Analysis exercise selection.
 - Running Analysis: visible as Coming Soon.
 - Trophies: opens the trophy area.
+
+Dashboard insights are now presentation-aware. The dashboard can fetch and rank insight candidates without consuming the repeat cooldown; the cooldown is recorded only when the card appears. Users can open the Evidence sheet from the insight card, and the store records lightweight engagement such as opened, helpful, and not helpful.
 
 ### Quick Start
 
@@ -256,6 +265,8 @@ The user can:
 - Adjust hold or timed targets when supported.
 - Reset an exercise back to the generated plan.
 - Start the planned session.
+- Open evidence behind a plan insight when one is available.
+- Mark a plan insight as helpful or not helpful.
 
 Exercise swapping is intentionally hidden for now. `PlanSwapService` still exists as a foundation, but the current product keeps plan details focused on volume editing.
 
@@ -332,6 +343,19 @@ Summaries store derived evidence such as:
 
 Spotter does not store raw camera frames, raw video, raw face images, raw pose streams, or raw biometric face data by default.
 
+The summary screen now always renders a deterministic `WorkoutRecap`. That recap is built from the saved session itself, so the user no longer sees a placeholder when the broader insight engine has nothing eligible to say. It highlights the dominant exercise, form trajectory, useful set evidence, and one next step.
+
+When a generated `AIInsight` is available, it appears below the recap rather than replacing it. The user can open the insight evidence sheet and mark whether the insight was helpful.
+
+Saved workout details expose more of the evidence Spotter already computes:
+
+- Per-set form sparkline from scored reps
+- Average form, excellent reps, good reps, and scored-rep pills
+- Drop-after-rep and improved-after-rep badges
+- Top cue, best cue, and worst cue context
+- Rest extended and rest skipped indicators
+- Effort and top-cue evidence timelines
+
 ### Trophies
 
 The trophy system is deterministic and local.
@@ -377,12 +401,15 @@ It shows:
 - Preferred session length
 - Stats cards
 - Calendar snapshot
+- Weekly recap when the weekly window is eligible
 - Coach insights
 - Recent workout history
 - Workout detail sheet
 - Debug reset tools in a lower-priority section
 
 Stats are built from real local history and trophy progress.
+
+Profile is also the deeper coaching surface. It can show multiple ranked insights, a weekly recap, and evidence drill-downs that link insight evidence back to the relevant saved workout detail.
 
 Current stats include:
 
@@ -432,6 +459,9 @@ The trend engine can build:
 The signal extractor can produce signals for:
 
 - Consistency
+- First session
+- Setup quality
+- Rep cleanliness intro
 - Form improvement
 - Form drop-off
 - Volume increase or drop
@@ -445,16 +475,33 @@ The signal extractor can produce signals for:
 - Plan fit
 - Trophy proximity
 - Camera friction
+- Quality capacity
+- Movement balance
+- Cue clusters
+- Rest response
 - Progression readiness
 - Target fit
 - Session fit
+- Exercise reacquisition
+- Exercise preference
+- Repeat exercise progress
+- Personal baseline
 - Quality PRs
+
+New users no longer have to wait for six saved sessions before Spotter can say something specific. `SignalGenerationContext` enables bootstrap signals for the first 1-5 sessions, including first-session consistency, setup quality, rep cleanliness, repeat-exercise progress, and a personal baseline.
+
+Cue-driven trends now use shared normalization and clustering:
+
+- `CueNormalizer` trims, lowercases, collapses whitespace, strips trailing punctuation, and removes common leading words.
+- `CueClusterTaxonomy` maps normalized cues into coaching families such as knee tracking, hip hinge, trunk brace, shoulder stack, elbow alignment, wrist position, depth/range, tempo, balance, head/neck, foot placement, and breathing.
+
+The trend layer also has `TrendWindowPolicy` so repeated cues and camera-friction counts focus on recent sessions or recent days instead of all-time history. This keeps old problems from overpowering current training evidence after the user has fixed them.
 
 ### Coach Insights
 
-The AI Coach Insight Engine is local and deterministic right now.
+The AI Coach Insight Engine is local and deterministic by default.
 
-It does not call OpenAI, ChatGPT, Firebase, Supabase, or any external LLM. That is intentional.
+It does not call OpenAI, ChatGPT, Firebase, Supabase, or any external LLM in the default build. That is intentional.
 
 The engine creates evidence-backed insights for:
 
@@ -485,8 +532,51 @@ The insight system uses:
 - `InsightNarrativeBuilder`
 - `InsightEngine`
 - `InsightStore`
+- `InsightEvidenceSheetView`
+- `InsightEngagementControls`
+- `InsightRewriter`
+- `FeatureFlags`
 
-`InsightStore` persists recent insights, dedupes by key, expires stale insights, and avoids repeating the same idea too often.
+`InsightStore` persists recent insights, dedupes by key, expires stale insights, stores per-surface delivery records, and avoids repeating the same idea too often.
+
+Important delivery behavior:
+
+- `selectInsights` fetches candidates without marking them as presented.
+- `recordImpression` records the actual card impression from UI `onAppear`.
+- `recordEngagement` stores opened, dismissed, helpful, and not-helpful signals.
+- Important safety-tier insights bypass the normal repeat cooldown.
+- The ranker can boost previously helpful insights and penalize recently dismissed or not-helpful ones.
+- Ranking is goal-aware, so strength, performance, and longevity users can receive different priorities from the same evidence.
+
+The app also has an LLM-ready seam:
+
+- `AIInsight.toLLMContext()` creates a derived, Codable context package.
+- `InsightRewriter` defines the rewrite protocol.
+- `NoopInsightRewriter` is the default implementation.
+- `FeatureFlag.coachInsightLLMRewrite` is off by default.
+- `RewriteValidator` rejects rewrites that lose the exercise, action, or evidence anchor.
+
+This means future copy experiments can be added behind a feature flag without changing the privacy boundary or weakening deterministic evidence rules.
+
+### Weekly Recaps
+
+`WeeklyRecapBuilder` creates one composite recap for the completed ISO week when the timing is right:
+
+- Sunday evening after 6 PM in the user's timezone
+- Monday morning before noon in the user's timezone
+
+Weekly recaps can appear on Dashboard and Profile once per week per surface. They include:
+
+- Week start and end
+- Headline and narrative
+- Sessions, average form, total reps, hold time, and trophies earned
+- Top moment
+- Biggest surprise
+- Next-week focus
+- Evidence refs
+- A stable dedupe key
+
+If the week had no saved sessions, the recap still returns an honest recovery-week story instead of pretending there was training data.
 
 ## Exercise Library
 
@@ -594,6 +684,15 @@ TrendEngine and SignalExtractor
 
 InsightEngine and InsightStore
   -> how structured facts become useful coach insights
+
+WorkoutRecapBuilder and WeeklyRecapBuilder
+  -> how saved sessions become deterministic recap surfaces
+
+CueNormalizer, CueClusterTaxonomy, and TrendWindowPolicy
+  -> how repeated cue evidence stays canonical and recent
+
+InsightRewriter and FeatureFlags
+  -> how future rewrite experiments stay behind a default-off seam
 ```
 
 Rules that should stay true:
@@ -604,6 +703,8 @@ Rules that should stay true:
 - Keep `ExerciseLibrary` focused on tracking.
 - Keep `ExerciseMetadataCatalog` focused on planning.
 - Use deterministic local logic before adding external AI.
+- Keep recaps and insights evidence-backed even when the user has little history.
+- Record insight impressions separately from insight selection.
 - Do not store or upload raw camera data by default.
 - Do not ship real API keys or service-role secrets in the iOS client.
 
@@ -644,9 +745,11 @@ VirtualTrainer/
     StatsEngine.swift
     ThemeStore.swift
     TrainingTrendModels.swift
+    TrendWindowPolicy.swift
     TrophyModels.swift
     UserProfile.swift
     WorkoutData.swift
+    WorkoutDetailEvidenceModel.swift
     WorkoutEvidenceModels.swift
     WorkoutHistoryStore.swift
     WorkoutPreviewState.swift
@@ -659,11 +762,15 @@ VirtualTrainer/
     UniversalRepCounter.swift
 
   Services/
+    CueClusterTaxonomy.swift
+    CueNormalizer.swift
     ElevenLabsService.swift
+    FeatureFlags.swift
     InsightCandidateBuilder.swift
     InsightEngine.swift
     InsightNarrativeBuilder.swift
     InsightRanker.swift
+    InsightRewriter.swift
     PlanGenerator.swift
     PlanService.swift
     PlanSwapService.swift
@@ -671,6 +778,8 @@ VirtualTrainer/
     QuickStartPlanDeckService.swift
     SignalExtractor.swift
     TrendEngine.swift
+    WeeklyRecapBuilder.swift
+    WorkoutRecapBuilder.swift
 
   UI/
     BodyVisibilityBannerView.swift
@@ -678,6 +787,8 @@ VirtualTrainer/
     CalibrationViews.swift
     CameraTabView.swift
     HomeDashboardView.swift
+    InsightEngagementControls.swift
+    InsightEvidenceSheetView.swift
     MainTabView.swift
     OnboardingViews.swift
     PlannedWorkoutSessionView.swift
@@ -705,13 +816,19 @@ VirtualTrainerTests/
   Unit tests for onboarding, calibration, planning, dashboard content,
   workout preview, target editing, planned coordination, history,
   evidence, trophies, stats, trends, insights, angle math, form feedback,
-  visibility, exertion, and rep counting.
+  visibility, exertion, cue normalization, cue clustering, insight ranking,
+  insight store delivery, workout recaps, weekly recaps, evidence sheets,
+  and rep counting.
 
 NEW_DESIGN/
   HTML exports and screenshots for the future visual design system.
 
 WorkoutClassifier.mlproj/
   CreateML workout-classifier experiment. It is not integrated into the app yet.
+
+Spotter_Phase1_2_Evaluation.md
+  Founder-style evaluation and implementation prompt log for the recent
+  trends, signals, insights, trophies, and workout-history hardening work.
 ```
 
 ## Tech Stack
@@ -811,7 +928,9 @@ Good to store locally:
 - Trophy progress
 - Stats
 - Trend snapshots and signals
-- Insight history and delivery records
+- Workout recaps and weekly recap dedupe records
+- Insight history, delivery records, and engagement counts
+- Derived, non-raw LLM rewrite context if a future feature-flagged rewrite layer needs it
 - Theme selection
 
 Do not store or upload by default:
@@ -840,6 +959,7 @@ Done or mostly done:
 - Phase 12: real profile hub, stats, themes, history, and trophy showcase
 - Phase 13: trend and signal engine
 - Phase 14: deterministic local coach insight engine
+- Phase 14 hardening: impression-based insight delivery, engagement tracking, goal-aware ranking, bootstrap signals, cue normalization, recent-window trend policy, workout recaps, weekly recaps, evidence drill-downs, and the default-off LLM rewrite seam
 
 Next work:
 
@@ -904,7 +1024,7 @@ Focus areas:
 - Missing model states
 - Duplicate save prevention
 - Trophy event dedupe
-- Insight repeat prevention
+- Insight and recap edge cases
 - Performance
 - Privacy copy
 - Secret scanning
@@ -927,6 +1047,8 @@ Use these rules when extending Spotter:
 - Keep the live camera pipeline shared.
 - Keep plan generation deterministic.
 - Keep insights evidence-backed.
+- Keep insight selection separate from impression recording.
+- Use the shared cue normalizer and cluster taxonomy for cue-driven logic.
 - Keep trophies honest about unavailable data.
 - Keep local JSON backward compatible.
 - Keep secrets out of source.
