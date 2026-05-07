@@ -10,7 +10,7 @@ Do not just count reps. Understand the session.
 
 That means Spotter should know what exercise you are doing, what the camera can see, whether the rep was clean, where form started to break, how hard the session felt, what you have done recently, and what workout makes sense next.
 
-This repo is the SwiftUI and MediaPipe version of Spotter. It has grown from a camera demo into a local-first training product with onboarding, calibration, live form analysis, generated plans, editable workout previews, planned workout sessions, rest flow, workout summaries, history, trophies, profile stats, trends, workout recaps, weekly recaps, evidence drill-downs, and evidence-backed coach insights.
+This repo is the SwiftUI and MediaPipe version of Spotter. It has grown from a camera demo into a local-first training product with onboarding, calibration, live form analysis, generated plans, editable workout previews, planned workout sessions, rest flow, workout summaries, history, trophies, profile stats, training heatmaps, trends, workout recaps, weekly recaps, evidence drill-downs, and evidence-backed coach insights.
 
 ## The Short Version
 
@@ -36,6 +36,7 @@ Spotter can currently:
 - Apply recent-window policies so old cue and camera-friction history does not dominate current coaching.
 - Track insight impressions and lightweight engagement separately, so cooldowns start when an insight is actually shown.
 - Let users open evidence sheets from insight cards and workout detail cards.
+- Show a 12-week profile heatmap with day drill-ins, workout detail links, and a local share poster.
 - Keep a no-network LLM rewrite seam behind a default-off feature flag for future coach-copy experiments.
 - Keep raw camera frames, raw video, raw face images, and raw pose streams out of persistent storage.
 
@@ -400,7 +401,10 @@ It shows:
 - Coach selector
 - Preferred session length
 - Stats cards
-- Calendar snapshot
+- 12-week training heatmap
+- Day drill-ins with session stats and workout detail links
+- Share Heatmap poster rendered locally from aggregate workout summaries
+- Collapsed This Month calendar snapshot
 - Weekly recap when the weekly window is eligible
 - Coach insights
 - Recent workout history
@@ -409,7 +413,7 @@ It shows:
 
 Stats are built from real local history and trophy progress.
 
-Profile is also the deeper coaching surface. It can show multiple ranked insights, a weekly recap, and evidence drill-downs that link insight evidence back to the relevant saved workout detail.
+Profile is also the deeper coaching surface. It can show multiple ranked insights, a weekly recap, a 12-week training heatmap, and evidence drill-downs that link insight evidence back to the relevant saved workout detail.
 
 Current stats include:
 
@@ -447,6 +451,7 @@ The trend engine can build:
 - Daily hold seconds
 - Daily average form
 - Daily duration
+- Daily intensity summaries for the 12-week heatmap
 - Month calendar snapshot
 - Exercise trend summaries
 - Strongest exercise
@@ -781,6 +786,10 @@ VirtualTrainer/
     WeeklyRecapBuilder.swift
     WorkoutRecapBuilder.swift
 
+  Sharing/
+    ShareCardRenderer.swift
+    ShareCoordinator.swift
+
   UI/
     BodyVisibilityBannerView.swift
     CalendarSnapshotView.swift
@@ -795,6 +804,7 @@ VirtualTrainer/
     ProfileView.swift
     RestScreenView.swift
     TargetVolumeEditSheetView.swift
+    TrainingHeatmapView.swift
     TrainerOverlayView.swift
     TrainerSessionView.swift
     TrophiesView.swift
@@ -928,6 +938,8 @@ Good to store locally:
 - Trophy progress
 - Stats
 - Trend snapshots and signals
+- Heatmap day-intensity summaries
+- User-initiated heatmap share images rendered from aggregate stats
 - Workout recaps and weekly recap dedupe records
 - Insight history, delivery records, and engagement counts
 - Derived, non-raw LLM rewrite context if a future feature-flagged rewrite layer needs it
@@ -940,6 +952,8 @@ Do not store or upload by default:
 - Face images
 - Raw pose streams
 - Raw biometric face data
+
+The heatmap and share poster use saved workout summaries and derived daily aggregates only. They should not store raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.
 
 Third-party secrets must not ship in the iOS client. That includes OpenAI keys, ElevenLabs keys, Firebase private keys, Supabase service-role keys, and similar credentials. Future services that need secrets should live behind backend functions.
 
@@ -960,6 +974,7 @@ Done or mostly done:
 - Phase 13: trend and signal engine
 - Phase 14: deterministic local coach insight engine
 - Phase 14 hardening: impression-based insight delivery, engagement tracking, goal-aware ranking, bootstrap signals, cue normalization, recent-window trend policy, workout recaps, weekly recaps, evidence drill-downs, and the default-off LLM rewrite seam
+- Profile heatmap hardening: 12-week intensity view, day drill-ins, collapsed month snapshot, and local share poster
 
 Next work:
 
