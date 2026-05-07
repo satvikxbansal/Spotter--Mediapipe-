@@ -13,11 +13,13 @@ struct HomeDashboardView: View {
 
     @State private var dashboardContent: DashboardContent?
     @State private var dashboardInsight: AIInsight?
+    @State private var weeklyRecap: WeeklyRecap?
     @State private var previewPlan: WorkoutPlanV2?
     @State private var isShowingPlanPreview = false
     @State private var isShowingFormCheckSelection = false
     @State private var isShowingTrophyTeaser = false
     @State private var freeAnalysisSummary: FreeAnalysisSummary?
+    @State private var selectedInsightEvidence: AIInsight?
 
     private let contentFactory = DashboardContentFactory()
 
@@ -56,6 +58,16 @@ struct HomeDashboardView: View {
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
+            .sheet(item: $selectedInsightEvidence) { insight in
+                InsightEvidenceSheetView(
+                    insight: insight,
+                    summaries: historyStore.summaries
+                ) { kind in
+                    insightStore.recordEngagement(insight, kind: kind)
+                }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
             .preferredColorScheme(.dark)
         }
         .onAppear(perform: refreshDashboard)
@@ -86,8 +98,29 @@ struct HomeDashboardView: View {
                         openPreview(for: dashboardContent.dailyPlan.plan)
                     }
 
+                    if let weeklyRecap {
+                        DashboardWeeklyRecapCard(
+                            recap: weeklyRecap,
+                            onAppear: {
+                                insightStore.recordPresentation(
+                                    dedupeKey: weeklyRecap.dedupeKey,
+                                    on: .dashboard
+                                )
+                            }
+                        )
+                    }
+
                     if let dashboardInsight {
-                        DashboardCoachInsightCard(insight: dashboardInsight)
+                        DashboardCoachInsightCard(
+                            insight: dashboardInsight,
+                            onAppear: {
+                                insightStore.recordImpression(dashboardInsight, on: .dashboard)
+                            },
+                            onOpen: {
+                                insightStore.recordEngagement(dashboardInsight, kind: .opened)
+                                selectedInsightEvidence = dashboardInsight
+                            }
+                        )
                     }
 
                     QuickActionGrid(
@@ -120,6 +153,7 @@ struct HomeDashboardView: View {
         guard let profile = onboardingStore.profile else {
             dashboardContent = nil
             dashboardInsight = nil
+            weeklyRecap = nil
             return
         }
 
@@ -137,6 +171,7 @@ struct HomeDashboardView: View {
             currentStreakDayCount: historyStore.aggregateStats(now: now).currentStreak,
             trophySnapshot: trophyStore.snapshot
         )
+        weeklyRecap = makeWeeklyRecap(profile: profile, now: now)
         dashboardInsight = makeDashboardInsight(profile: profile, now: now)
     }
 
@@ -155,20 +190,37 @@ struct HomeDashboardView: View {
             snapshot: trendSnapshot,
             history: historyStore.summaries,
             profile: profile,
-            trophies: trophyStore.snapshot
+            trophies: trophyStore.snapshot,
+            context: SignalGenerationContext(historySessionCount: historyStore.summaries.count)
         )
         let generated = InsightEngine().generateDashboardInsights(
             profile: profile,
             trendSnapshot: trendSnapshot,
             signals: signals,
-            trophies: trophyStore.snapshot
+            trophies: trophyStore.snapshot,
+            engagementRecords: insightStore.engagementRecordsSnapshot(),
+            now: now
         )
         return insightStore.selectInsights(
             generated,
             for: .dashboard,
+            profile: profile,
             limit: 1,
             now: now
         ).first
+    }
+
+    private func makeWeeklyRecap(
+        profile: UserProfile,
+        now: Date
+    ) -> WeeklyRecap? {
+        guard let recap = WeeklyRecapBuilder().build(
+            history: historyStore.summaries,
+            profile: profile,
+            trophies: trophyStore.snapshot,
+            now: now
+        ) else { return nil }
+        return insightStore.canPresentOnce(dedupeKey: recap.dedupeKey, on: .dashboard) ? recap : nil
     }
 
     private func openPreview(for plan: WorkoutPlanV2) {
@@ -441,31 +493,41 @@ private struct TrophyTeaserCard: View {
 
 private struct DashboardCoachInsightCard: View {
     let insight: AIInsight
+    let onAppear: () -> Void
+    let onOpen: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: Theme.Spacing.md) {
-            Image(systemName: iconName)
-                .font(.system(size: 22, weight: .black))
-                .foregroundStyle(tint)
-                .frame(width: 44, height: 44)
-                .background(tint.opacity(0.14))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-
-            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                Text("Coach Insight")
-                    .font(.system(size: 11, weight: .black))
-                    .tracking(1.0)
-                    .textCase(.uppercase)
+        Button {
+            HapticsEngine.shared.buttonTap()
+            onOpen()
+        } label: {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                Image(systemName: iconName)
+                    .font(.system(size: 22, weight: .black))
                     .foregroundStyle(tint)
-                Text(insight.shortMessage)
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(Theme.Colors.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                    .frame(width: 44, height: 44)
+                    .background(tint.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
 
-            Spacer(minLength: Theme.Spacing.sm)
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text("Coach Insight")
+                        .font(.system(size: 11, weight: .black))
+                        .tracking(1.0)
+                        .textCase(.uppercase)
+                        .foregroundStyle(tint)
+                    Text(insight.shortMessage)
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: Theme.Spacing.sm)
+            }
         }
         .dashboardCard()
+        .buttonStyle(DashboardCardButtonStyle())
+        .id(insight.id)
+        .onAppear(perform: onAppear)
     }
 
     private var tint: Color {
@@ -492,6 +554,60 @@ private struct DashboardCoachInsightCard: View {
         default:
             return "brain.head.profile"
         }
+    }
+}
+
+private struct DashboardWeeklyRecapCard: View {
+    let recap: WeeklyRecap
+    let onAppear: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                Image(systemName: "calendar.badge.clock")
+                    .font(.system(size: 22, weight: .black))
+                    .foregroundStyle(Theme.Colors.accent)
+                    .frame(width: 44, height: 44)
+                    .background(Theme.Colors.accentMuted)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text("Weekly Recap")
+                        .font(.system(size: 11, weight: .black))
+                        .tracking(1.0)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.Colors.accent)
+                    Text(recap.headline)
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Text(recap.nextWeekFocus)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: Theme.Spacing.sm) {
+                ForEach(recap.stats.prefix(3)) { stat in
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
+                        Text(stat.value)
+                            .font(.system(size: 16, weight: .black))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text(stat.label)
+                            .font(.system(size: 10, weight: .black))
+                            .tracking(0.8)
+                            .textCase(.uppercase)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .dashboardCard()
+        .id(recap.dedupeKey)
+        .onAppear(perform: onAppear)
     }
 }
 

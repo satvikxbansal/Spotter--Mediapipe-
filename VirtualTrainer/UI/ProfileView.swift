@@ -11,6 +11,8 @@ struct ProfileView: View {
     @State private var selectedSummary: WorkoutSessionSummary?
     @State private var isShowingAllHistory = false
     @State private var profileInsights: [AIInsight] = []
+    @State private var weeklyRecap: WeeklyRecap?
+    @State private var selectedInsightEvidence: AIInsight?
 
     var body: some View {
         NavigationStack {
@@ -34,6 +36,16 @@ struct ProfileView: View {
                 WorkoutDetailSheetView(summary: summary)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
+            }
+            .sheet(item: $selectedInsightEvidence) { insight in
+                InsightEvidenceSheetView(
+                    insight: insight,
+                    summaries: historyStore.summaries
+                ) { kind in
+                    insightStore.recordEngagement(insight, kind: kind)
+                }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             }
             .onAppear(perform: refreshProfileData)
             .onChange(of: historyStore.summaries) {
@@ -100,7 +112,32 @@ struct ProfileView: View {
                     accent: themeStore.selectedTheme.accentColor
                 )
 
-                CoachInsightsCard(profile: profile, insights: profileInsights)
+                if let weeklyRecap {
+                    ProfileWeeklyRecapCard(
+                        recap: weeklyRecap,
+                        onAppear: {
+                            insightStore.recordPresentation(
+                                dedupeKey: weeklyRecap.dedupeKey,
+                                on: .profile
+                            )
+                        }
+                    )
+                }
+
+                CoachInsightsCard(
+                    profile: profile,
+                    insights: profileInsights,
+                    onAppear: { insight in
+                        insightStore.recordImpression(insight, on: .profile)
+                    },
+                    onEngagement: { insight, kind in
+                        insightStore.recordEngagement(insight, kind: kind)
+                    },
+                    onOpenEvidence: { insight in
+                        insightStore.recordEngagement(insight, kind: .opened)
+                        selectedInsightEvidence = insight
+                    }
+                )
 
                 WorkoutHistorySection(
                     summaries: historyStore.fetchRecentSummaries(limit: 5),
@@ -127,6 +164,7 @@ struct ProfileView: View {
         themeStore.sync(with: onboardingStore.profile)
         guard let profile = onboardingStore.profile else {
             profileInsights = []
+            weeklyRecap = nil
             return
         }
         let now = Date()
@@ -135,6 +173,7 @@ struct ProfileView: View {
             calibrationStatus: calibrationStore.status,
             now: now
         )
+        weeklyRecap = makeWeeklyRecap(profile: profile, now: now)
         refreshProfileInsights(profile: profile, now: now)
     }
 
@@ -146,6 +185,7 @@ struct ProfileView: View {
             now: now
         )
         if let profile = onboardingStore.profile {
+            weeklyRecap = makeWeeklyRecap(profile: profile, now: now)
             refreshProfileInsights(profile: profile, now: now)
         }
     }
@@ -165,20 +205,37 @@ struct ProfileView: View {
             snapshot: trendSnapshot,
             history: historyStore.summaries,
             profile: profile,
-            trophies: trophyStore.snapshot
+            trophies: trophyStore.snapshot,
+            context: SignalGenerationContext(historySessionCount: historyStore.summaries.count)
         )
         let generated = InsightEngine().generateProfileInsights(
             profile: profile,
             trendSnapshot: trendSnapshot,
             signals: signals,
-            trophies: trophyStore.snapshot
+            trophies: trophyStore.snapshot,
+            engagementRecords: insightStore.engagementRecordsSnapshot(),
+            now: now
         )
         profileInsights = insightStore.selectInsights(
             generated,
             for: .profile,
+            profile: profile,
             limit: 2,
             now: now
         )
+    }
+
+    private func makeWeeklyRecap(
+        profile: UserProfile,
+        now: Date
+    ) -> WeeklyRecap? {
+        guard let recap = WeeklyRecapBuilder().build(
+            history: historyStore.summaries,
+            profile: profile,
+            trophies: trophyStore.snapshot,
+            now: now
+        ) else { return nil }
+        return insightStore.canPresentOnce(dedupeKey: recap.dedupeKey, on: .profile) ? recap : nil
     }
 
     private func updateTheme(_ theme: SpotterThemeOption) {
@@ -622,6 +679,9 @@ private struct WorkoutSnapshotCard: View {
 private struct CoachInsightsCard: View {
     let profile: UserProfile
     let insights: [AIInsight]
+    let onAppear: (AIInsight) -> Void
+    let onEngagement: (AIInsight, InsightEngagementKind) -> Void
+    let onOpenEvidence: (AIInsight) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
@@ -636,7 +696,18 @@ private struct CoachInsightsCard: View {
             } else {
                 VStack(spacing: Theme.Spacing.sm) {
                     ForEach(Array(insights.prefix(2))) { insight in
-                        ProfileInsightRow(insight: insight)
+                        ProfileInsightRow(
+                            insight: insight,
+                            onAppear: {
+                                onAppear(insight)
+                            },
+                            onEngagement: { kind in
+                                onEngagement(insight, kind)
+                            },
+                            onOpenEvidence: {
+                                onOpenEvidence(insight)
+                            }
+                        )
                     }
                 }
                 .padding(Theme.Spacing.md)
@@ -649,6 +720,9 @@ private struct CoachInsightsCard: View {
 
 private struct ProfileInsightRow: View {
     let insight: AIInsight
+    let onAppear: () -> Void
+    let onEngagement: (InsightEngagementKind) -> Void
+    let onOpenEvidence: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: Theme.Spacing.sm) {
@@ -668,10 +742,14 @@ private struct ProfileInsightRow: View {
                 Text(insight.message)
                     .caption()
                     .fixedSize(horizontal: false, vertical: true)
+
+                InsightEvidenceButton(action: onOpenEvidence)
+                InsightEngagementPrompt(onSelect: onEngagement)
             }
 
             Spacer(minLength: Theme.Spacing.xs)
         }
+        .onAppear(perform: onAppear)
     }
 
     private var tint: Color {
@@ -699,6 +777,76 @@ private struct ProfileInsightRow: View {
             return "trophy.fill"
         default:
             return "brain.head.profile"
+        }
+    }
+}
+
+private struct ProfileWeeklyRecapCard: View {
+    let recap: WeeklyRecap
+    let onAppear: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            ProfileSectionHeader(title: "Weekly Recap")
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                Text(recap.headline)
+                    .font(.system(size: 17, weight: .black))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(recap.narrative)
+                    .caption()
+                    .fixedSize(horizontal: false, vertical: true)
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 82), spacing: Theme.Spacing.sm)],
+                    alignment: .leading,
+                    spacing: Theme.Spacing.sm
+                ) {
+                    ForEach(recap.stats) { stat in
+                        VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
+                            Text(stat.value)
+                                .font(.system(size: 14, weight: .black))
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Text(stat.label)
+                                .font(.system(size: 9, weight: .black))
+                                .tracking(0.7)
+                                .textCase(.uppercase)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                RecapLine(label: "Top moment", value: recap.topMoment)
+                RecapLine(label: "Surprise", value: recap.biggestSurprise)
+                RecapLine(label: "Next", value: recap.nextWeekFocus)
+            }
+            .padding(Theme.Spacing.md)
+            .background(Theme.Colors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        }
+        .id(recap.dedupeKey)
+        .onAppear(perform: onAppear)
+    }
+}
+
+private struct RecapLine: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
+            Text(label)
+                .font(.system(size: 10, weight: .black))
+                .tracking(0.8)
+                .textCase(.uppercase)
+                .foregroundStyle(Theme.Colors.textTertiary)
+            Text(value)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -752,9 +900,9 @@ private struct TrainingSignalRow: View {
 
     private var iconName: String {
         switch signal.type {
-        case .consistency, .completion:
+        case .consistency, .completion, .firstSession:
             return "flame.fill"
-        case .formImprovement, .volumeIncrease, .exerciseMastery:
+        case .formImprovement, .volumeIncrease, .exerciseMastery, .repeatExerciseProgress, .personalBaseline:
             return "chart.line.uptrend.xyaxis"
         case .formDropOff, .volumeDrop, .exerciseStruggle, .planFit:
             return "exclamationmark.triangle.fill"
@@ -766,9 +914,9 @@ private struct TrainingSignalRow: View {
             return "quote.bubble.fill"
         case .trophyProximity:
             return "trophy.fill"
-        case .cameraFriction:
+        case .cameraFriction, .setupQuality:
             return "camera.fill"
-        case .qualityCapacity, .targetFit, .progressionReadiness, .qualityPR:
+        case .qualityCapacity, .targetFit, .progressionReadiness, .qualityPR, .repCleanlinessIntro:
             return "target"
         case .movementBalance:
             return "square.grid.3x3.fill"

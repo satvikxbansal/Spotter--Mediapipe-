@@ -11,6 +11,7 @@ struct WorkoutPreviewView: View {
     @State private var statusMessage: String?
     @State private var targetDraft: TargetVolumeDraft?
     @State private var planInsight: AIInsight?
+    @State private var selectedInsightEvidence: AIInsight?
 
     init(plan: WorkoutPlanV2, profile: UserProfile? = nil) {
         _previewState = State(
@@ -53,6 +54,16 @@ struct WorkoutPreviewView: View {
                 onReset: resetTargetToOriginal
             )
             .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $selectedInsightEvidence) { insight in
+            InsightEvidenceSheetView(
+                insight: insight,
+                summaries: historyStore.summaries
+            ) { kind in
+                insightStore.recordEngagement(insight, kind: kind)
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .preferredColorScheme(.dark)
         .onAppear(perform: refreshPlanInsight)
@@ -161,8 +172,24 @@ struct WorkoutPreviewView: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if let planInsight {
+                InsightEvidenceButton {
+                    insightStore.recordEngagement(planInsight, kind: .opened)
+                    selectedInsightEvidence = planInsight
+                }
+                InsightEngagementPrompt { kind in
+                    insightStore.recordEngagement(planInsight, kind: kind)
+                }
+            }
         }
         .previewCard()
+        .id(planInsight?.id ?? "plan-reason")
+        .onAppear {
+            if let planInsight {
+                insightStore.recordImpression(planInsight, on: .workoutPreview)
+            }
+        }
     }
 
     private var cameraPlanCard: some View {
@@ -307,18 +334,22 @@ struct WorkoutPreviewView: View {
             snapshot: trendSnapshot,
             history: historyStore.summaries,
             profile: profile,
-            trophies: trophyStore.snapshot
+            trophies: trophyStore.snapshot,
+            context: SignalGenerationContext(historySessionCount: historyStore.summaries.count)
         )
         let generated = InsightEngine().generatePlanInsights(
             profile: profile,
             plan: plan,
             trendSnapshot: trendSnapshot,
             signals: signals,
-            trophyProgress: trophyStore.snapshot
+            trophyProgress: trophyStore.snapshot,
+            engagementRecords: insightStore.engagementRecordsSnapshot(),
+            now: now
         )
         planInsight = insightStore.selectInsights(
             generated,
             for: .workoutPreview,
+            profile: profile,
             limit: 1,
             now: now
         ).first

@@ -117,18 +117,7 @@ nonisolated extension SetQualitySummary {
         let secondAverage = average(secondHalfScores)
 
         let cueMessages = repQualityEvents.compactMap(\.cueMessageNearRep) + cueEvents.map(\.cueMessage)
-        let mostRepeatedCue = cueMessages
-            .reduce(into: [String: Int]()) { counts, message in
-                counts[message, default: 0] += 1
-            }
-            .sorted { lhs, rhs in
-                if lhs.value == rhs.value {
-                    return lhs.key < rhs.key
-                }
-                return lhs.value > rhs.value
-            }
-            .first?
-            .key
+        let mostRepeatedCue = cueCounts(from: cueMessages).first?.key
 
         let highSeverityCueMessages = Set(cueEvents.filter { $0.severity >= .warning }.map(\.cueMessage))
         let highSeverityCueEvents = highSeverityCueMessages.count
@@ -161,6 +150,68 @@ nonisolated extension SetQualitySummary {
     private static func average(_ values: [Double]) -> Double? {
         guard !values.isEmpty else { return nil }
         return values.reduce(0, +) / Double(values.count)
+    }
+
+    private static func cueCounts(from cueMessages: [String]) -> [(key: String, value: Int)] {
+        var groupCounts: [String: Int] = [:]
+        var displayCounts: [String: [String: Int]] = [:]
+        var displayFirstIndexes: [String: [String: Int]] = [:]
+
+        for (index, cue) in cueMessages.enumerated() {
+            let normalized = CueNormalizer.normalize(cue)
+            guard !normalized.isEmpty else { continue }
+
+            let displayCue = displayCueText(cue, fallback: normalized)
+            groupCounts[normalized, default: 0] += 1
+            displayCounts[normalized, default: [:]][displayCue, default: 0] += 1
+            if displayFirstIndexes[normalized] == nil {
+                displayFirstIndexes[normalized] = [:]
+            }
+            if displayFirstIndexes[normalized]?[displayCue] == nil {
+                displayFirstIndexes[normalized]?[displayCue] = index
+            }
+        }
+
+        return groupCounts
+            .map { normalized, count in
+                let displayCue = displayCounts[normalized]?
+                    .sorted { lhs, rhs in
+                        if lhs.value == rhs.value {
+                            let leftIndex = displayFirstIndexes[normalized]?[lhs.key] ?? Int.max
+                            let rightIndex = displayFirstIndexes[normalized]?[rhs.key] ?? Int.max
+                            if leftIndex == rightIndex {
+                                return lhs.key < rhs.key
+                            }
+                            return leftIndex < rightIndex
+                        }
+                        return lhs.value > rhs.value
+                    }
+                    .first?
+                    .key ?? normalized
+                return (key: displayCue, value: count)
+            }
+            .sorted { lhs, rhs in
+                if lhs.value == rhs.value {
+                    return lhs.key < rhs.key
+                }
+                return lhs.value > rhs.value
+            }
+    }
+
+    private static func displayCueText(_ cue: String, fallback: String) -> String {
+        var displayCue = cue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        while let lastScalar = displayCue.unicodeScalars.last,
+              CharacterSet.punctuationCharacters.contains(lastScalar) {
+            displayCue.removeLast()
+        }
+
+        displayCue = displayCue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return displayCue.isEmpty ? fallback : displayCue
     }
 
     private static func firstAdjacentChangeIndex(

@@ -164,6 +164,22 @@ nonisolated private extension InsightNarrativeBuilder {
             return "\(exercise) is showing repeated fit friction: \(value). Use an easier variant or swap later instead of forcing the same target."
         case .qualityPR:
             return "\(exercise) hit \(value), ahead of \(comparison ?? "the previous mark"). Celebrate it, then keep the next session specific instead of chasing random extra volume."
+        case .firstSession:
+            return "\(value). Your first useful coaching baseline is now started, so the next session should repeat the plan and let form quality set the pace."
+        case .setupQuality:
+            if candidate.context["status"] == "setupNeedsAttention" {
+                return "\(value) showed up in the first session. Start the next workout by fixing the frame before chasing reps so the app can judge form cleanly."
+            }
+            return "\(value) in the first session. Keep that setup steady so future form changes are easier to trust."
+        case .repCleanlinessIntro:
+            return "\(exercise) opened with \(value), \(comparison ?? "from the first scored set"). Use that as the first clean-rep baseline before increasing targets."
+        case .repeatExerciseProgress:
+            if candidate.context["status"] == "declining" {
+                return "\(exercise) repeated at \(value), down from \(comparison ?? "the first try"). Keep the same cue focus before adding reps."
+            }
+            return "\(exercise) repeated at \(value), compared with \(comparison ?? "the first try"). That gives the first real before-and-after point; keep the plan steady and watch the first set."
+        case .personalBaseline:
+            return "\(exercise)'s running baseline is \(value) across \(comparison ?? "early sessions"). Use new workouts against this personal mark instead of guessing whether form is improving."
         default:
             return nil
         }
@@ -211,6 +227,20 @@ nonisolated private extension InsightNarrativeBuilder {
             return "\(exercise) is showing repeated friction. Use an easier fit."
         case .qualityPR:
             return "\(exercise) hit \(value). Quality PR."
+        case .firstSession:
+            return "First session logged. Build from this baseline."
+        case .setupQuality:
+            return candidate.context["status"] == "setupNeedsAttention"
+                ? "Setup needs one fix before reps."
+                : "Setup started clean. Keep it steady."
+        case .repCleanlinessIntro:
+            return "\(exercise) started at \(value). Keep that quality bar."
+        case .repeatExerciseProgress:
+            return candidate.context["status"] == "declining"
+                ? "\(exercise) dipped on repeat. Make the cue first."
+                : "\(exercise) now has a repeat-session comparison."
+        case .personalBaseline:
+            return "\(exercise) baseline: \(value)."
         default:
             return nil
         }
@@ -432,22 +462,7 @@ nonisolated private extension InsightNarrativeBuilder {
     }
 
     func sanitize(_ text: String) -> String {
-        let blockedTerms = [
-            "heart-rate",
-            "heart rate",
-            "bpm",
-            "calorie",
-            "calories",
-            "fat loss",
-            "fat-loss",
-            "weight loss",
-            "weight-loss"
-        ]
-        let normalized = text.lowercased()
-        guard !blockedTerms.contains(where: { normalized.contains($0) }) else {
-            return "This insight uses only supported local workout, form, cue, rest, and trophy evidence."
-        }
-        return text
+        InsightTextSanitizer.sanitize(text)
     }
 }
 

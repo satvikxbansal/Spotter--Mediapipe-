@@ -26,6 +26,23 @@ nonisolated enum TrainingSignalType: String, Codable, CaseIterable, Hashable {
     case exerciseReacquisition
     case exercisePreference
     case qualityPR
+    case firstSession
+    case setupQuality
+    case repCleanlinessIntro
+    case repeatExerciseProgress
+    case personalBaseline
+}
+
+nonisolated struct SignalGenerationContext: Codable, Equatable {
+    let historySessionCount: Int
+
+    init(historySessionCount: Int) {
+        self.historySessionCount = max(historySessionCount, 0)
+    }
+
+    var isWarmup: Bool {
+        historySessionCount > 0 && historySessionCount < 6
+    }
 }
 
 nonisolated enum SignalConfidence: String, Codable, CaseIterable, Hashable {

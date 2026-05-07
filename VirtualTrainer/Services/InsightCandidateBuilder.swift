@@ -64,6 +64,29 @@ nonisolated struct InsightCandidateBuilder {
                 ) {
                     candidates.append(candidate)
                 }
+            case .repCleanlinessIntro, .repeatExerciseProgress:
+                guard planContainsSignalExercise(signal, planExercises: planExercises) else {
+                    continue
+                }
+                if let candidate = trendCandidate(
+                    from: signal,
+                    surfaces: [.workoutPreview],
+                    createdAt: createdAt,
+                    planExercises: planExercises,
+                    planTitle: plan.title
+                ) {
+                    candidates.append(candidate)
+                }
+            case .firstSession, .setupQuality, .personalBaseline:
+                if let candidate = trendCandidate(
+                    from: signal,
+                    surfaces: [.workoutPreview],
+                    createdAt: createdAt,
+                    planExercises: planExercises,
+                    planTitle: plan.title
+                ) {
+                    candidates.append(candidate)
+                }
             case .consistency, .completion, .trophyProximity, .volumeIncrease:
                 if let candidate = trendCandidate(
                     from: signal,
@@ -88,7 +111,7 @@ nonisolated struct InsightCandidateBuilder {
             candidates.append(trophyCandidate)
         }
 
-        return evidenceBacked(candidates)
+        return cappedBootstrapCandidates(evidenceBacked(candidates), surface: .workoutPreview)
     }
 
     func buildWorkoutCandidates(
@@ -125,7 +148,7 @@ nonisolated struct InsightCandidateBuilder {
         profile: UserProfile
     ) -> [InsightCandidate] {
         guard trendSnapshot.totalWorkouts > 0 else { return [] }
-        return evidenceBacked(
+        return cappedBootstrapCandidates(evidenceBacked(
             signals.compactMap {
                 trendCandidate(
                     from: $0,
@@ -135,7 +158,7 @@ nonisolated struct InsightCandidateBuilder {
                     planTitle: nil
                 )
             }
-        )
+        ), surface: .profile)
     }
 
     func buildDashboardCandidates(
@@ -164,7 +187,7 @@ nonisolated struct InsightCandidateBuilder {
             candidates.append(trophy)
         }
 
-        return evidenceBacked(candidates)
+        return cappedBootstrapCandidates(evidenceBacked(candidates), surface: .dashboard)
     }
 
     func buildProfileCandidates(
@@ -193,7 +216,7 @@ nonisolated struct InsightCandidateBuilder {
             candidates.append(trophy)
         }
 
-        return evidenceBacked(candidates)
+        return cappedBootstrapCandidates(evidenceBacked(candidates), surface: .profile)
     }
 }
 
@@ -868,6 +891,22 @@ nonisolated private extension InsightCandidateBuilder {
             return (.planAdjustment, signal.exerciseType.map { "\($0.displayName) needs an easier fit" } ?? "One movement needs an easier fit", .useEasierVariant, .caution, .preventOverreach, 93, 4)
         case .qualityPR:
             return (.growthCelebration, signal.exerciseType.map { "\($0.displayName) hit a quality PR" } ?? "Quality hit a new high", .celebrate, .positive, .celebrateGrowth, 84, 5)
+        case .firstSession:
+            return (.consistency, "First session is logged", .continuePlan, .positive, .reinforceConsistency, 72, 3)
+        case .setupQuality:
+            if status(for: signal) == "setupNeedsAttention" {
+                return (.planSpecific, "Camera setup is the first fix", .focusCue, .neutral, .explainPlan, 80, 2)
+            }
+            return (.planSpecific, "Camera setup is starting clean", .continuePlan, .positive, .buildConfidence, 74, 2)
+        case .repCleanlinessIntro:
+            return (.growthCelebration, signal.exerciseType.map { "\($0.displayName) has a clean-rep baseline" } ?? "Clean reps have a first baseline", .continuePlan, .positive, .buildConfidence, 79, 3)
+        case .repeatExerciseProgress:
+            if status(for: signal) == "declining" {
+                return (.formCorrection, signal.exerciseType.map { "\($0.displayName) needs the same first-set focus" } ?? "Repeated movement needs focus", .focusCue, .caution, .preventOverreach, 83, 3)
+            }
+            return (.growthCelebration, signal.exerciseType.map { "\($0.displayName) has repeat-session evidence" } ?? "A repeated movement has evidence", .continuePlan, .positive, .buildConfidence, 81, 3)
+        case .personalBaseline:
+            return (.dayOverDayTrend, signal.exerciseType.map { "\($0.displayName) baseline is forming" } ?? "Personal baseline is forming", .continuePlan, .neutral, .explainPlan, 68, 4)
         }
     }
 
@@ -883,6 +922,12 @@ nonisolated private extension InsightCandidateBuilder {
         case .progressionReadiness:
             if signal.value == "ready to progress" { return "ready" }
             if signal.value == "not ready to progress" { return "blocked" }
+        case .setupQuality:
+            return (signal.delta ?? 0) > 0 ? "setupNeedsAttention" : "setupClean"
+        case .repeatExerciseProgress:
+            if (signal.delta ?? 0) <= -2 { return "declining" }
+            if (signal.delta ?? 0) >= 2 { return "improving" }
+            return "steady"
         default:
             break
         }
@@ -963,6 +1008,52 @@ nonisolated private extension InsightCandidateBuilder {
 
     func evidenceBacked(_ candidates: [InsightCandidate]) -> [InsightCandidate] {
         candidates.filter { !$0.evidence.isEmpty && $0.candidateAction != .noActionNeeded }
+    }
+
+    func cappedBootstrapCandidates(
+        _ candidates: [InsightCandidate],
+        surface: InsightSurface
+    ) -> [InsightCandidate] {
+        let bootstrapCandidates = candidates.filter {
+            $0.surfaces.contains(surface) && isBootstrapCandidate($0)
+        }
+        guard bootstrapCandidates.count > 2 else { return candidates }
+
+        let allowed = Set(
+            bootstrapCandidates
+                .sorted {
+                    if $0.rawScore == $1.rawScore {
+                        return $0.candidateHeadline < $1.candidateHeadline
+                    }
+                    return $0.rawScore > $1.rawScore
+                }
+                .prefix(2)
+                .map(\.id)
+        )
+
+        return candidates.filter { candidate in
+            !candidate.surfaces.contains(surface) ||
+                !isBootstrapCandidate(candidate) ||
+                allowed.contains(candidate.id)
+        }
+    }
+
+    func isBootstrapCandidate(_ candidate: InsightCandidate) -> Bool {
+        guard let rawValue = candidate.context["signalType"],
+              let signalType = TrainingSignalType(rawValue: rawValue)
+        else { return false }
+
+        return bootstrapSignalTypes.contains(signalType)
+    }
+
+    var bootstrapSignalTypes: Set<TrainingSignalType> {
+        [
+            .firstSession,
+            .setupQuality,
+            .repCleanlinessIntro,
+            .repeatExerciseProgress,
+            .personalBaseline
+        ]
     }
 
     func planContainsSignalExercise(
@@ -1070,9 +1161,7 @@ nonisolated private extension InsightCandidateBuilder {
     }
 
     func normalizedCue(_ cue: String) -> String {
-        cue.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: "  ", with: " ")
+        CueNormalizer.normalize(cue)
     }
 
     func mostCommonExercise(in exercises: [ExerciseType]) -> ExerciseType? {

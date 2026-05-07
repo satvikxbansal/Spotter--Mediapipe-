@@ -2,9 +2,20 @@ import Foundation
 
 nonisolated struct TrendEngine {
     private let calendar: Calendar
+    let recentCuePolicy: TrendWindowPolicy
+    let recentSetupPolicy: TrendWindowPolicy
+    let recentExerciseFrictionPolicy: TrendWindowPolicy
 
-    init(calendar: Calendar = .current) {
+    init(
+        calendar: Calendar = .current,
+        recentCuePolicy: TrendWindowPolicy = .recentCues,
+        recentSetupPolicy: TrendWindowPolicy = .recentSetup,
+        recentExerciseFrictionPolicy: TrendWindowPolicy = .recentExerciseFriction
+    ) {
         self.calendar = calendar
+        self.recentCuePolicy = recentCuePolicy
+        self.recentSetupPolicy = recentSetupPolicy
+        self.recentExerciseFrictionPolicy = recentExerciseFrictionPolicy
     }
 
     func buildSnapshot(
@@ -15,7 +26,7 @@ nonisolated struct TrendEngine {
     ) -> UserTrainingTrendSnapshot {
         let localCalendar = calendar(for: profile)
         let sortedHistory = sorted(history)
-        let exerciseTrends = buildExerciseTrends(from: sortedHistory)
+        let exerciseTrends = buildExerciseTrends(from: sortedHistory, now: now)
         let workoutCountThisWeek = workoutsThisWeek(in: sortedHistory, calendar: localCalendar, now: now)
         let weeklyUniqueDays = uniqueWorkoutDaysThisWeek(in: sortedHistory, calendar: localCalendar, now: now)
         let formComparison = comparison(
@@ -57,9 +68,9 @@ nonisolated struct TrendEngine {
             strongestExercise: strongestExercise(from: exerciseTrends),
             improvingExercise: improvingExercise(from: exerciseTrends),
             strugglingExercise: strugglingExercise(from: exerciseTrends),
-            mostRepeatedCue: mostRepeatedCue(in: sortedHistory),
+            mostRepeatedCue: mostRepeatedCue(in: sortedHistory, now: now),
             trophyNearMisses: trophyNearMisses(from: trophies),
-            cameraFrictionCount: cameraFrictionCount(in: sortedHistory),
+            cameraFrictionCount: cameraFrictionCount(in: sortedHistory, now: now),
             exerciseTrends: exerciseTrends
         )
     }
@@ -148,6 +159,13 @@ nonisolated struct TrendEngine {
         metric: TrendMetric = .volumeUnits
     ) -> TrendComparisonSummary {
         comparison(history: sorted(history), window: .threeWorkout, metric: metric)
+    }
+
+    func latestWorkoutComparison(
+        history: [WorkoutSessionSummary],
+        metric: TrendMetric = .volumeUnits
+    ) -> TrendComparisonSummary {
+        comparison(history: sorted(history), window: .latestWorkout, metric: metric)
     }
 
     func sevenWorkoutComparison(
@@ -242,7 +260,7 @@ nonisolated struct TrendEngine {
 
 nonisolated extension TrendEngine {
     static func isCameraFrictionCue(_ cue: String) -> Bool {
-        let normalized = cue.lowercased()
+        let normalized = CueNormalizer.normalize(cue)
         return [
             "camera",
             "visible",
@@ -261,6 +279,11 @@ nonisolated extension TrendEngine {
 }
 
 nonisolated private extension TrendEngine {
+    struct CueObservation {
+        let message: String
+        let timestamp: Date
+    }
+
     struct ExerciseObservation {
         let summaryId: UUID
         let endedAt: Date
@@ -269,7 +292,7 @@ nonisolated private extension TrendEngine {
         let holdSeconds: Int
         let averageFormScore: Double?
         let bestFormScore: Double?
-        let cueMessages: [String]
+        let cueObservations: [CueObservation]
         let highSeverityCueCount: Int
         let breakdownRepIndex: Int?
         let improvementRepIndex: Int?
@@ -279,6 +302,10 @@ nonisolated private extension TrendEngine {
         let skipped: Bool
         let restExtended: Bool
         let cameraFrictionCueCount: Int
+
+        var cueMessages: [String] {
+            cueObservations.map(\.message)
+        }
     }
 
     struct EffortComparison {
@@ -539,7 +566,8 @@ nonisolated private extension TrendEngine {
     }
 
     func buildExerciseTrends(
-        from history: [WorkoutSessionSummary]
+        from history: [WorkoutSessionSummary],
+        now: Date
     ) -> [ExerciseTrendSummary] {
         let observations = history.flatMap(exerciseObservations)
         let grouped = Dictionary(grouping: observations, by: \.exerciseType)
@@ -551,8 +579,18 @@ nonisolated private extension TrendEngine {
                 }
                 return $0.endedAt < $1.endedAt
             }
+            let recentFrictionValues = exerciseWindow(
+                from: sortedValues,
+                policy: recentExerciseFrictionPolicy,
+                now: now
+            )
             let formScores = sortedValues.compactMap(\.averageFormScore)
-            let cueCounts = cueCounts(from: sortedValues.flatMap(\.cueMessages))
+            let cueCounts = cueCounts(
+                from: recentFrictionValues
+                    .flatMap(\.cueObservations)
+                    .filter { recentExerciseFrictionPolicy.contains($0.timestamp, now: now) }
+                    .map(\.message)
+            )
             let recentDelta = recentFormDelta(in: sortedValues)
             let summaryIds = Set(sortedValues.map(\.summaryId))
 
@@ -569,11 +607,15 @@ nonisolated private extension TrendEngine {
                 improvementRepIndex: sortedValues.compactMap(\.improvementRepIndex).min(),
                 goodFormRepCount: sortedValues.reduce(0) { $0 + $1.goodFormReps },
                 excellentFormRepCount: sortedValues.reduce(0) { $0 + $1.excellentFormReps },
-                highSeverityCueCount: sortedValues.reduce(0) { $0 + $1.highSeverityCueCount },
-                formDropOffSetCount: sortedValues.filter(\.formDroppedOff).count,
-                skippedSetCount: sortedValues.filter(\.skipped).count,
-                restExtendedSetCount: sortedValues.filter(\.restExtended).count,
-                cameraFrictionCueCount: sortedValues.reduce(0) { $0 + $1.cameraFrictionCueCount }
+                highSeverityCueCount: recentFrictionValues.reduce(0) { $0 + $1.highSeverityCueCount },
+                formDropOffSetCount: recentFrictionValues.filter(\.formDroppedOff).count,
+                skippedSetCount: recentFrictionValues.filter(\.skipped).count,
+                restExtendedSetCount: recentFrictionValues.filter(\.restExtended).count,
+                cameraFrictionCueCount: cameraFrictionCueCount(
+                    in: recentFrictionValues,
+                    policy: recentExerciseFrictionPolicy,
+                    now: now
+                )
             )
         }
         .sorted {
@@ -588,8 +630,7 @@ nonisolated private extension TrendEngine {
         summary.exerciseSummaries.map { setSummary in
             let repScores = setSummary.repQualityEvents.compactMap(\.formScore).map(Double.init)
             let quality = setSummary.qualitySummary
-            let cueMessages = setSummary.cueEvents.map(\.cueMessage) +
-                setSummary.repQualityEvents.compactMap(\.cueMessageNearRep)
+            let cueObservations = cueObservations(in: setSummary)
             let highSeverityCueCount = quality?.highSeverityCueCount ?? highSeverityCueCount(in: setSummary)
             let bestFormScore = [quality?.maxFormScore, setSummary.averageFormScore, repScores.max()]
                 .compactMap { $0 }
@@ -597,7 +638,7 @@ nonisolated private extension TrendEngine {
             let averageFormScore = quality?.averageFormScore
                 ?? setSummary.averageFormScore
                 ?? average(repScores)
-            let cameraCues = cueMessages.filter(Self.isCameraFrictionCue).count
+            let cameraCues = cueObservations.filter { Self.isCameraFrictionCue($0.message) }.count
 
             return ExerciseObservation(
                 summaryId: summary.id,
@@ -607,7 +648,7 @@ nonisolated private extension TrendEngine {
                 holdSeconds: setSummary.achievedHoldSeconds,
                 averageFormScore: averageFormScore,
                 bestFormScore: bestFormScore,
-                cueMessages: cueMessages,
+                cueObservations: cueObservations,
                 highSeverityCueCount: highSeverityCueCount,
                 breakdownRepIndex: quality?.breakdownRepIndex,
                 improvementRepIndex: quality?.improvementRepIndex,
@@ -618,6 +659,64 @@ nonisolated private extension TrendEngine {
                 restExtended: setSummary.restExtended,
                 cameraFrictionCueCount: cameraCues
             )
+        }
+    }
+
+    func cueObservations(in setSummary: ExerciseSetSummary) -> [CueObservation] {
+        let cueEvents = setSummary.cueEvents.map { event in
+            CueObservation(message: event.cueMessage, timestamp: event.timestamp)
+        }
+        let repEvents = setSummary.repQualityEvents.compactMap { event -> CueObservation? in
+            guard let cue = event.cueMessageNearRep else { return nil }
+            return CueObservation(message: cue, timestamp: event.timestamp)
+        }
+        return cueEvents + repEvents
+    }
+
+    func exerciseWindow(
+        from observations: [ExerciseObservation],
+        policy: TrendWindowPolicy,
+        now: Date
+    ) -> [ExerciseObservation] {
+        let sortedDescending = observations.sorted {
+            if $0.endedAt == $1.endedAt {
+                return $0.summaryId.uuidString > $1.summaryId.uuidString
+            }
+            return $0.endedAt > $1.endedAt
+        }
+
+        let eligibleObservations = sortedDescending.filter {
+            policy.contains($0.endedAt, now: now)
+        }
+        let allowedSummaryIds: Set<UUID>?
+        if let maxSessions = policy.maxSessions {
+            var ids: [UUID] = []
+            var seen = Set<UUID>()
+            for observation in eligibleObservations where !seen.contains(observation.summaryId) {
+                seen.insert(observation.summaryId)
+                ids.append(observation.summaryId)
+                if ids.count >= maxSessions { break }
+            }
+            allowedSummaryIds = Set(ids)
+        } else {
+            allowedSummaryIds = nil
+        }
+
+        return observations.filter { observation in
+            let isAllowedSession = allowedSummaryIds.map { $0.contains(observation.summaryId) } ?? true
+            return isAllowedSession && policy.contains(observation.endedAt, now: now)
+        }
+    }
+
+    func cameraFrictionCueCount(
+        in observations: [ExerciseObservation],
+        policy: TrendWindowPolicy,
+        now: Date
+    ) -> Int {
+        observations.reduce(0) { total, observation in
+            total + observation.cueObservations.filter {
+                policy.contains($0.timestamp, now: now) && Self.isCameraFrictionCue($0.message)
+            }.count
         }
     }
 
@@ -715,21 +814,62 @@ nonisolated private extension TrendEngine {
         return score
     }
 
-    func mostRepeatedCue(in history: [WorkoutSessionSummary]) -> String? {
-        cueCounts(from: history.flatMap { summary in
+    func mostRepeatedCue(in history: [WorkoutSessionSummary], now: Date) -> String? {
+        cueCounts(
+            from: cueOccurrences(in: history, policy: recentCuePolicy, now: now).map(\.message)
+        ).first?.key
+    }
+
+    func cueOccurrences(
+        in history: [WorkoutSessionSummary],
+        policy: TrendWindowPolicy,
+        now: Date
+    ) -> [CueObservation] {
+        policy.filteredSessions(history, now: now).flatMap { summary in
             summary.exerciseSummaries.flatMap { setSummary in
-                setSummary.cueEvents.map(\.cueMessage) +
-                    setSummary.repQualityEvents.compactMap(\.cueMessageNearRep)
+                cueObservations(in: setSummary)
             }
-        }).first?.key
+        }
+        .filter { policy.contains($0.timestamp, now: now) }
     }
 
     func cueCounts(from cueMessages: [String]) -> [(key: String, value: Int)] {
-        cueMessages
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .reduce(into: [String: Int]()) { counts, cue in
-                counts[cue, default: 0] += 1
+        var groupCounts: [String: Int] = [:]
+        var displayCounts: [String: [String: Int]] = [:]
+        var displayFirstIndexes: [String: [String: Int]] = [:]
+
+        for (index, cue) in cueMessages.enumerated() {
+            let normalized = CueNormalizer.normalize(cue)
+            guard !normalized.isEmpty else { continue }
+
+            let displayCue = displayCueText(cue, fallback: normalized)
+            groupCounts[normalized, default: 0] += 1
+            displayCounts[normalized, default: [:]][displayCue, default: 0] += 1
+            if displayFirstIndexes[normalized] == nil {
+                displayFirstIndexes[normalized] = [:]
+            }
+            if displayFirstIndexes[normalized]?[displayCue] == nil {
+                displayFirstIndexes[normalized]?[displayCue] = index
+            }
+        }
+
+        return groupCounts
+            .map { normalized, count in
+                let displayCue = displayCounts[normalized]?
+                    .sorted { lhs, rhs in
+                        if lhs.value == rhs.value {
+                            let leftIndex = displayFirstIndexes[normalized]?[lhs.key] ?? Int.max
+                            let rightIndex = displayFirstIndexes[normalized]?[rhs.key] ?? Int.max
+                            if leftIndex == rightIndex {
+                                return lhs.key < rhs.key
+                            }
+                            return leftIndex < rightIndex
+                        }
+                        return lhs.value > rhs.value
+                    }
+                    .first?
+                    .key ?? normalized
+                return (key: displayCue, value: count, normalized: normalized)
             }
             .sorted { lhs, rhs in
                 if lhs.value == rhs.value {
@@ -737,6 +877,23 @@ nonisolated private extension TrendEngine {
                 }
                 return lhs.value > rhs.value
             }
+            .map { (key: $0.key, value: $0.value) }
+    }
+
+    func displayCueText(_ cue: String, fallback: String) -> String {
+        var displayCue = cue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        while let lastScalar = displayCue.unicodeScalars.last,
+              CharacterSet.punctuationCharacters.contains(lastScalar) {
+            displayCue.removeLast()
+        }
+
+        displayCue = displayCue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return displayCue.isEmpty ? fallback : displayCue
     }
 
     func trophyNearMisses(from snapshot: TrophyProgressSnapshot) -> [TrophyNearMiss] {
@@ -767,14 +924,10 @@ nonisolated private extension TrendEngine {
             .map { $0 }
     }
 
-    func cameraFrictionCount(in history: [WorkoutSessionSummary]) -> Int {
-        history.reduce(0) { total, summary in
-            total + summary.exerciseSummaries.reduce(0) { setTotal, setSummary in
-                let cues = setSummary.cueEvents.map(\.cueMessage) +
-                    setSummary.repQualityEvents.compactMap(\.cueMessageNearRep)
-                return setTotal + cues.filter(Self.isCameraFrictionCue).count
-            }
-        }
+    func cameraFrictionCount(in history: [WorkoutSessionSummary], now: Date) -> Int {
+        cueOccurrences(in: history, policy: recentSetupPolicy, now: now)
+            .filter { Self.isCameraFrictionCue($0.message) }
+            .count
     }
 
     func average(_ values: [Double]) -> Double? {

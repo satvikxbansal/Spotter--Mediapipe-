@@ -11,9 +11,13 @@ nonisolated struct SignalExtractor {
         snapshot: UserTrainingTrendSnapshot,
         history: [WorkoutSessionSummary],
         profile: UserProfile,
-        trophies: TrophyProgressSnapshot
+        trophies: TrophyProgressSnapshot,
+        context: SignalGenerationContext? = nil
     ) -> [UserTrainingSignal] {
         guard snapshot.totalWorkouts > 0 else { return [] }
+        let generationContext = context ?? SignalGenerationContext(
+            historySessionCount: max(snapshot.totalWorkouts, history.count)
+        )
 
         let sortedHistory = history.sorted {
             if $0.endedAt == $1.endedAt {
@@ -23,6 +27,13 @@ nonisolated struct SignalExtractor {
         }
 
         var signals: [UserTrainingSignal] = []
+        appendBootstrapSignals(
+            to: &signals,
+            snapshot: snapshot,
+            history: sortedHistory,
+            profile: profile,
+            context: generationContext
+        )
         appendConsistencySignals(
             to: &signals,
             snapshot: snapshot,
@@ -33,13 +44,15 @@ nonisolated struct SignalExtractor {
             to: &signals,
             snapshot: snapshot,
             history: sortedHistory,
-            profile: profile
+            profile: profile,
+            context: generationContext
         )
         appendVolumeSignals(
             to: &signals,
             history: sortedHistory,
             profile: profile,
-            createdAt: snapshot.generatedAt
+            createdAt: snapshot.generatedAt,
+            context: generationContext
         )
         appendRepeatedCueSignal(
             to: &signals,
@@ -63,7 +76,8 @@ nonisolated struct SignalExtractor {
             to: &signals,
             snapshot: snapshot,
             history: sortedHistory,
-            profile: profile
+            profile: profile,
+            context: generationContext
         )
         appendFatigueSignal(
             to: &signals,
@@ -130,6 +144,220 @@ nonisolated private extension SignalExtractor {
         let observations: [SignalSetObservation]
     }
 
+    func appendBootstrapSignals(
+        to signals: inout [UserTrainingSignal],
+        snapshot: UserTrainingTrendSnapshot,
+        history: [WorkoutSessionSummary],
+        profile: UserProfile,
+        context: SignalGenerationContext
+    ) {
+        guard context.historySessionCount > 0,
+              !history.isEmpty
+        else { return }
+
+        let observations = setObservations(from: history)
+
+        if context.historySessionCount == 1 {
+            appendFirstSessionSignal(to: &signals, snapshot: snapshot, history: history, profile: profile)
+            appendSetupQualitySignal(to: &signals, snapshot: snapshot, history: history, observations: observations, profile: profile)
+            appendRepCleanlinessIntroSignal(to: &signals, snapshot: snapshot, observations: observations, profile: profile)
+        }
+
+        if context.historySessionCount == 2 {
+            appendRepeatExerciseProgressSignal(to: &signals, snapshot: snapshot, history: history, profile: profile)
+        }
+
+        appendPersonalBaselineSignal(to: &signals, snapshot: snapshot, observations: observations, profile: profile)
+    }
+
+    func appendFirstSessionSignal(
+        to signals: inout [UserTrainingSignal],
+        snapshot: UserTrainingTrendSnapshot,
+        history: [WorkoutSessionSummary],
+        profile: UserProfile
+    ) {
+        signals.append(
+            UserTrainingSignal(
+                type: .firstSession,
+                goal: profile.primaryGoal,
+                title: "First session is logged",
+                value: "1 workout completed",
+                comparisonValue: "first baseline started",
+                delta: 1,
+                confidence: .medium,
+                evidenceRefs: latestSessionRefs(history, limit: 1),
+                createdAt: snapshot.generatedAt
+            )
+        )
+    }
+
+    func appendSetupQualitySignal(
+        to signals: inout [UserTrainingSignal],
+        snapshot: UserTrainingTrendSnapshot,
+        history: [WorkoutSessionSummary],
+        observations: [SignalSetObservation],
+        profile: UserProfile
+    ) {
+        guard let latestSummary = history.first else { return }
+        let latestObservations = observations.filter { $0.summary.id == latestSummary.id }
+        let setupCueCount = latestObservations.reduce(0) { $0 + $1.cameraFrictionCueCount }
+        let cueEvidence = cameraFrictionEvidenceRefs(
+            history: [latestSummary],
+            limit: 2,
+            policy: trendEngine.recentSetupPolicy,
+            now: snapshot.generatedAt
+        )
+        let evidence = cueEvidence.isEmpty ? latestSessionRefs([latestSummary], limit: 1) : cueEvidence
+
+        signals.append(
+            UserTrainingSignal(
+                type: .setupQuality,
+                goal: profile.primaryGoal,
+                title: setupCueCount > 0 ? "Camera setup has an early fix" : "Camera setup stayed clear",
+                value: setupCueCount > 0 ? "\(setupCueCount) setup cue\(setupCueCount == 1 ? "" : "s")" : "no setup cues",
+                comparisonValue: setupCueCount > 0 ? "frame first, reps second" : "body stayed visible enough to score",
+                delta: Double(setupCueCount),
+                confidence: .medium,
+                evidenceRefs: evidence,
+                createdAt: snapshot.generatedAt
+            )
+        )
+    }
+
+    func appendRepCleanlinessIntroSignal(
+        to signals: inout [UserTrainingSignal],
+        snapshot: UserTrainingTrendSnapshot,
+        observations: [SignalSetObservation],
+        profile: UserProfile
+    ) {
+        guard let latestSummary = observations.first?.summary,
+              let firstSet = firstSetObservation(in: latestSummary, observations: observations),
+              let quality = firstSet.setSummary.qualitySummary,
+              quality.totalScoredReps > 0
+        else { return }
+
+        let percent = (Double(quality.goodFormReps) / Double(quality.totalScoredReps)) * 100
+        signals.append(
+            UserTrainingSignal(
+                type: .repCleanlinessIntro,
+                exerciseType: firstSet.exerciseType,
+                movementPattern: metadata(for: firstSet.exerciseType)?.movementPattern,
+                goal: profile.primaryGoal,
+                title: "\(firstSet.exerciseType.displayName) first set has a clean-rep baseline",
+                value: "\(Int(percent.rounded()))% good-form reps",
+                comparisonValue: "\(quality.goodFormReps)/\(quality.totalScoredReps) scored reps",
+                delta: percent,
+                confidence: .medium,
+                evidenceRefs: evidenceRefs(from: [firstSet], limit: 1),
+                createdAt: snapshot.generatedAt
+            )
+        )
+    }
+
+    func appendRepeatExerciseProgressSignal(
+        to signals: inout [UserTrainingSignal],
+        snapshot: UserTrainingTrendSnapshot,
+        history: [WorkoutSessionSummary],
+        profile: UserProfile
+    ) {
+        guard history.count >= 2 else { return }
+        let observations = setObservations(from: Array(history.prefix(2)))
+        let latestSummary = history[0]
+        let previousSummary = history[1]
+        let latestByExercise = firstSetObservationsByExercise(in: latestSummary, observations: observations)
+        let previousByExercise = firstSetObservationsByExercise(in: previousSummary, observations: observations)
+        let repeatedExercises = Set(latestByExercise.keys).intersection(previousByExercise.keys)
+
+        let candidates = repeatedExercises.compactMap { exercise -> (exercise: ExerciseType, latest: SignalSetObservation, previous: SignalSetObservation, delta: Double)? in
+            guard let latest = latestByExercise[exercise],
+                  let previous = previousByExercise[exercise],
+                  let latestScore = latest.averageFormScore,
+                  let previousScore = previous.averageFormScore
+            else { return nil }
+
+            return (exercise, latest, previous, latestScore - previousScore)
+        }
+        .sorted {
+            if abs($0.delta) == abs($1.delta) {
+                return $0.exercise.rawValue < $1.exercise.rawValue
+            }
+            return abs($0.delta) > abs($1.delta)
+        }
+
+        guard let candidate = candidates.first,
+              let latestScore = candidate.latest.averageFormScore,
+              let previousScore = candidate.previous.averageFormScore
+        else { return }
+
+        signals.append(
+            UserTrainingSignal(
+                type: .repeatExerciseProgress,
+                exerciseType: candidate.exercise,
+                movementPattern: metadata(for: candidate.exercise)?.movementPattern,
+                goal: profile.primaryGoal,
+                title: repeatExerciseTitle(for: candidate.exercise, delta: candidate.delta),
+                value: "set 1 \(formatPercent(latestScore))",
+                comparisonValue: "previous set 1 \(formatPercent(previousScore))",
+                delta: candidate.delta,
+                confidence: .medium,
+                evidenceRefs: evidenceRefs(from: [candidate.latest, candidate.previous], limit: 2),
+                createdAt: snapshot.generatedAt
+            )
+        )
+    }
+
+    func appendPersonalBaselineSignal(
+        to signals: inout [UserTrainingSignal],
+        snapshot: UserTrainingTrendSnapshot,
+        observations: [SignalSetObservation],
+        profile: UserProfile
+    ) {
+        let scored = observations.filter { $0.averageFormScore != nil }
+        let candidates = Dictionary(grouping: scored, by: \.exerciseType)
+            .compactMap { exercise, values -> (exercise: ExerciseType, median: Double, sessionCount: Int, units: Int, refs: [TrainingEvidenceRef])? in
+                let scores = values.compactMap(\.averageFormScore)
+                guard let medianScore = median(scores) else { return nil }
+                let sessionCount = Set(values.map { $0.summary.id }).count
+                let units = values.reduce(0) { $0 + $1.achievedUnits }
+                return (
+                    exercise,
+                    medianScore,
+                    sessionCount,
+                    units,
+                    evidenceRefs(from: Array(values.prefix(3)), limit: 3)
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.sessionCount == rhs.sessionCount {
+                    if lhs.units == rhs.units {
+                        return lhs.exercise.rawValue < rhs.exercise.rawValue
+                    }
+                    return lhs.units > rhs.units
+                }
+                return lhs.sessionCount > rhs.sessionCount
+            }
+
+        guard let candidate = candidates.first,
+              !candidate.refs.isEmpty
+        else { return }
+
+        signals.append(
+            UserTrainingSignal(
+                type: .personalBaseline,
+                exerciseType: candidate.exercise,
+                movementPattern: metadata(for: candidate.exercise)?.movementPattern,
+                goal: profile.primaryGoal,
+                title: "\(candidate.exercise.displayName) baseline is forming",
+                value: "\(formatPercent(candidate.median)) median form",
+                comparisonValue: "\(candidate.sessionCount) session\(candidate.sessionCount == 1 ? "" : "s") so far",
+                delta: candidate.median,
+                confidence: .medium,
+                evidenceRefs: candidate.refs,
+                createdAt: snapshot.generatedAt
+            )
+        )
+    }
+
     func appendConsistencySignals(
         to signals: inout [UserTrainingSignal],
         snapshot: UserTrainingTrendSnapshot,
@@ -177,15 +405,25 @@ nonisolated private extension SignalExtractor {
         to signals: inout [UserTrainingSignal],
         snapshot: UserTrainingTrendSnapshot,
         history: [WorkoutSessionSummary],
-        profile: UserProfile
+        profile: UserProfile,
+        context: SignalGenerationContext
     ) {
-        let comparison = trendEngine.threeWorkoutComparison(history: history, metric: .formScore)
+        let useWarmupComparison = context.historySessionCount >= 3 && context.historySessionCount < 6
+        let comparison = useWarmupComparison
+            ? trendEngine.latestWorkoutComparison(history: history, metric: .formScore)
+            : trendEngine.threeWorkoutComparison(history: history, metric: .formScore)
         guard let delta = comparison.delta,
               let latest = comparison.latestValue,
               let previous = comparison.comparisonValue
         else { return }
 
-        if snapshot.overallFormTrend == .improving {
+        let direction = useWarmupComparison
+            ? trendDirection(delta: delta, meaningfulThreshold: 5, positive: .improving, negative: .declining)
+            : snapshot.overallFormTrend
+        let confidence: SignalConfidence = useWarmupComparison ? .medium : (abs(delta) >= 8 ? .high : .medium)
+        let evidenceLimit = useWarmupComparison ? 2 : 6
+
+        if direction == .improving {
             signals.append(
                 UserTrainingSignal(
                     type: .formImprovement,
@@ -194,12 +432,12 @@ nonisolated private extension SignalExtractor {
                     value: formatPercent(latest),
                     comparisonValue: formatPercent(previous),
                     delta: delta,
-                    confidence: abs(delta) >= 8 ? .high : .medium,
-                    evidenceRefs: latestSessionRefs(history, limit: 6),
+                    confidence: confidence,
+                    evidenceRefs: latestSessionRefs(history, limit: evidenceLimit),
                     createdAt: snapshot.generatedAt
                 )
             )
-        } else if snapshot.overallFormTrend == .declining {
+        } else if direction == .declining {
             signals.append(
                 UserTrainingSignal(
                     type: .formDropOff,
@@ -208,8 +446,8 @@ nonisolated private extension SignalExtractor {
                     value: formatPercent(latest),
                     comparisonValue: formatPercent(previous),
                     delta: delta,
-                    confidence: abs(delta) >= 8 ? .high : .medium,
-                    evidenceRefs: latestSessionRefs(history, limit: 6),
+                    confidence: confidence,
+                    evidenceRefs: latestSessionRefs(history, limit: evidenceLimit),
                     createdAt: snapshot.generatedAt
                 )
             )
@@ -220,9 +458,13 @@ nonisolated private extension SignalExtractor {
         to signals: inout [UserTrainingSignal],
         history: [WorkoutSessionSummary],
         profile: UserProfile,
-        createdAt: Date
+        createdAt: Date,
+        context: SignalGenerationContext
     ) {
-        let comparison = trendEngine.threeWorkoutComparison(history: history, metric: .volumeUnits)
+        let useWarmupComparison = context.historySessionCount >= 3 && context.historySessionCount < 6
+        let comparison = useWarmupComparison
+            ? trendEngine.latestWorkoutComparison(history: history, metric: .volumeUnits)
+            : trendEngine.threeWorkoutComparison(history: history, metric: .volumeUnits)
         guard let delta = comparison.delta,
               let latest = comparison.latestValue,
               let previous = comparison.comparisonValue,
@@ -237,8 +479,8 @@ nonisolated private extension SignalExtractor {
                 value: formatNumber(latest),
                 comparisonValue: formatNumber(previous),
                 delta: delta,
-                confidence: abs(delta) >= 18 ? .high : .medium,
-                evidenceRefs: latestSessionRefs(history, limit: 6),
+                confidence: useWarmupComparison ? .medium : (abs(delta) >= 18 ? .high : .medium),
+                evidenceRefs: latestSessionRefs(history, limit: useWarmupComparison ? 2 : 6),
                 createdAt: createdAt
             )
         )
@@ -251,7 +493,13 @@ nonisolated private extension SignalExtractor {
         profile: UserProfile
     ) {
         guard let cue = snapshot.mostRepeatedCue else { return }
-        let evidence = cueEvidenceRefs(cue, history: history, limit: 4)
+        let evidence = cueEvidenceRefs(
+            cue,
+            history: history,
+            limit: 4,
+            policy: trendEngine.recentCuePolicy,
+            now: snapshot.generatedAt
+        )
         guard evidence.count >= 2 else { return }
         let sessionCount = Set(evidence.compactMap(\.summaryId)).count
 
@@ -457,10 +705,17 @@ nonisolated private extension SignalExtractor {
         to signals: inout [UserTrainingSignal],
         snapshot: UserTrainingTrendSnapshot,
         history: [WorkoutSessionSummary],
-        profile: UserProfile
+        profile: UserProfile,
+        context: SignalGenerationContext
     ) {
+        guard context.historySessionCount != 1 else { return }
         guard snapshot.cameraFrictionCount >= 2 else { return }
-        let evidence = cameraFrictionEvidenceRefs(history: history, limit: 4)
+        let evidence = cameraFrictionEvidenceRefs(
+            history: history,
+            limit: 4,
+            policy: trendEngine.recentSetupPolicy,
+            now: snapshot.generatedAt
+        )
         let sessionCount = Set(evidence.compactMap(\.summaryId)).count
         signals.append(
             UserTrainingSignal(
@@ -710,7 +965,9 @@ nonisolated private extension SignalExtractor {
         createdAt: Date,
         profile: UserProfile
     ) {
-        let buckets = cueClusterBuckets(from: observations)
+        let recentSummaryIDs = Set(trendEngine.recentCuePolicy.filteredSessions(history, now: createdAt).map(\.id))
+        let recentObservations = observations.filter { recentSummaryIDs.contains($0.summary.id) }
+        let buckets = cueClusterBuckets(from: recentObservations)
             .filter { bucket in
                 let sessionCount = Set(bucket.observations.map { $0.summary.id }).count
                 return Set(bucket.cueMessages.map(normalizedCueText)).count >= 2 &&
@@ -725,7 +982,13 @@ nonisolated private extension SignalExtractor {
             }
 
         guard let bucket = buckets.first else { return }
-        let evidence = clusterCueEvidenceRefs(bucket.key, history: history, limit: 4)
+        let evidence = clusterCueEvidenceRefs(
+            bucket.key,
+            history: history,
+            limit: 4,
+            policy: trendEngine.recentCuePolicy,
+            now: createdAt
+        )
         guard evidence.count >= 2 else { return }
 
         let exercise = mostCommonExercise(in: bucket.observations.map(\.exerciseType))
@@ -1081,12 +1344,17 @@ nonisolated private extension SignalExtractor {
     func cueEvidenceRefs(
         _ cue: String,
         history: [WorkoutSessionSummary],
-        limit: Int
+        limit: Int,
+        policy: TrendWindowPolicy,
+        now: Date
     ) -> [TrainingEvidenceRef] {
+        let normalizedCue = CueNormalizer.normalize(cue)
+        guard !normalizedCue.isEmpty else { return [] }
+
         var refs: [TrainingEvidenceRef] = []
-        for summary in history {
+        for summary in policy.filteredSessions(history, now: now) {
             for setSummary in summary.exerciseSummaries {
-                for event in setSummary.cueEvents where event.cueMessage == cue {
+                for event in setSummary.cueEvents where CueNormalizer.normalize(event.cueMessage) == normalizedCue && policy.contains(event.timestamp, now: now) {
                     refs.append(
                         TrainingEvidenceRef(
                             summaryId: summary.id,
@@ -1094,11 +1362,16 @@ nonisolated private extension SignalExtractor {
                             setIndex: event.setIndex ?? setSummary.setIndex,
                             repIndex: event.repIndex,
                             date: event.timestamp,
-                            label: cue
+                            label: event.cueMessage
                         )
                     )
                 }
-                for event in setSummary.repQualityEvents where event.cueMessageNearRep == cue {
+                for event in setSummary.repQualityEvents {
+                    guard let cueMessage = event.cueMessageNearRep,
+                          CueNormalizer.normalize(cueMessage) == normalizedCue,
+                          policy.contains(event.timestamp, now: now)
+                    else { continue }
+
                     refs.append(
                         TrainingEvidenceRef(
                             summaryId: summary.id,
@@ -1106,7 +1379,7 @@ nonisolated private extension SignalExtractor {
                             setIndex: event.setIndex ?? setSummary.setIndex,
                             repIndex: event.repIndex,
                             date: event.timestamp,
-                            label: cue
+                            label: cueMessage
                         )
                     )
                 }
@@ -1118,12 +1391,14 @@ nonisolated private extension SignalExtractor {
 
     func cameraFrictionEvidenceRefs(
         history: [WorkoutSessionSummary],
-        limit: Int
+        limit: Int,
+        policy: TrendWindowPolicy,
+        now: Date
     ) -> [TrainingEvidenceRef] {
         var refs: [TrainingEvidenceRef] = []
-        for summary in history {
+        for summary in policy.filteredSessions(history, now: now) {
             for setSummary in summary.exerciseSummaries {
-                for event in setSummary.cueEvents where TrendEngine.isCameraFrictionCue(event.cueMessage) {
+                for event in setSummary.cueEvents where TrendEngine.isCameraFrictionCue(event.cueMessage) && policy.contains(event.timestamp, now: now) {
                     refs.append(
                         TrainingEvidenceRef(
                             summaryId: summary.id,
@@ -1137,7 +1412,8 @@ nonisolated private extension SignalExtractor {
                 }
                 for event in setSummary.repQualityEvents {
                     guard let cue = event.cueMessageNearRep,
-                          TrendEngine.isCameraFrictionCue(cue)
+                          TrendEngine.isCameraFrictionCue(cue),
+                          policy.contains(event.timestamp, now: now)
                     else { continue }
                     refs.append(
                         TrainingEvidenceRef(
@@ -1191,6 +1467,35 @@ nonisolated private extension SignalExtractor {
                 )
             }
         }
+    }
+
+    func firstSetObservation(
+        in summary: WorkoutSessionSummary,
+        observations: [SignalSetObservation]
+    ) -> SignalSetObservation? {
+        observations
+            .filter { $0.summary.id == summary.id }
+            .sorted(by: setObservationOrder)
+            .first
+    }
+
+    func firstSetObservationsByExercise(
+        in summary: WorkoutSessionSummary,
+        observations: [SignalSetObservation]
+    ) -> [ExerciseType: SignalSetObservation] {
+        Dictionary(grouping: observations.filter { $0.summary.id == summary.id }, by: \.exerciseType)
+            .compactMapValues { values in
+                values.sorted(by: setObservationOrder).first
+            }
+    }
+
+    func setObservationOrder(_ lhs: SignalSetObservation, _ rhs: SignalSetObservation) -> Bool {
+        let leftSet = lhs.setIndex ?? Int.max
+        let rightSet = rhs.setIndex ?? Int.max
+        if leftSet == rightSet {
+            return lhs.exerciseType.rawValue < rhs.exerciseType.rawValue
+        }
+        return leftSet < rightSet
     }
 
     func trainingUnits(for setSummary: ExerciseSetSummary) -> (achieved: Int, target: Int?, unitLabel: String) {
@@ -1258,10 +1563,11 @@ nonisolated private extension SignalExtractor {
     func cueClusterBuckets(from observations: [SignalSetObservation]) -> [CueClusterBucket] {
         let items = observations.flatMap { observation in
             observation.cueMessages.compactMap { cue -> (key: String, label: String, cue: String, observation: SignalSetObservation)? in
-                guard let cluster = cueCluster(for: cue),
+                let cluster = cueCluster(for: cue)
+                guard cluster != .other,
                       !TrendEngine.isCameraFrictionCue(cue)
                 else { return nil }
-                return (cluster.key, cluster.label, cue, observation)
+                return (cluster.rawValue, cluster.label, cue, observation)
             }
         }
         let grouped = Dictionary(grouping: items, by: \.key)
@@ -1277,24 +1583,23 @@ nonisolated private extension SignalExtractor {
     }
 
     func normalizedCueText(_ cue: String) -> String {
-        cue
-            .lowercased()
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+        CueNormalizer.normalize(cue)
     }
 
     func clusterCueEvidenceRefs(
         _ clusterKey: String,
         history: [WorkoutSessionSummary],
-        limit: Int
+        limit: Int,
+        policy: TrendWindowPolicy,
+        now: Date
     ) -> [TrainingEvidenceRef] {
         var refs: [TrainingEvidenceRef] = []
-        for summary in history {
+        for summary in policy.filteredSessions(history, now: now) {
             for setSummary in summary.exerciseSummaries {
                 for event in setSummary.cueEvents {
                     guard !TrendEngine.isCameraFrictionCue(event.cueMessage),
-                          cueCluster(for: event.cueMessage)?.key == clusterKey
+                          cueCluster(for: event.cueMessage).rawValue == clusterKey,
+                          policy.contains(event.timestamp, now: now)
                     else { continue }
                     refs.append(
                         TrainingEvidenceRef(
@@ -1310,7 +1615,8 @@ nonisolated private extension SignalExtractor {
                 for event in setSummary.repQualityEvents {
                     guard let cue = event.cueMessageNearRep,
                           !TrendEngine.isCameraFrictionCue(cue),
-                          cueCluster(for: cue)?.key == clusterKey
+                          cueCluster(for: cue).rawValue == clusterKey,
+                          policy.contains(event.timestamp, now: now)
                     else { continue }
                     refs.append(
                         TrainingEvidenceRef(
@@ -1329,30 +1635,8 @@ nonisolated private extension SignalExtractor {
         return Array(refs.prefix(limit))
     }
 
-    func cueCluster(for cue: String) -> (key: String, label: String)? {
-        let normalized = cue.lowercased()
-        if normalized.contains("knee") || normalized.contains("valgus") {
-            return ("knee-tracking", "Knee tracking")
-        }
-        if normalized.contains("shoulder") || normalized.contains("elbow") || normalized.contains("wrist") || normalized.contains("stack") {
-            return ("upper-stack", "Upper-body stacking")
-        }
-        if normalized.contains("brace") || normalized.contains("core") || normalized.contains("trunk") || normalized.contains("sag") || normalized.contains("back") {
-            return ("trunk-control", "Trunk control")
-        }
-        if normalized.contains("hinge") || normalized.contains("hip") || normalized.contains("deadlift") {
-            return ("hip-hinge", "Hip hinge")
-        }
-        if normalized.contains("depth") || normalized.contains("range") || normalized.contains("lower") {
-            return ("range-of-motion", "Range of motion")
-        }
-        if normalized.contains("balance") || normalized.contains("steady") || normalized.contains("stable") {
-            return ("balance", "Balance")
-        }
-        if normalized.contains("tempo") || normalized.contains("rush") || normalized.contains("slow") || normalized.contains("control") {
-            return ("tempo-control", "Tempo control")
-        }
-        return nil
+    func cueCluster(for cue: String) -> CueCluster {
+        CueClusterTaxonomy.cluster(for: CueNormalizer.normalize(cue))
     }
 
     func restResponses(from observations: [SignalSetObservation]) -> [RestResponseObservation] {
@@ -1529,6 +1813,27 @@ nonisolated private extension SignalExtractor {
         return parts.isEmpty ? "repeated friction" : parts.joined(separator: ", ")
     }
 
+    func repeatExerciseTitle(for exercise: ExerciseType, delta: Double) -> String {
+        if delta >= 2 {
+            return "\(exercise.displayName) set 1 improved on repeat"
+        }
+        if delta <= -2 {
+            return "\(exercise.displayName) set 1 needs the same focus"
+        }
+        return "\(exercise.displayName) set 1 repeated near baseline"
+    }
+
+    func trendDirection(
+        delta: Double,
+        meaningfulThreshold: Double,
+        positive: TrainingTrendDirection,
+        negative: TrainingTrendDirection
+    ) -> TrainingTrendDirection {
+        if delta >= meaningfulThreshold { return positive }
+        if delta <= -meaningfulThreshold { return negative }
+        return .steady
+    }
+
     func limitationTag(_ limitation: PhysicalLimitation) -> ContraindicationTag {
         switch limitation {
         case .kneeSensitive:
@@ -1605,5 +1910,15 @@ nonisolated private extension SignalExtractor {
     func average(_ values: [Double]) -> Double? {
         guard !values.isEmpty else { return nil }
         return values.reduce(0, +) / Double(values.count)
+    }
+
+    func median(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        if sorted.count.isMultiple(of: 2) {
+            return (sorted[middle - 1] + sorted[middle]) / 2
+        }
+        return sorted[middle]
     }
 }

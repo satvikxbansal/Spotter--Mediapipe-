@@ -30,11 +30,97 @@ nonisolated struct InsightDeliveryRecord: Codable, Equatable {
     }
 }
 
+nonisolated enum InsightEngagementKind: String, Codable, CaseIterable, Hashable {
+    case opened
+    case dismissed
+    case helpful
+    case notHelpful
+}
+
+nonisolated struct InsightEngagementRecord: Codable, Equatable {
+    let dedupeKey: String
+    private var engagementCounts: [String: Int]
+    private var lastEngagementDates: [String: Date]
+
+    init(
+        dedupeKey: String,
+        engagementCounts: [String: Int] = [:],
+        lastEngagementDates: [String: Date] = [:]
+    ) {
+        self.dedupeKey = dedupeKey
+        self.engagementCounts = engagementCounts
+        self.lastEngagementDates = lastEngagementDates
+    }
+
+    mutating func record(
+        _ kind: InsightEngagementKind,
+        at date: Date
+    ) {
+        engagementCounts[kind.rawValue, default: 0] += 1
+        lastEngagementDates[kind.rawValue] = date
+    }
+
+    func count(for kind: InsightEngagementKind) -> Int {
+        engagementCounts[kind.rawValue] ?? 0
+    }
+
+    func lastEngagedAt(for kind: InsightEngagementKind) -> Date? {
+        lastEngagementDates[kind.rawValue]
+    }
+
+    func merged(with other: InsightEngagementRecord) -> InsightEngagementRecord {
+        var merged = self
+        for (kind, count) in other.engagementCounts {
+            merged.engagementCounts[kind, default: 0] += count
+        }
+        for (kind, date) in other.lastEngagementDates {
+            if let existingDate = merged.lastEngagementDates[kind] {
+                merged.lastEngagementDates[kind] = max(existingDate, date)
+            } else {
+                merged.lastEngagementDates[kind] = date
+            }
+        }
+        return merged
+    }
+}
+
 nonisolated struct PersistedInsightStoreSnapshot: Codable, Equatable {
     let sourcePolicyVersion: String
     let savedAt: Date
     let recentInsights: [AIInsight]
     let deliveryRecords: [InsightDeliveryRecord]
+    let engagementRecords: [InsightEngagementRecord]
+
+    init(
+        sourcePolicyVersion: String,
+        savedAt: Date,
+        recentInsights: [AIInsight],
+        deliveryRecords: [InsightDeliveryRecord],
+        engagementRecords: [InsightEngagementRecord] = []
+    ) {
+        self.sourcePolicyVersion = sourcePolicyVersion
+        self.savedAt = savedAt
+        self.recentInsights = recentInsights
+        self.deliveryRecords = deliveryRecords
+        self.engagementRecords = engagementRecords
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sourcePolicyVersion
+        case savedAt
+        case recentInsights
+        case deliveryRecords
+        case engagementRecords
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sourcePolicyVersion = try container.decode(String.self, forKey: .sourcePolicyVersion)
+        savedAt = try container.decode(Date.self, forKey: .savedAt)
+        recentInsights = try container.decode([AIInsight].self, forKey: .recentInsights)
+        deliveryRecords = try container.decode([InsightDeliveryRecord].self, forKey: .deliveryRecords)
+        engagementRecords = try container.decodeIfPresent([InsightEngagementRecord].self, forKey: .engagementRecords) ?? []
+    }
 }
 
 @MainActor
@@ -44,6 +130,8 @@ final class InsightStore: ObservableObject {
 
     private let fileURL: URL
     private var deliveryRecords: [String: InsightDeliveryRecord] = [:]
+    private var engagementRecords: [String: InsightEngagementRecord] = [:]
+    private let ranker = InsightRanker()
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
@@ -61,43 +149,45 @@ final class InsightStore: ObservableObject {
     func selectInsights(
         _ generatedInsights: [AIInsight],
         for surface: InsightSurface,
+        profile: UserProfile,
         limit: Int,
-        now: Date = Date(),
-        markPresented: Bool = true
+        now: Date = Date()
     ) -> [AIInsight] {
         ingest(generatedInsights, now: now)
         expireStale(now: now)
 
-        let candidates = recentInsights
-            .filter { !$0.isExpired(now: now) && $0.surfaces.contains(surface) }
-            .filter { !wasRecentlyPresented($0, on: surface, now: now) }
-            .reduce(into: [String: AIInsight]()) { result, insight in
-                if let existing = result[insight.dedupeKey] {
-                    if insight.userValueScore > existing.userValueScore {
-                        result[insight.dedupeKey] = insight
-                    }
-                } else {
-                    result[insight.dedupeKey] = insight
-                }
-            }
-            .values
-            .sorted { lhs, rhs in
-                if lhs.userValueScore == rhs.userValueScore {
-                    return lhs.createdAt > rhs.createdAt
-                }
-                return lhs.userValueScore > rhs.userValueScore
-            }
-
+        let candidates = fetchCandidates(for: surface, profile: profile, now: now)
         let selected = Array(candidates.prefix(max(limit, 0)))
-        if markPresented {
-            selected.forEach { recordPresented($0, on: surface, now: now) }
-        }
+        persist()
+        return selected
+    }
+
+    @discardableResult
+    func selectGeneratedInsights(
+        _ generatedInsights: [AIInsight],
+        for surface: InsightSurface,
+        profile: UserProfile,
+        limit: Int,
+        now: Date = Date()
+    ) -> [AIInsight] {
+        ingest(generatedInsights, now: now)
+        expireStale(now: now)
+
+        let generatedDedupeKeys = Set(
+            generatedInsights
+                .filter { !$0.isExpired(now: now) && !$0.evidence.isEmpty && $0.surfaces.contains(surface) }
+                .map(\.dedupeKey)
+        )
+        let candidates = fetchCandidates(for: surface, profile: profile, now: now)
+            .filter { generatedDedupeKeys.contains($0.dedupeKey) }
+        let selected = Array(candidates.prefix(max(limit, 0)))
         persist()
         return selected
     }
 
     func insights(
         for surface: InsightSurface,
+        profile: UserProfile,
         limit: Int,
         now: Date = Date()
     ) -> [AIInsight] {
@@ -105,10 +195,24 @@ final class InsightStore: ObservableObject {
             recentInsights
                 .filter { !$0.isExpired(now: now) && $0.surfaces.contains(surface) }
                 .sorted {
-                    if $0.userValueScore == $1.userValueScore {
+                    let leftScore = ranker.score(
+                        $0,
+                        surface: surface,
+                        profile: profile,
+                        engagementRecords: engagementRecords,
+                        now: now
+                    )
+                    let rightScore = ranker.score(
+                        $1,
+                        surface: surface,
+                        profile: profile,
+                        engagementRecords: engagementRecords,
+                        now: now
+                    )
+                    if leftScore == rightScore {
                         return $0.createdAt > $1.createdAt
                     }
-                    return $0.userValueScore > $1.userValueScore
+                    return leftScore > rightScore
                 }
                 .prefix(max(limit, 0))
         )
@@ -118,14 +222,119 @@ final class InsightStore: ObservableObject {
         deliveryRecords[dedupeKey]
     }
 
+    func engagementRecord(for dedupeKey: String) -> InsightEngagementRecord? {
+        engagementRecords[dedupeKey]
+    }
+
+    func engagementRecordsSnapshot() -> [String: InsightEngagementRecord] {
+        engagementRecords
+    }
+
+    func canPresentOnce(
+        dedupeKey: String,
+        on surface: InsightSurface
+    ) -> Bool {
+        deliveryRecords[dedupeKey]?.surfaceLastPresentedAt[surface.rawValue] == nil
+    }
+
+    func recordImpression(
+        _ insight: AIInsight,
+        on surface: InsightSurface,
+        now: Date = Date()
+    ) {
+        recordPresented(insight, on: surface, now: now)
+        persist()
+    }
+
+    func recordPresentation(
+        dedupeKey: String,
+        on surface: InsightSurface,
+        now: Date = Date()
+    ) {
+        recordPresented(dedupeKey: dedupeKey, on: surface, now: now)
+        persist()
+    }
+
+    func recordEngagement(
+        _ insight: AIInsight,
+        kind: InsightEngagementKind,
+        now: Date = Date()
+    ) {
+        if var record = engagementRecords[insight.dedupeKey] {
+            record.record(kind, at: now)
+            engagementRecords[insight.dedupeKey] = record
+        } else {
+            var record = InsightEngagementRecord(dedupeKey: insight.dedupeKey)
+            record.record(kind, at: now)
+            engagementRecords[insight.dedupeKey] = record
+        }
+        persist()
+    }
+
     func clearForDebug() {
         recentInsights = []
         deliveryRecords = [:]
+        engagementRecords = [:]
         persist()
     }
 }
 
 private extension InsightStore {
+    func fetchCandidates(
+        for surface: InsightSurface,
+        profile: UserProfile,
+        now: Date
+    ) -> [AIInsight] {
+        recentInsights
+            .filter { !$0.isExpired(now: now) && $0.surfaces.contains(surface) }
+            .filter { !wasRecentlyPresented($0, on: surface, now: now) }
+            .reduce(into: [String: AIInsight]()) { result, insight in
+                if let existing = result[insight.dedupeKey] {
+                    let existingScore = ranker.score(
+                        existing,
+                        surface: surface,
+                        profile: profile,
+                        engagementRecords: engagementRecords,
+                        now: now
+                    )
+                    let newScore = ranker.score(
+                        insight,
+                        surface: surface,
+                        profile: profile,
+                        engagementRecords: engagementRecords,
+                        now: now
+                    )
+                    if newScore > existingScore ||
+                        (newScore == existingScore && insight.createdAt > existing.createdAt) {
+                        result[insight.dedupeKey] = insight
+                    }
+                } else {
+                    result[insight.dedupeKey] = insight
+                }
+            }
+            .values
+            .sorted { lhs, rhs in
+                let left = ranker.score(
+                    lhs,
+                    surface: surface,
+                    profile: profile,
+                    engagementRecords: engagementRecords,
+                    now: now
+                )
+                let right = ranker.score(
+                    rhs,
+                    surface: surface,
+                    profile: profile,
+                    engagementRecords: engagementRecords,
+                    now: now
+                )
+                if left == right {
+                    return lhs.createdAt > rhs.createdAt
+                }
+                return left > right
+            }
+    }
+
     func ingest(
         _ insights: [AIInsight],
         now: Date
@@ -179,11 +388,29 @@ private extension InsightStore {
         }
     }
 
+    func recordPresented(
+        dedupeKey: String,
+        on surface: InsightSurface,
+        now: Date
+    ) {
+        if var record = deliveryRecords[dedupeKey] {
+            record.recordPresentation(at: now, surface: surface)
+            deliveryRecords[dedupeKey] = record
+        } else {
+            deliveryRecords[dedupeKey] = InsightDeliveryRecord(
+                dedupeKey: dedupeKey,
+                presentedAt: now,
+                surface: surface
+            )
+        }
+    }
+
     func wasRecentlyPresented(
         _ insight: AIInsight,
         on surface: InsightSurface,
         now: Date
     ) -> Bool {
+        guard insight.severity != .important else { return false }
         guard let record = deliveryRecords[insight.dedupeKey],
               let lastPresented = record.surfaceLastPresentedAt[surface.rawValue]
         else { return false }
@@ -223,10 +450,12 @@ private extension InsightStore {
                 .values
                 .sorted { $0.createdAt > $1.createdAt }
             deliveryRecords = bestDeliveryRecordsByDedupeKey(snapshot.deliveryRecords)
+            engagementRecords = bestEngagementRecordsByDedupeKey(snapshot.engagementRecords)
             persistenceError = nil
         } catch {
             recentInsights = []
             deliveryRecords = [:]
+            engagementRecords = [:]
             persistenceError = "Could not load coach insights: \(error.localizedDescription)"
         }
     }
@@ -242,7 +471,8 @@ private extension InsightStore {
                 sourcePolicyVersion: AIInsight.currentSourcePolicyVersion,
                 savedAt: Date(),
                 recentInsights: recentInsights,
-                deliveryRecords: Array(deliveryRecords.values)
+                deliveryRecords: Array(deliveryRecords.values),
+                engagementRecords: Array(engagementRecords.values)
             )
             let data = try encoder.encode(snapshot)
             try data.write(to: fileURL, options: [.atomic])
@@ -307,5 +537,17 @@ private extension InsightStore {
             }
         }
         return merged
+    }
+
+    func bestEngagementRecordsByDedupeKey(
+        _ records: [InsightEngagementRecord]
+    ) -> [String: InsightEngagementRecord] {
+        records.reduce(into: [String: InsightEngagementRecord]()) { result, record in
+            if let existing = result[record.dedupeKey] {
+                result[record.dedupeKey] = existing.merged(with: record)
+            } else {
+                result[record.dedupeKey] = record
+            }
+        }
     }
 }

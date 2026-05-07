@@ -1,18 +1,24 @@
 import SwiftUI
 
 struct WorkoutSummaryView: View {
+    @EnvironmentObject private var insightStore: InsightStore
+    @EnvironmentObject private var historyStore: WorkoutHistoryStore
+
     let summary: WorkoutSummary
     let historySummary: WorkoutSessionSummary?
+    let recap: WorkoutRecap
     let trophyEvents: [TrophyUnlockEvent]
     let nearestTrophyProgress: TrophyProgress?
     let coachInsight: AIInsight?
     let onDone: () -> Void
 
     @State private var isShowingDetail = false
+    @State private var selectedInsightEvidence: AIInsight?
 
     init(
         summary: WorkoutSummary,
         historySummary: WorkoutSessionSummary?,
+        recap: WorkoutRecap,
         trophyEvents: [TrophyUnlockEvent] = [],
         nearestTrophyProgress: TrophyProgress? = nil,
         coachInsight: AIInsight? = nil,
@@ -20,6 +26,7 @@ struct WorkoutSummaryView: View {
     ) {
         self.summary = summary
         self.historySummary = historySummary
+        self.recap = recap
         self.trophyEvents = trophyEvents
         self.nearestTrophyProgress = nearestTrophyProgress
         self.coachInsight = coachInsight
@@ -71,6 +78,16 @@ struct WorkoutSummaryView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
+        }
+        .sheet(item: $selectedInsightEvidence) { insight in
+            InsightEvidenceSheetView(
+                insight: insight,
+                summaries: evidenceSummaries
+            ) { kind in
+                insightStore.recordEngagement(insight, kind: kind)
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .preferredColorScheme(.dark)
     }
@@ -181,17 +198,53 @@ struct WorkoutSummaryView: View {
                     .foregroundStyle(Theme.Colors.accent)
             }
 
-            if let coachInsight {
-                Text(coachInsight.headline)
-                    .font(.system(size: 15, weight: .black))
-                    .foregroundStyle(Theme.Colors.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(recap.headline)
+                .font(.system(size: 15, weight: .black))
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
 
-            Text(coachInsight?.message ?? summary.coachInsight)
+            Text(recap.bodyMessage)
                 .font(.system(size: 18, weight: .heavy))
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if recap.highlightStat != nil || recap.nextStep != nil {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    if let highlightStat = recap.highlightStat {
+                        RecapEvidenceRow(icon: "chart.bar.fill", text: highlightStat)
+                    }
+                    if let nextStep = recap.nextStep {
+                        RecapEvidenceRow(icon: "arrow.forward.circle.fill", text: "Next: \(nextStep)")
+                    }
+                }
+                .padding(.top, Theme.Spacing.xs)
+            }
+
+            if let coachInsight {
+                Divider()
+                    .background(Theme.Colors.accent.opacity(0.35))
+                    .padding(.vertical, Theme.Spacing.xs)
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text(coachInsight.headline)
+                        .font(.system(size: 14, weight: .black))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(coachInsight.message)
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    InsightEvidenceButton {
+                        insightStore.recordEngagement(coachInsight, kind: .opened)
+                        selectedInsightEvidence = coachInsight
+                    }
+                    InsightEngagementPrompt { kind in
+                        insightStore.recordEngagement(coachInsight, kind: kind)
+                    }
+                }
+            }
         }
         .padding(Theme.Spacing.lg)
         .background(Theme.Colors.accentMuted)
@@ -200,6 +253,12 @@ struct WorkoutSummaryView: View {
             RoundedRectangle(cornerRadius: Theme.Radius.lg)
                 .stroke(Theme.Colors.accent.opacity(0.35), lineWidth: 1)
         )
+        .id(coachInsight?.id ?? "summary-coach-recap")
+        .onAppear {
+            if let coachInsight {
+                insightStore.recordImpression(coachInsight, on: .workoutSummary)
+            }
+        }
     }
 
     private var averageFormText: String {
@@ -215,6 +274,34 @@ struct WorkoutSummaryView: View {
         let seconds = max(Int(duration.rounded()), 0)
         guard seconds >= 60 else { return "\(seconds)s" }
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private var evidenceSummaries: [WorkoutSessionSummary] {
+        var summaries = historyStore.summaries
+        if let historySummary,
+           !summaries.contains(where: { $0.id == historySummary.id }) {
+            summaries.append(historySummary)
+        }
+        return summaries
+    }
+}
+
+private struct RecapEvidenceRow: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.xs) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .black))
+                .foregroundStyle(Theme.Colors.accent)
+                .frame(width: 18, alignment: .leading)
+
+            Text(text)
+                .font(.system(size: 12, weight: .black))
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -322,9 +409,62 @@ private struct WorkoutSummaryExerciseRow: View {
 }
 
 #Preview {
+    let now = Date(timeIntervalSince1970: 1_776_400_000)
+    let previewPlanId = UUID()
+    let repEvents = [90, 91, 92, 93].enumerated().map { index, score in
+        RepQualityEvent(
+            exerciseType: .squat,
+            setIndex: 0,
+            repIndex: index + 1,
+            timestamp: now.addingTimeInterval(TimeInterval(index)),
+            secondsIntoSet: TimeInterval((index + 1) * 5),
+            formScore: score,
+            formGrade: FormScore.Grade.from(score: score).rawValue
+        )
+    }
+    let qualitySummary = SetQualitySummary.build(repQualityEvents: repEvents)
+    let historySummary = WorkoutSessionSummary(
+        mode: .plannedWorkout,
+        planId: previewPlanId,
+        planTitle: "Preview Strength",
+        title: "Preview Strength",
+        goal: "Build clean strength.",
+        coach: .good,
+        startedAt: now.addingTimeInterval(-1_420),
+        endedAt: now,
+        durationSeconds: 1_420,
+        totalReps: 42,
+        totalHoldSeconds: 45,
+        averageFormScore: 88,
+        completionPercent: 1,
+        exerciseSummaries: [
+            ExerciseSetSummary(
+                exerciseType: .squat,
+                setIndex: 0,
+                target: .reps(12),
+                achievedReps: 24,
+                achievedHoldSeconds: 0,
+                averageFormScore: qualitySummary.averageFormScore,
+                qualitySummary: qualitySummary,
+                repQualityEvents: repEvents
+            ),
+            ExerciseSetSummary(
+                exerciseType: .plank,
+                setIndex: 1,
+                target: .hold(seconds: 45),
+                achievedReps: 0,
+                achievedHoldSeconds: 45,
+                averageFormScore: nil
+            )
+        ],
+        topCue: nil,
+        effortSummary: "Peak effort reached 50%. Solid working intensity.",
+        createdAt: now
+    )
+
     WorkoutSummaryView(
         summary: WorkoutSummary(
-            planId: UUID(),
+            planId: previewPlanId,
             planTitle: "Preview Strength",
             duration: 1_420,
             exercisesCompleted: 2,
@@ -335,7 +475,6 @@ private struct WorkoutSummaryExerciseRow: View {
             totalHoldSeconds: 45,
             averageFormScore: 88,
             completionPercentage: 1,
-            coachInsight: "Coach insight will use form, cue, rest, and completion trends once workout history is live.",
             exerciseSummaries: [
                 WorkoutExerciseSummary(
                     exerciseIndex: 0,
@@ -353,7 +492,10 @@ private struct WorkoutSummaryExerciseRow: View {
                 )
             ]
         ),
-        historySummary: nil,
+        historySummary: historySummary,
+        recap: WorkoutRecapBuilder().build(summary: historySummary),
         onDone: {}
     )
+    .environmentObject(InsightStore())
+    .environmentObject(WorkoutHistoryStore())
 }

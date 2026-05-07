@@ -213,6 +213,77 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
     }
 }
 
+nonisolated struct InsightLLMContext: Codable, Equatable {
+    let dedupeKey: String
+    let type: InsightType
+    let severity: InsightSeverity
+    let action: InsightAction
+    let exerciseDisplayName: String?
+    let evidenceRefsJSON: String
+    let deterministicHeadline: String
+    let deterministicMessage: String
+    let coachPersonality: CoachPersonality?
+    let profileGoal: FitnessGoal?
+    let profileLimitations: [PhysicalLimitation]
+    let sanitizationBlocklist: [String]
+}
+
+nonisolated extension AIInsight {
+    func toLLMContext() -> InsightLLMContext {
+        makeLLMContext(
+            coachPersonality: nil,
+            profileGoal: relatedGoal,
+            profileLimitations: []
+        )
+    }
+
+    func toLLMContext(
+        profile: UserProfile,
+        coachPersonality: CoachPersonality? = nil
+    ) -> InsightLLMContext {
+        makeLLMContext(
+            coachPersonality: coachPersonality ?? profile.preferredCoach.coachPersonality,
+            profileGoal: profile.primaryGoal,
+            profileLimitations: profile.limitations.sorted { $0.rawValue < $1.rawValue }
+        )
+    }
+
+    private func makeLLMContext(
+        coachPersonality: CoachPersonality?,
+        profileGoal: FitnessGoal?,
+        profileLimitations: [PhysicalLimitation]
+    ) -> InsightLLMContext {
+        InsightLLMContext(
+            dedupeKey: dedupeKey,
+            type: type,
+            severity: severity,
+            action: recommendedAction,
+            exerciseDisplayName: exerciseDisplayName,
+            evidenceRefsJSON: evidenceRefsJSON,
+            deterministicHeadline: headline,
+            deterministicMessage: message,
+            coachPersonality: coachPersonality,
+            profileGoal: profileGoal,
+            profileLimitations: profileLimitations,
+            sanitizationBlocklist: InsightTextSanitizer.blocklist
+        )
+    }
+
+    private var exerciseDisplayName: String? {
+        relatedExerciseType?.displayName ??
+            evidence.first { $0.exerciseType != nil }?.exerciseType?.displayName
+    }
+
+    private var evidenceRefsJSON: String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(evidence),
+              let json = String(data: data, encoding: .utf8)
+        else { return "[]" }
+        return json
+    }
+}
+
 nonisolated struct InsightCandidate: Identifiable, Equatable {
     let id: String
     let sourceSignalIds: [String]

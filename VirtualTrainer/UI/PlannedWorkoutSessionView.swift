@@ -70,9 +70,11 @@ struct PlannedWorkoutSessionView: View {
     }
 
     private var workoutCompleteView: some View {
-        WorkoutSummaryView(
+        let historyCandidate = savedHistorySummary ?? coordinator.workoutSessionSummary()
+        return WorkoutSummaryView(
             summary: coordinator.workoutSummary(),
             historySummary: savedHistorySummary,
+            recap: WorkoutRecapBuilder().build(summary: historyCandidate),
             trophyEvents: newlyEarnedTrophyEvents,
             nearestTrophyProgress: nearestTrophyProgress,
             coachInsight: workoutInsight
@@ -130,17 +132,25 @@ struct PlannedWorkoutSessionView: View {
             snapshot: trendSnapshot,
             history: historyStore.summaries,
             profile: profile,
-            trophies: trophyStore.snapshot
+            trophies: trophyStore.snapshot,
+            context: SignalGenerationContext(historySessionCount: historyStore.summaries.count)
         )
         let generated = InsightEngine().generateWorkoutInsights(
+            profile: profile,
             summary: summary,
             plan: coordinator.plan,
             trendSnapshot: trendSnapshot,
-            signals: signals
+            signals: signals,
+            engagementRecords: insightStore.engagementRecordsSnapshot(),
+            now: now
         )
-        return insightStore.selectInsights(
-            generated,
+        let currentWorkoutGenerated = generated.filter { insight in
+            insight.evidence.contains { $0.workoutId == summary.id }
+        }
+        return insightStore.selectGeneratedInsights(
+            currentWorkoutGenerated,
             for: .workoutSummary,
+            profile: profile,
             limit: 1,
             now: now
         ).first

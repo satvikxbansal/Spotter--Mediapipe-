@@ -34,7 +34,6 @@ nonisolated struct WorkoutSummary: Identifiable {
     let totalHoldSeconds: TimeInterval
     let averageFormScore: Double?
     let completionPercentage: Double
-    let coachInsight: String
     let exerciseSummaries: [WorkoutExerciseSummary]
 
     var id: UUID { planId }
@@ -79,22 +78,8 @@ nonisolated enum WorkoutSummaryBuilder {
             totalHoldSeconds: completedSets.reduce(0) { $0 + max($1.holdDuration, 0) },
             averageFormScore: averageFormScore,
             completionPercentage: completionPercentage,
-            coachInsight: Self.placeholderInsight(
-                completedSets: safeCompletedSetCount,
-                totalSets: plannedSetCount
-            ),
             exerciseSummaries: Self.exerciseSummaries(from: completedSets)
         )
-    }
-
-    private static func placeholderInsight(
-        completedSets: Int,
-        totalSets: Int
-    ) -> String {
-        if totalSets > 0, completedSets < totalSets {
-            return "Coach insight will use the completed sets from this partial session once workout history is live."
-        }
-        return "Coach insight will use form, cue, rest, and completion trends once workout history is live."
     }
 
     private static func exerciseSummaries(

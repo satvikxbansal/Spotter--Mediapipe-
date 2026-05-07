@@ -88,6 +88,32 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(insight.evidence.count, 2)
     }
 
+    func testWorkoutRepeatedCueCandidateNormalizesCueVariants() throws {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let summary = makeSummary(
+            idSuffix: "9061",
+            endedAt: now,
+            exerciseType: .pushup,
+            averageFormScore: 84,
+            scores: [],
+            cueMessages: [
+                "Keep your wrists neutral.",
+                "  keep   your wrists neutral!  "
+            ]
+        )
+
+        let insight = try XCTUnwrap(
+            workoutInsights(summary: summary, history: [summary], now: now)
+                .first { insight in
+                    insight.evidence.contains { $0.metric == "repeatedCue" }
+                }
+        )
+
+        XCTAssertEqual(insight.relatedExerciseType, .pushup)
+        XCTAssertEqual(insight.recommendedAction, .focusCue)
+        XCTAssertEqual(Set(insight.evidence.map { CueNormalizer.normalize($0.value) }), ["wrists neutral"])
+    }
+
     func testHighCompletionAndHighFormCreatesSafeProgressionInsight() throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let summary = makeSummary(
@@ -374,6 +400,137 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertNil(noPriorQualitySignals.first { $0.type == .qualityPR })
     }
 
+    func testBootstrapFirstSessionSignalsAndDashboardInsight() throws {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let history = [
+            makeSummary(
+                idSuffix: "9062",
+                endedAt: now,
+                exerciseType: .squat,
+                scores: [90, 70, 85, 80]
+            )
+        ]
+
+        let signals = trainingSignals(history: history, now: now)
+
+        for type in [TrainingSignalType.firstSession, .setupQuality, .repCleanlinessIntro, .personalBaseline] {
+            let signal = try XCTUnwrap(signals.first { $0.type == type })
+            XCTAssertEqual(signal.confidence, .medium)
+            XCTAssertFalse(signal.evidenceRefs.isEmpty)
+        }
+
+        let repCleanliness = try XCTUnwrap(signals.first { $0.type == .repCleanlinessIntro })
+        XCTAssertEqual(repCleanliness.value, "75% good-form reps")
+
+        let dashboard = dashboardInsights(history: history, now: now)
+        XCTAssertFalse(
+            dashboard.isEmpty,
+            "Signals: \(signals.map { $0.type.rawValue }.sorted().joined(separator: ", "))"
+        )
+        XCTAssertTrue(
+            dashboard.flatMap(\.evidence).contains { evidence in
+                [
+                    TrainingSignalType.setupQuality.rawValue,
+                    TrainingSignalType.repCleanlinessIntro.rawValue,
+                    TrainingSignalType.firstSession.rawValue,
+                    TrainingSignalType.personalBaseline.rawValue
+                ].contains(evidence.metric)
+            },
+            "Dashboard metrics: \(dashboard.flatMap(\.evidence).map(\.metric).joined(separator: ", ")); headlines: \(dashboard.map(\.headline).joined(separator: " | "))"
+        )
+    }
+
+    func testBootstrapSecondSessionRepeatedExerciseProgress() throws {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let history = [
+            makeSummary(
+                idSuffix: "9063",
+                endedAt: now,
+                exerciseType: .squat,
+                scores: [88, 87, 86, 85]
+            ),
+            makeSummary(
+                idSuffix: "9064",
+                endedAt: date(year: 2026, month: 5, day: 5, hour: 12),
+                exerciseType: .squat,
+                scores: [78, 79, 80, 81]
+            )
+        ]
+
+        let signals = trainingSignals(history: history, now: now)
+        let signal = try XCTUnwrap(signals.first { $0.type == .repeatExerciseProgress })
+
+        XCTAssertEqual(signal.exerciseType, .squat)
+        XCTAssertEqual(signal.confidence, .medium)
+        XCTAssertEqual(signal.value, "set 1 87%")
+        XCTAssertEqual(signal.comparisonValue, "previous set 1 80%")
+        XCTAssertEqual(signal.evidenceRefs.count, 2)
+    }
+
+    func testWarmupThirdSessionUsesLatestWorkoutTrendWindow() throws {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let history = [
+            makeSummary(idSuffix: "9065", endedAt: now, exerciseType: .squat, reps: 22, averageFormScore: 91),
+            makeSummary(idSuffix: "9066", endedAt: date(year: 2026, month: 5, day: 5, hour: 12), exerciseType: .squat, reps: 10, averageFormScore: 80),
+            makeSummary(idSuffix: "9067", endedAt: date(year: 2026, month: 5, day: 4, hour: 12), exerciseType: .squat, reps: 9, averageFormScore: 72)
+        ]
+
+        let signals = trainingSignals(history: history, now: now)
+        let formSignal = try XCTUnwrap(signals.first { $0.type == .formImprovement && $0.exerciseType == nil })
+        let volumeSignal = try XCTUnwrap(signals.first { $0.type == .volumeIncrease })
+
+        XCTAssertEqual(formSignal.confidence, .medium)
+        XCTAssertEqual(formSignal.evidenceRefs.count, 2)
+        XCTAssertEqual(formSignal.value, "91%")
+        XCTAssertEqual(formSignal.comparisonValue, "80%")
+        XCTAssertEqual(volumeSignal.confidence, .medium)
+        XCTAssertEqual(volumeSignal.evidenceRefs.count, 2)
+    }
+
+    func testWarmupFifthSessionUsesLatestWorkoutDropSignals() throws {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let history = [
+            makeSummary(idSuffix: "9068", endedAt: now, exerciseType: .squat, reps: 5, averageFormScore: 70),
+            makeSummary(idSuffix: "9069", endedAt: date(year: 2026, month: 5, day: 5, hour: 12), exerciseType: .squat, reps: 18, averageFormScore: 86),
+            makeSummary(idSuffix: "9070", endedAt: date(year: 2026, month: 5, day: 4, hour: 12), exerciseType: .squat, reps: 16, averageFormScore: 84),
+            makeSummary(idSuffix: "9071", endedAt: date(year: 2026, month: 5, day: 3, hour: 12), exerciseType: .squat, reps: 14, averageFormScore: 82),
+            makeSummary(idSuffix: "9072", endedAt: date(year: 2026, month: 5, day: 2, hour: 12), exerciseType: .squat, reps: 12, averageFormScore: 80)
+        ]
+
+        let signals = trainingSignals(history: history, now: now)
+        let formSignal = try XCTUnwrap(signals.first { $0.type == .formDropOff && $0.exerciseType == nil })
+        let volumeSignal = try XCTUnwrap(signals.first { $0.type == .volumeDrop })
+
+        XCTAssertEqual(formSignal.confidence, .medium)
+        XCTAssertEqual(formSignal.evidenceRefs.count, 2)
+        XCTAssertEqual(formSignal.value, "70%")
+        XCTAssertEqual(formSignal.comparisonValue, "86%")
+        XCTAssertEqual(volumeSignal.confidence, .medium)
+        XCTAssertEqual(volumeSignal.evidenceRefs.count, 2)
+        assertSignal(.personalBaseline, existsIn: signals)
+    }
+
+    func testSixSessionsUseStandardThreeWorkoutTrendWindow() throws {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let history = [
+            makeSummary(idSuffix: "9073", endedAt: now, exerciseType: .squat, reps: 18, averageFormScore: 92),
+            makeSummary(idSuffix: "9074", endedAt: date(year: 2026, month: 5, day: 5, hour: 12), exerciseType: .squat, reps: 18, averageFormScore: 90),
+            makeSummary(idSuffix: "9075", endedAt: date(year: 2026, month: 5, day: 4, hour: 12), exerciseType: .squat, reps: 18, averageFormScore: 91),
+            makeSummary(idSuffix: "9076", endedAt: date(year: 2026, month: 5, day: 3, hour: 12), exerciseType: .squat, reps: 10, averageFormScore: 74),
+            makeSummary(idSuffix: "9077", endedAt: date(year: 2026, month: 5, day: 2, hour: 12), exerciseType: .squat, reps: 10, averageFormScore: 76),
+            makeSummary(idSuffix: "9078", endedAt: date(year: 2026, month: 5, day: 1, hour: 12), exerciseType: .squat, reps: 10, averageFormScore: 75)
+        ]
+
+        let signals = trainingSignals(history: history, now: now)
+        let formSignal = try XCTUnwrap(signals.first { $0.type == .formImprovement && $0.exerciseType == nil })
+
+        XCTAssertEqual(formSignal.confidence, .high)
+        XCTAssertEqual(formSignal.evidenceRefs.count, 6)
+        XCTAssertNil(signals.first { $0.type == .firstSession })
+        XCTAssertNil(signals.first { $0.type == .repeatExerciseProgress })
+        assertSignal(.personalBaseline, existsIn: signals)
+    }
+
     func testBlockedProgressionReadinessDoesNotMapToIncreaseTarget() throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
@@ -495,18 +652,86 @@ final class InsightEngineTests: XCTestCase {
             context: ["exercise": "Push-Up", "breakdownRep": "8", "cue": "Stack shoulders"]
         )
 
-        XCTAssertEqual(InsightRanker().rank([generic, specific], surface: .workoutSummary).first?.dedupeKey, "specific")
+        XCTAssertEqual(
+            InsightRanker().rank(
+                [generic, specific],
+                surface: .workoutSummary,
+                profile: makeProfile()
+            ).first?.dedupeKey,
+            "specific"
+        )
+    }
+
+    func testRankerAppliesEngagementSignals() {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let neutral = makeRankerCandidate(dedupeKey: "neutral")
+        let opened = makeRankerCandidate(dedupeKey: "opened")
+        let helpful = makeRankerCandidate(dedupeKey: "helpful")
+        let notHelpful = makeRankerCandidate(dedupeKey: "not-helpful")
+        let dismissed = makeRankerCandidate(dedupeKey: "dismissed")
+        let staleDismissed = makeRankerCandidate(dedupeKey: "stale-dismissed")
+
+        var openedRecord = InsightEngagementRecord(dedupeKey: opened.dedupeKey)
+        openedRecord.record(.opened, at: now)
+        var helpfulRecord = InsightEngagementRecord(dedupeKey: helpful.dedupeKey)
+        helpfulRecord.record(.helpful, at: now)
+        var notHelpfulRecord = InsightEngagementRecord(dedupeKey: notHelpful.dedupeKey)
+        notHelpfulRecord.record(.notHelpful, at: now)
+        var dismissedRecord = InsightEngagementRecord(dedupeKey: dismissed.dedupeKey)
+        dismissedRecord.record(.dismissed, at: now.addingTimeInterval(-6 * 24 * 60 * 60))
+        var staleDismissedRecord = InsightEngagementRecord(dedupeKey: staleDismissed.dedupeKey)
+        staleDismissedRecord.record(.dismissed, at: now.addingTimeInterval(-8 * 24 * 60 * 60))
+
+        let records = [
+            openedRecord.dedupeKey: openedRecord,
+            helpfulRecord.dedupeKey: helpfulRecord,
+            notHelpfulRecord.dedupeKey: notHelpfulRecord,
+            dismissedRecord.dedupeKey: dismissedRecord,
+            staleDismissedRecord.dedupeKey: staleDismissedRecord
+        ]
+        let ranker = InsightRanker()
+        let profile = makeProfile()
+        let baseline = ranker.score(neutral, surface: .profile, profile: profile, engagementRecords: records, now: now)
+
+        XCTAssertEqual(
+            ranker.score(opened, surface: .profile, profile: profile, engagementRecords: records, now: now) - baseline,
+            2,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            ranker.score(helpful, surface: .profile, profile: profile, engagementRecords: records, now: now) - baseline,
+            6,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            ranker.score(notHelpful, surface: .profile, profile: profile, engagementRecords: records, now: now) - baseline,
+            -12,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            ranker.score(dismissed, surface: .profile, profile: profile, engagementRecords: records, now: now) - baseline,
+            -20,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            ranker.score(staleDismissed, surface: .profile, profile: profile, engagementRecords: records, now: now) - baseline,
+            0,
+            accuracy: 0.001
+        )
     }
 
     @MainActor
-    func testDedupingPreventsSameInsightFromRepeatingEveryLaunch() throws {
+    func testImpressionPreventsSameInsightFromRepeatingEveryLaunch() throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let store = InsightStore(fileURL: temporaryInsightURL())
         let insight = makeStoredInsight(now: now)
 
-        let first = store.selectInsights([insight], for: .profile, limit: 1, now: now)
-        let second = store.selectInsights([insight], for: .profile, limit: 1, now: now.addingTimeInterval(60))
-        let afterCooldown = store.selectInsights([insight], for: .profile, limit: 1, now: now.addingTimeInterval(24 * 60 * 60))
+        let profile = makeProfile()
+        let first = store.selectInsights([insight], for: .profile, profile: profile, limit: 1, now: now)
+        let presented = try XCTUnwrap(first.first)
+        store.recordImpression(presented, on: .profile, now: now)
+        let second = store.selectInsights([insight], for: .profile, profile: profile, limit: 1, now: now.addingTimeInterval(60))
+        let afterCooldown = store.selectInsights([insight], for: .profile, profile: profile, limit: 1, now: now.addingTimeInterval(24 * 60 * 60))
 
         XCTAssertEqual(first.count, 1)
         XCTAssertTrue(second.isEmpty)
@@ -604,6 +829,147 @@ final class InsightEngineTests: XCTestCase {
 
         XCTAssertTrue(insight.message.localizedCaseInsensitiveContains("push"))
         XCTAssertTrue(insight.message.contains("rep"))
+    }
+
+    func testLLMRewriteAppliesSanitizedHeadlineWhenFeatureFlagIsOn() async throws {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let summary = makeSummary(
+            idSuffix: "9090",
+            endedAt: now,
+            exerciseType: .pushup,
+            scores: [92, 91, 90, 89, 88, 86, 84, 70, 68],
+            cueMessages: ["Keep your shoulders stacked"]
+        )
+        let profile = makeProfile()
+        let trophies = emptyTrophySnapshot(now: now)
+        let trendEngine = TrendEngine(calendar: calendar)
+        let snapshot = trendEngine.buildSnapshot(
+            history: [summary],
+            profile: profile,
+            trophies: trophies,
+            now: now
+        )
+        let signals = SignalExtractor(trendEngine: trendEngine).extractSignals(
+            snapshot: snapshot,
+            history: [summary],
+            profile: profile,
+            trophies: trophies
+        )
+        let engine = InsightEngine(
+            featureFlags: FeatureFlags(enabled: [.coachInsightLLMRewrite]),
+            insightRewriter: StubInsightRewriter { context in
+                RewriteResult(
+                    headline: "\(context.exerciseDisplayName ?? "Push Ups"): use easier variant after rep 8"
+                )
+            }
+        )
+
+        let insights = await engine.generateWorkoutInsights(
+            profile: profile,
+            summary: summary,
+            plan: makePlan(),
+            trendSnapshot: snapshot,
+            signals: signals
+        )
+
+        let insight = try XCTUnwrap(insights.first { $0.type == .formCorrection })
+        XCTAssertEqual(insight.headline, "Push Ups: use easier variant after rep 8")
+        XCTAssertTrue(insight.message.contains("rep 8"))
+    }
+
+    func testLLMRewriteNoopPathIsByteIdenticalToDeterministicOutput() async throws {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let summary = makeSummary(
+            idSuffix: "9091",
+            endedAt: now,
+            exerciseType: .pushup,
+            scores: [92, 91, 90, 89, 88, 86, 84, 70, 68],
+            cueMessages: ["Keep your shoulders stacked"]
+        )
+        let profile = makeProfile()
+        let trophies = emptyTrophySnapshot(now: now)
+        let trendEngine = TrendEngine(calendar: calendar)
+        let snapshot = trendEngine.buildSnapshot(
+            history: [summary],
+            profile: profile,
+            trophies: trophies,
+            now: now
+        )
+        let signals = SignalExtractor(trendEngine: trendEngine).extractSignals(
+            snapshot: snapshot,
+            history: [summary],
+            profile: profile,
+            trophies: trophies
+        )
+        let noopRewriteEngine = InsightEngine(
+            featureFlags: .default,
+            insightRewriter: StubInsightRewriter { context in
+                RewriteResult(
+                    headline: "\(context.exerciseDisplayName ?? "Push Ups"): use easier variant after rep 8"
+                )
+            }
+        )
+
+        let deterministic = workoutInsights(summary: summary, history: [summary], now: now)
+        let noopRewrite = await noopRewriteEngine.generateWorkoutInsights(
+            profile: profile,
+            summary: summary,
+            plan: makePlan(),
+            trendSnapshot: snapshot,
+            signals: signals
+        )
+
+        XCTAssertEqual(try encodedJSON(deterministic), try encodedJSON(noopRewrite))
+    }
+
+    func testLLMRewriteRejectsRewriteMissingEvidenceAnchor() async throws {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let summary = makeSummary(
+            idSuffix: "9092",
+            endedAt: now,
+            exerciseType: .pushup,
+            scores: [92, 91, 90, 89, 88, 86, 84, 70, 68],
+            cueMessages: ["Keep your shoulders stacked"]
+        )
+        let profile = makeProfile()
+        let trophies = emptyTrophySnapshot(now: now)
+        let trendEngine = TrendEngine(calendar: calendar)
+        let snapshot = trendEngine.buildSnapshot(
+            history: [summary],
+            profile: profile,
+            trophies: trophies,
+            now: now
+        )
+        let signals = SignalExtractor(trendEngine: trendEngine).extractSignals(
+            snapshot: snapshot,
+            history: [summary],
+            profile: profile,
+            trophies: trophies
+        )
+        let deterministic = workoutInsights(summary: summary, history: [summary], now: now)
+        let engine = InsightEngine(
+            featureFlags: FeatureFlags(enabled: [.coachInsightLLMRewrite]),
+            insightRewriter: StubInsightRewriter { _ in
+                RewriteResult(
+                    headline: "Push Ups: use easier variant today",
+                    message: "Push Ups should use an easier variant today.",
+                    shortMessage: "Push Ups: use easier variant."
+                )
+            }
+        )
+
+        let rewritten = await engine.generateWorkoutInsights(
+            profile: profile,
+            summary: summary,
+            plan: makePlan(),
+            trendSnapshot: snapshot,
+            signals: signals
+        )
+
+        XCTAssertEqual(
+            rewritten.first { $0.type == .formCorrection }?.headline,
+            deterministic.first { $0.type == .formCorrection }?.headline
+        )
     }
 
     func testProfileInsightConnectsMultipleSessions() throws {
@@ -762,12 +1128,28 @@ final class InsightEngineTests: XCTestCase {
         let store = InsightStore(fileURL: url)
 
         XCTAssertTrue(
-            store.selectInsights([insight], for: .profile, limit: 1, now: now).isEmpty
+            store.selectInsights([insight], for: .profile, profile: makeProfile(), limit: 1, now: now).isEmpty
         )
     }
 }
 
 private extension InsightEngineTests {
+    struct StubInsightRewriter: InsightRewriter {
+        let result: (InsightLLMContext) -> RewriteResult?
+
+        func rewrite(_ context: InsightLLMContext) async throws -> RewriteResult? {
+            result(context)
+        }
+    }
+
+    func encodedJSON(_ insights: [AIInsight]) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(insights)
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
     func workoutInsights(
         summary: WorkoutSessionSummary,
         history: [WorkoutSessionSummary],
@@ -789,6 +1171,7 @@ private extension InsightEngineTests {
             trophies: trophies
         )
         return InsightEngine().generateWorkoutInsights(
+            profile: profile,
             summary: summary,
             plan: makePlan(),
             trendSnapshot: snapshot,
@@ -961,6 +1344,30 @@ private extension InsightEngineTests {
             createdAt: now,
             expiresAt: now.addingTimeInterval(7 * 24 * 60 * 60),
             dedupeKey: "test-dedupe"
+        )
+    }
+
+    func makeRankerCandidate(dedupeKey: String) -> InsightCandidate {
+        InsightCandidate(
+            type: .formCorrection,
+            candidateHeadline: "Cue focus",
+            candidateAction: .focusCue,
+            evidence: [
+                InsightEvidence(
+                    metric: "repeatedCue",
+                    value: "Brace first",
+                    exerciseType: .squat,
+                    confidence: 0.9
+                )
+            ],
+            rawScore: 80,
+            confidence: 0.9,
+            surfaces: [.profile],
+            severity: .caution,
+            emotionalIntent: .giveToughLove,
+            relatedExerciseType: .squat,
+            createdAt: date(year: 2026, month: 5, day: 6, hour: 12),
+            dedupeKey: dedupeKey
         )
     }
 

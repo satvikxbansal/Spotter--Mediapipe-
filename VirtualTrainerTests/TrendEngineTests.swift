@@ -153,6 +153,281 @@ final class TrendEngineTests: XCTestCase {
         XCTAssertEqual(snapshot.mostRepeatedCue, "Keep your front knee steady")
     }
 
+    func testRepeatedCueNormalizesCaseWhitespacePunctuationAndLeadingCueWords() throws {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let profile = makeProfile()
+        let engine = TrendEngine(calendar: calendar)
+        let trophies = emptyTrophySnapshot(now: now)
+        let history = [
+            makeSummary(
+                idSuffix: "7064",
+                endedAt: now,
+                exerciseType: .lunge,
+                scores: [88, 76],
+                cueMessages: ["Keep your front knee steady"]
+            ),
+            makeSummary(
+                idSuffix: "7065",
+                endedAt: date(year: 2026, month: 5, day: 5, hour: 12),
+                exerciseType: .lunge,
+                scores: [84, 72],
+                cueMessages: ["  keep   your front knee steady!  "]
+            )
+        ]
+
+        let snapshot = engine.buildSnapshot(
+            history: history,
+            profile: profile,
+            trophies: trophies,
+            now: now
+        )
+        let signals = SignalExtractor(trendEngine: engine).extractSignals(
+            snapshot: snapshot,
+            history: history,
+            profile: profile,
+            trophies: trophies
+        )
+        let repeatedCue = try XCTUnwrap(signals.first { $0.type == .repeatedCue })
+
+        XCTAssertEqual(snapshot.mostRepeatedCue, "Keep your front knee steady")
+        XCTAssertEqual(repeatedCue.value, "Keep your front knee steady")
+        XCTAssertEqual(repeatedCue.evidenceRefs.count, 4)
+        XCTAssertEqual(Set(repeatedCue.evidenceRefs.map { CueNormalizer.normalize($0.label) }), ["front knee steady"])
+    }
+
+    func testMostRepeatedCueUsesRecentSessionWindowByDefault() {
+        let now = date(year: 2026, month: 5, day: 20, hour: 12)
+        let profile = makeProfile()
+        let trophies = emptyTrophySnapshot(now: now)
+        var history = [
+            makeSummary(
+                idSuffix: "7110",
+                endedAt: now,
+                exerciseType: .lunge,
+                cueMessages: ["Keep your chest tall"]
+            )
+        ]
+        history += (1...11).map { offset in
+            makeSummary(
+                idSuffix: String(format: "%04d", 7110 + offset),
+                endedAt: dayOffset(-offset, from: now),
+                exerciseType: .lunge
+            )
+        }
+        history += (12...14).map { offset in
+            makeSummary(
+                idSuffix: String(format: "%04d", 7110 + offset),
+                endedAt: dayOffset(-offset, from: now),
+                exerciseType: .lunge,
+                cueMessages: ["Let your knee cave in"]
+            )
+        }
+
+        let snapshot = TrendEngine(calendar: calendar).buildSnapshot(
+            history: history,
+            profile: profile,
+            trophies: trophies,
+            now: now
+        )
+
+        XCTAssertEqual(snapshot.mostRepeatedCue, "Keep your chest tall")
+    }
+
+    func testCameraFrictionCountUsesRecentSetupWindowByDefault() {
+        let now = date(year: 2026, month: 5, day: 20, hour: 12)
+        let profile = makeProfile()
+        let trophies = emptyTrophySnapshot(now: now)
+        let engine = TrendEngine(calendar: calendar)
+        let oldCameraCue = makeSummary(
+            idSuffix: "7130",
+            endedAt: dayOffset(-15, from: now),
+            exerciseType: .squat,
+            cueMessages: ["Camera needs your full body in frame"]
+        )
+        let recentClean = makeSummary(
+            idSuffix: "7131",
+            endedAt: dayOffset(-1, from: now),
+            exerciseType: .squat
+        )
+        let recentCameraCue = makeSummary(
+            idSuffix: "7132",
+            endedAt: dayOffset(-13, from: now),
+            exerciseType: .squat,
+            cueMessages: ["Move back so your full body is visible"]
+        )
+
+        let oldOnlySnapshot = engine.buildSnapshot(
+            history: [recentClean, oldCameraCue],
+            profile: profile,
+            trophies: trophies,
+            now: now
+        )
+        let recentSnapshot = engine.buildSnapshot(
+            history: [recentClean, oldCameraCue, recentCameraCue],
+            profile: profile,
+            trophies: trophies,
+            now: now
+        )
+
+        XCTAssertEqual(oldOnlySnapshot.cameraFrictionCount, 0)
+        XCTAssertEqual(recentSnapshot.cameraFrictionCount, 1)
+    }
+
+    func testExerciseTrendCueCountsUseRecentExerciseSessionsByDefault() throws {
+        let now = date(year: 2026, month: 5, day: 20, hour: 12)
+        let profile = makeProfile()
+        let trophies = emptyTrophySnapshot(now: now)
+        var history = [
+            makeSummary(
+                idSuffix: "7140",
+                endedAt: now,
+                exerciseType: .lunge,
+                cueMessages: ["Keep your ribs stacked"]
+            )
+        ]
+        history += (1...4).map { offset in
+            makeSummary(
+                idSuffix: String(format: "%04d", 7140 + offset),
+                endedAt: dayOffset(-offset, from: now),
+                exerciseType: .lunge
+            )
+        }
+        history.append(
+            makeSummary(
+                idSuffix: "7145",
+                endedAt: dayOffset(-5, from: now),
+                exerciseType: .lunge,
+                cueMessages: ["Let your knee cave in", "Let your knee cave in", "Let your knee cave in"]
+            )
+        )
+
+        let snapshot = TrendEngine(calendar: calendar).buildSnapshot(
+            history: history,
+            profile: profile,
+            trophies: trophies,
+            now: now
+        )
+        let trend = try XCTUnwrap(snapshot.exerciseTrends.first { $0.exerciseType == .lunge })
+
+        XCTAssertEqual(trend.mostCommonCue, "Keep your ribs stacked")
+        XCTAssertEqual(trend.highSeverityCueCount, 1)
+    }
+
+    func testRepeatedCueEvidenceRefsStayInsideRecentCueWindow() throws {
+        let now = date(year: 2026, month: 5, day: 20, hour: 12)
+        let profile = makeProfile()
+        let engine = TrendEngine(calendar: calendar)
+        let trophies = emptyTrophySnapshot(now: now)
+        let recentCueSummaries = [
+            makeSummary(
+                idSuffix: "7150",
+                endedAt: now,
+                exerciseType: .pushup,
+                cueMessages: ["Brace your ribs"]
+            ),
+            makeSummary(
+                idSuffix: "7151",
+                endedAt: dayOffset(-1, from: now),
+                exerciseType: .pushup,
+                cueMessages: ["Brace your ribs"]
+            )
+        ]
+        let fillerSummaries = (2...6).map { offset in
+            makeSummary(
+                idSuffix: String(format: "%04d", 7150 + offset),
+                endedAt: dayOffset(-offset, from: now),
+                exerciseType: .pushup
+            )
+        }
+        let oldCueSummaries = (7...9).map { offset in
+            makeSummary(
+                idSuffix: String(format: "%04d", 7150 + offset),
+                endedAt: dayOffset(-offset, from: now),
+                exerciseType: .pushup,
+                cueMessages: ["Brace your ribs"]
+            )
+        }
+        let history = recentCueSummaries + fillerSummaries + oldCueSummaries
+
+        let snapshot = engine.buildSnapshot(
+            history: history,
+            profile: profile,
+            trophies: trophies,
+            now: now
+        )
+        let signals = SignalExtractor(trendEngine: engine).extractSignals(
+            snapshot: snapshot,
+            history: history,
+            profile: profile,
+            trophies: trophies
+        )
+        let repeatedCue = try XCTUnwrap(signals.first { $0.type == .repeatedCue })
+        let recentSummaryIDs = Set(recentCueSummaries.map(\.id))
+
+        XCTAssertEqual(snapshot.mostRepeatedCue, "Brace your ribs")
+        XCTAssertEqual(repeatedCue.evidenceRefs.count, 2)
+        XCTAssertEqual(repeatedCue.comparisonValue, "2 cue events")
+        XCTAssertEqual(Set(repeatedCue.evidenceRefs.compactMap(\.summaryId)), recentSummaryIDs)
+    }
+
+    func testRecentSessionWindowsIgnoreFutureDatedHistory() {
+        let now = date(year: 2026, month: 5, day: 20, hour: 12)
+        let profile = makeProfile()
+        let trophies = emptyTrophySnapshot(now: now)
+        let engine = TrendEngine(calendar: calendar)
+        let currentCue = makeSummary(
+            idSuffix: "7160",
+            endedAt: now,
+            exerciseType: .pushup,
+            cueMessages: ["Brace your ribs"]
+        )
+        let futureCue = makeSummary(
+            idSuffix: "7161",
+            endedAt: dayOffset(1, from: now),
+            exerciseType: .pushup,
+            cueMessages: ["Let your knee cave in", "Let your knee cave in", "Let your knee cave in"]
+        )
+
+        let snapshot = engine.buildSnapshot(
+            history: [currentCue, futureCue],
+            profile: profile,
+            trophies: trophies,
+            now: now
+        )
+
+        XCTAssertEqual(snapshot.totalWorkouts, 2)
+        XCTAssertEqual(snapshot.mostRepeatedCue, "Brace your ribs")
+    }
+
+    func testFutureDatedSessionsDoNotConsumeRecentCueWindowSlots() {
+        let now = date(year: 2026, month: 5, day: 20, hour: 12)
+        let profile = makeProfile()
+        let trophies = emptyTrophySnapshot(now: now)
+        let currentCue = makeSummary(
+            idSuffix: "7170",
+            endedAt: now,
+            exerciseType: .pushup,
+            cueMessages: ["Brace your ribs"]
+        )
+        let futureSummaries = (1...7).map { offset in
+            makeSummary(
+                idSuffix: String(format: "%04d", 7170 + offset),
+                endedAt: dayOffset(offset, from: now),
+                exerciseType: .pushup,
+                cueMessages: ["Future cue should not win"]
+            )
+        }
+
+        let snapshot = TrendEngine(calendar: calendar).buildSnapshot(
+            history: futureSummaries + [currentCue],
+            profile: profile,
+            trophies: trophies,
+            now: now
+        )
+
+        XCTAssertEqual(snapshot.mostRepeatedCue, "Brace your ribs")
+    }
+
     func testTrophyProximitySignal() throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let profile = makeProfile()
@@ -481,5 +756,9 @@ private extension TrendEngineTests {
                 minute: minute
             )
         ) ?? Date(timeIntervalSince1970: 0)
+    }
+
+    func dayOffset(_ days: Int, from date: Date) -> Date {
+        calendar.date(byAdding: .day, value: days, to: date) ?? date
     }
 }
