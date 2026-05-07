@@ -300,3 +300,32 @@ nonisolated struct WorkoutCalendarSnapshot: Codable, Equatable {
     let streak: Int
     let timeZoneIdentifier: String
 }
+
+nonisolated struct DayIntensitySummary: Identifiable, Equatable {
+    let date: Date
+    let workoutCount: Int
+    let totalReps: Int
+    let totalHoldSeconds: Int
+    let averageFormScore: Double?
+    let sessions: [WorkoutSessionSummary]
+
+    var id: Date { date }
+
+    var volumeUnits: Double {
+        Double(totalReps) + Double(totalHoldSeconds) / 10
+    }
+
+    var hasStrongForm: Bool {
+        (averageFormScore ?? 0) >= 85
+    }
+
+    var hasHighVolume: Bool {
+        volumeUnits > 100
+    }
+
+    var intensity: Int {
+        let formBonus = hasStrongForm ? 1 : 0
+        let volumeBonus = hasHighVolume ? 1 : 0
+        return min(max(workoutCount + formBonus + volumeBonus, 0), 4)
+    }
+}

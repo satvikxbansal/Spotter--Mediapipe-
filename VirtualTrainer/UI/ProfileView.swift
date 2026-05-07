@@ -81,6 +81,12 @@ struct ProfileView: View {
             profile: profile,
             now: now
         )
+        let heatmapSummary = trendEngine.dailyIntensitySummary(
+            history: historyStore.summaries,
+            profile: profile,
+            days: TrainingHeatmapView.defaultDayCount,
+            now: now
+        )
         return ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                 ProfileHeaderView(
@@ -109,6 +115,8 @@ struct ProfileView: View {
                 WorkoutSnapshotCard(
                     snapshot: trendSnapshot,
                     calendarSnapshot: calendarSnapshot,
+                    heatmapSummary: heatmapSummary,
+                    profile: profile,
                     accent: themeStore.selectedTheme.accentColor
                 )
 
@@ -627,13 +635,45 @@ private struct ProfileStatCard: View {
 private struct WorkoutSnapshotCard: View {
     let snapshot: UserTrainingTrendSnapshot
     let calendarSnapshot: WorkoutCalendarSnapshot
+    let heatmapSummary: [Date: DayIntensitySummary]
+    let profile: UserProfile
     let accent: Color
+
+    @State private var isShowingMonth = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             ProfileSectionHeader(title: "Workout Snapshot")
 
-            CalendarSnapshotView(snapshot: calendarSnapshot, accent: accent)
+            TrainingHeatmapView(
+                summariesByDay: heatmapSummary,
+                profile: profile,
+                accent: accent
+            )
+
+            Button {
+                withAnimation(Theme.Motion.snappy) {
+                    isShowingMonth.toggle()
+                }
+            } label: {
+                HStack {
+                    Text("This Month")
+                        .font(.system(size: 12, weight: .black))
+                        .tracking(1.1)
+                        .textCase(.uppercase)
+                    Spacer()
+                    Image(systemName: isShowingMonth ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .black))
+                }
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isShowingMonth {
+                CalendarSnapshotView(snapshot: calendarSnapshot, accent: accent)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
 
             LazyVGrid(
                 columns: [
@@ -1226,11 +1266,128 @@ private enum ProfileFormat {
 }
 
 #Preview {
+    let stores = ProfilePreviewData.makeStores()
     ProfileView()
-        .environmentObject(OnboardingStore())
-        .environmentObject(CalibrationStore())
-        .environmentObject(WorkoutHistoryStore())
-        .environmentObject(TrophyStore())
-        .environmentObject(ThemeStore())
-        .environmentObject(InsightStore())
+        .environmentObject(stores.onboardingStore)
+        .environmentObject(stores.calibrationStore)
+        .environmentObject(stores.historyStore)
+        .environmentObject(stores.trophyStore)
+        .environmentObject(stores.themeStore)
+        .environmentObject(stores.insightStore)
+}
+
+@MainActor
+private struct ProfilePreviewStores {
+    let onboardingStore: OnboardingStore
+    let calibrationStore: CalibrationStore
+    let historyStore: WorkoutHistoryStore
+    let trophyStore: TrophyStore
+    let themeStore: ThemeStore
+    let insightStore: InsightStore
+}
+
+@MainActor
+private enum ProfilePreviewData {
+    static let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Kolkata") ?? .current
+        return calendar
+    }()
+
+    static let now = Date(timeIntervalSince1970: 1_778_100_300)
+
+    static func makeStores() -> ProfilePreviewStores {
+        let baseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SpotterProfilePreview", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let onboardingStore = OnboardingStore(fileURL: baseURL.appendingPathComponent("UserProfile.json"))
+        onboardingStore.draft.displayName = "Preview Athlete"
+        onboardingStore.draft.genderIdentity = .preferNotToSay
+        onboardingStore.draft.age = "30"
+        onboardingStore.draft.height = "170"
+        onboardingStore.draft.weight = "70"
+        onboardingStore.draft.primaryGoal = .strength
+        onboardingStore.draft.fitnessLevel = .beginner
+        onboardingStore.draft.equipment = [.bodyweight]
+        onboardingStore.draft.preferredCoach = .bennett
+        onboardingStore.draft.selectedTheme = .hyper
+        onboardingStore.draft.timezoneIdentifier = "Asia/Kolkata"
+        onboardingStore.completeOnboarding()
+
+        let historyStore = WorkoutHistoryStore(
+            fileURL: baseURL.appendingPathComponent("WorkoutHistory.json"),
+            calendar: calendar
+        )
+        sampleHistory.forEach { _ = historyStore.addSummary($0) }
+
+        let calibrationStore = CalibrationStore(fileURL: baseURL.appendingPathComponent("Calibration.json"))
+        let trophyStore = TrophyStore(
+            fileURL: baseURL.appendingPathComponent("Trophies.json"),
+            calendar: calendar
+        )
+        trophyStore.updateAll(
+            history: historyStore.summaries,
+            calibrationStatus: calibrationStore.status,
+            now: now
+        )
+
+        return ProfilePreviewStores(
+            onboardingStore: onboardingStore,
+            calibrationStore: calibrationStore,
+            historyStore: historyStore,
+            trophyStore: trophyStore,
+            themeStore: ThemeStore(),
+            insightStore: InsightStore(fileURL: baseURL.appendingPathComponent("Insights.json"))
+        )
+    }
+
+    static var sampleHistory: [WorkoutSessionSummary] {
+        [
+            makeSummary(dayOffset: -1, exerciseType: .squat, reps: 48, holdSeconds: 0, form: 89),
+            makeSummary(dayOffset: -2, exerciseType: .plank, reps: 0, holdSeconds: 130, form: 86),
+            makeSummary(dayOffset: -7, exerciseType: .pushup, reps: 42, holdSeconds: 0, form: 81),
+            makeSummary(dayOffset: -15, exerciseType: .lunge, reps: 72, holdSeconds: 0, form: 88),
+            makeSummary(dayOffset: -28, exerciseType: .gluteBridge, reps: 120, holdSeconds: 0, form: 92),
+            makeSummary(dayOffset: -49, exerciseType: .wallSit, reps: 0, holdSeconds: 180, form: 84)
+        ]
+    }
+
+    static func makeSummary(
+        dayOffset: Int,
+        exerciseType: ExerciseType,
+        reps: Int,
+        holdSeconds: Int,
+        form: Double
+    ) -> WorkoutSessionSummary {
+        let endedAt = calendar.date(byAdding: .day, value: dayOffset, to: now) ?? now
+        let target: WorkoutTarget = reps > 0 ? .reps(reps) : .hold(seconds: holdSeconds)
+        let set = ExerciseSetSummary(
+            exerciseType: exerciseType,
+            setIndex: 0,
+            target: target,
+            achievedReps: reps,
+            achievedHoldSeconds: holdSeconds,
+            averageFormScore: form,
+            completedAt: endedAt,
+            durationSeconds: max(360, holdSeconds)
+        )
+
+        return WorkoutSessionSummary(
+            mode: .plannedWorkout,
+            title: "\(exerciseType.displayName) Preview",
+            goal: "Build clean strength.",
+            coach: .good,
+            startedAt: endedAt.addingTimeInterval(-1_200),
+            endedAt: endedAt,
+            durationSeconds: 1_200,
+            totalReps: reps,
+            totalHoldSeconds: holdSeconds,
+            averageFormScore: form,
+            completionPercent: 1,
+            exerciseSummaries: [set],
+            topCue: nil,
+            effortSummary: "Preview effort.",
+            createdAt: endedAt
+        )
+    }
 }

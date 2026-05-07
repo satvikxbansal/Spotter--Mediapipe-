@@ -85,6 +85,46 @@ nonisolated struct TrendEngine {
         }
     }
 
+    func dailyIntensitySummary(
+        history: [WorkoutSessionSummary],
+        profile: UserProfile,
+        days: Int,
+        now: Date = Date()
+    ) -> [Date: DayIntensitySummary] {
+        let safeDays = max(days, 0)
+        guard safeDays > 0 else { return [:] }
+
+        let localCalendar = calendar(for: profile)
+        let endDay = localCalendar.startOfDay(for: now)
+        let startOffset = -(safeDays - 1)
+        guard let startDay = localCalendar.date(byAdding: .day, value: startOffset, to: endDay) else {
+            return [:]
+        }
+
+        let counts = dailyWorkoutCounts(history: history, profile: profile)
+        let reps = dailyTotalReps(history: history, profile: profile)
+        let holds = dailyHoldSeconds(history: history, profile: profile)
+        let form = dailyAverageForm(history: history, profile: profile)
+        let sessionsByDay = Dictionary(grouping: sorted(history)) { summary in
+            localCalendar.startOfDay(for: summary.endedAt)
+        }
+
+        return (0..<safeDays).reduce(into: [Date: DayIntensitySummary]()) { result, offset in
+            guard let date = localCalendar.date(byAdding: .day, value: offset, to: startDay) else {
+                return
+            }
+            let day = localCalendar.startOfDay(for: date)
+            result[day] = DayIntensitySummary(
+                date: day,
+                workoutCount: counts[day] ?? 0,
+                totalReps: reps[day] ?? 0,
+                totalHoldSeconds: holds[day] ?? 0,
+                averageFormScore: form[day],
+                sessions: sessionsByDay[day] ?? []
+            )
+        }
+    }
+
     func dailyTotalReps(
         history: [WorkoutSessionSummary],
         profile: UserProfile? = nil
@@ -256,6 +296,15 @@ nonisolated struct TrendEngine {
             timeZoneIdentifier: localCalendar.timeZone.identifier
         )
     }
+
+    func calendar(for profile: UserProfile?) -> Calendar {
+        var resolved = calendar
+        if let identifier = profile?.timezoneIdentifier,
+           let timeZone = TimeZone(identifier: identifier) {
+            resolved.timeZone = timeZone
+        }
+        return resolved
+    }
 }
 
 nonisolated extension TrendEngine {
@@ -312,15 +361,6 @@ nonisolated private extension TrendEngine {
         let latestValue: Double?
         let comparisonValue: Double?
         let delta: Double?
-    }
-
-    func calendar(for profile: UserProfile?) -> Calendar {
-        var resolved = calendar
-        if let identifier = profile?.timezoneIdentifier,
-           let timeZone = TimeZone(identifier: identifier) {
-            resolved.timeZone = timeZone
-        }
-        return resolved
     }
 
     func sorted(_ history: [WorkoutSessionSummary]) -> [WorkoutSessionSummary] {

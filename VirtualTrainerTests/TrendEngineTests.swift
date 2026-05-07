@@ -566,6 +566,63 @@ final class TrendEngineTests: XCTestCase {
         XCTAssertEqual(snapshot.completedDays.count, 2)
         XCTAssertEqual(snapshot.timeZoneIdentifier, "Asia/Kolkata")
     }
+
+    func testDailyIntensitySummaryReturnsFullTwelveWeekWindow() throws {
+        let profile = makeProfile()
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let history = [
+            makeSummary(idSuffix: "7121", endedAt: now, reps: 40, averageFormScore: 88),
+            makeSummary(
+                idSuffix: "7122",
+                endedAt: date(year: 2026, month: 4, day: 12, hour: 12),
+                reps: 30,
+                holdSeconds: 90,
+                averageFormScore: 82
+            )
+        ]
+
+        let summary = TrendEngine(calendar: calendar).dailyIntensitySummary(
+            history: history,
+            profile: profile,
+            days: 84,
+            now: now
+        )
+        let today = calendar.startOfDay(for: now)
+        let oldestDay = try XCTUnwrap(calendar.date(byAdding: .day, value: -83, to: today))
+
+        XCTAssertEqual(summary.count, 84)
+        XCTAssertNotNil(summary[today])
+        XCTAssertNotNil(summary[oldestDay])
+        XCTAssertEqual(summary[today]?.workoutCount, 1)
+    }
+
+    func testDailyIntensitySummaryCombinesWorkoutQualityAndVolumeIntoIntensity() throws {
+        let profile = makeProfile()
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let history = [
+            makeSummary(idSuffix: "7131", endedAt: now, reps: 70, averageFormScore: 90),
+            makeSummary(
+                idSuffix: "7132",
+                endedAt: date(year: 2026, month: 5, day: 6, hour: 18),
+                reps: 45,
+                holdSeconds: 30,
+                averageFormScore: 86
+            )
+        ]
+
+        let summary = TrendEngine(calendar: calendar).dailyIntensitySummary(
+            history: history,
+            profile: profile,
+            days: 84,
+            now: now
+        )
+        let day = try XCTUnwrap(summary[calendar.startOfDay(for: now)])
+
+        XCTAssertEqual(day.workoutCount, 2)
+        XCTAssertEqual(day.totalReps, 115)
+        XCTAssertEqual(day.sessions.count, 2)
+        XCTAssertEqual(day.intensity, 4)
+    }
 }
 
 private extension TrendEngineTests {
