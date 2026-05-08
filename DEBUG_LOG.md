@@ -734,3 +734,25 @@ Made status mapping type-aware, required reliable scored quality samples for pos
 Deterministic coach insights should prefer explicit typed status over parsing prose, require enough scored evidence before positive progression claims, and preserve the exact semantics of workout summary fields before turning them into coaching recommendations.
 
 **Pattern Tags:** #insight-accuracy #ai-coach #training-signals #rest-timing #tests
+
+---
+
+### [DL-034] Add Local Tombstones For Workout Deletes
+**Date:** 2026-05-07
+**Severity:** warning
+**Category:** persistence
+**File(s):** `VirtualTrainer/Models/WorkoutSessionSummary.swift`, `VirtualTrainer/Models/WorkoutHistoryStore.swift`, `VirtualTrainer/Models/AIInsightModels.swift`, `VirtualTrainer/Models/InsightStore.swift`, `VirtualTrainer/UI/WorkoutDetailSheetView.swift`, `VirtualTrainer/UI/ProfileView.swift`
+
+**Error:**
+Workout history had no user-facing delete path, and any future hard local delete could be resurrected by another device once offline-first sync is added.
+
+**Root Cause:**
+`WorkoutHistoryStore` used its published visible summaries as the persisted source of truth. Removing an item from that array would also remove all local evidence that a delete happened.
+
+**Fix Applied:**
+Added backwards-compatible `deletedAt` fields and tombstone helpers to syncable local models, split workout history into an all-record source of truth plus a non-deleted SwiftUI projection, persisted tombstones in `WorkoutHistory.json`, added local delete/restore/purge and sync/debug queries, and invalidated AI insights that reference a deleted workout while preserving delivery and engagement records. Trophy recompute keeps already-earned trophy state; C6 remains responsible for canonical trophy unlock/retraction events.
+
+**Prevention Rule:**
+User-facing deletes for future syncable local records should write tombstones first, keep default UI queries on non-deleted projections, and preserve dependent behavior signals unless the product explicitly defines a separate deletion lifecycle.
+
+**Pattern Tags:** #persistence #soft-delete #sync-prep #insights #history
