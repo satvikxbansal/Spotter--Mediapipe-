@@ -1,10 +1,34 @@
 import Foundation
 import Combine
 
+nonisolated private func maxOptionalDate(_ lhs: Date?, _ rhs: Date?) -> Date? {
+    switch (lhs, rhs) {
+    case let (lhs?, rhs?):
+        return max(lhs, rhs)
+    case let (lhs?, nil):
+        return lhs
+    case let (nil, rhs?):
+        return rhs
+    case (nil, nil):
+        return nil
+    }
+}
+
 // SYNC SEMANTICS:
-// Delivery and engagement records are small per-dedupeKey records that should
-// be server-mirrored once repositories exist. Conflicts merge by max event dates
-// and summed counts; unresolved repository version conflicts must stay .conflict.
+// Delivery and engagement records are account-scoped, per-dedupeKey behavior
+// records that should be server-mirrored once repositories exist. They carry
+// only privacy-light insight behavior data: dedupe keys, presentation surfaces,
+// engagement kinds/counts, event dates, tombstones, and sync metadata. They must
+// never contain raw workout data, camera frames, video, face images, raw pose
+// streams, raw biometric face data, or raw pose timelines.
+//
+// Delivery conflicts preserve the earliest firstPresentedAt, latest
+// lastPresentedAt, and latest date per surface. presentationCount uses max
+// instead of sum because delivery records are aggregates, not per-impression
+// event logs; max keeps remote re-apply idempotent and avoids overstating how
+// often an insight was shown. Engagement conflicts sum counts and keep the max
+// last-engagement date per kind. Unresolved repository version conflicts must
+// stay .conflict.
 nonisolated struct InsightDeliveryRecord: Codable, Equatable {
     let accountId: String?
     let dedupeKey: String
@@ -12,6 +36,7 @@ nonisolated struct InsightDeliveryRecord: Codable, Equatable {
     var lastPresentedAt: Date
     var presentationCount: Int
     var surfaceLastPresentedAt: [String: Date]
+    var deletedAt: Date?
     var syncMetadata: SyncMetadata
 
     init(
@@ -19,20 +44,49 @@ nonisolated struct InsightDeliveryRecord: Codable, Equatable {
         dedupeKey: String,
         presentedAt: Date,
         surface: InsightSurface,
+        deletedAt: Date? = nil,
+        syncMetadata: SyncMetadata? = nil
+    ) {
+        self.init(
+            accountId: accountId,
+            dedupeKey: dedupeKey,
+            firstPresentedAt: presentedAt,
+            lastPresentedAt: presentedAt,
+            presentationCount: 1,
+            surfaceLastPresentedAt: [surface.rawValue: presentedAt],
+            deletedAt: deletedAt,
+            syncMetadata: syncMetadata
+        )
+    }
+
+    init(
+        accountId: String? = nil,
+        dedupeKey: String,
+        firstPresentedAt: Date,
+        lastPresentedAt: Date,
+        presentationCount: Int,
+        surfaceLastPresentedAt: [String: Date],
+        deletedAt: Date? = nil,
         syncMetadata: SyncMetadata? = nil
     ) {
         let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         self.accountId = normalizedAccountId
         self.dedupeKey = dedupeKey
-        self.firstPresentedAt = presentedAt
-        self.lastPresentedAt = presentedAt
-        self.presentationCount = 1
-        self.surfaceLastPresentedAt = [surface.rawValue: presentedAt]
+        self.firstPresentedAt = firstPresentedAt
+        self.lastPresentedAt = lastPresentedAt
+        self.presentationCount = max(presentationCount, 0)
+        self.surfaceLastPresentedAt = surfaceLastPresentedAt
+        self.deletedAt = deletedAt
+        let metadataDate = maxOptionalDate(deletedAt, lastPresentedAt) ?? lastPresentedAt
         self.syncMetadata = syncMetadata ?? (
             normalizedAccountId == nil
-                ? .initialLocalOnly(now: presentedAt)
-                : .initialPendingUpload(operationId: nil, now: presentedAt)
+                ? .initialLocalOnly(now: metadataDate)
+                : .initialPendingUpload(operationId: nil, now: metadataDate)
         )
+    }
+
+    var isDeleted: Bool {
+        deletedAt != nil
     }
 
     mutating func recordPresentation(
@@ -40,14 +94,42 @@ nonisolated struct InsightDeliveryRecord: Codable, Equatable {
         surface: InsightSurface,
         operationId: UUID? = nil
     ) {
-        lastPresentedAt = date
-        presentationCount += 1
-        surfaceLastPresentedAt[surface.rawValue] = date
+        firstPresentedAt = min(firstPresentedAt, date)
+        lastPresentedAt = max(lastPresentedAt, date)
+        presentationCount = max(presentationCount, 0) + 1
+        if let existingDate = surfaceLastPresentedAt[surface.rawValue] {
+            surfaceLastPresentedAt[surface.rawValue] = max(existingDate, date)
+        } else {
+            surfaceLastPresentedAt[surface.rawValue] = date
+        }
+        deletedAt = nil
         syncMetadata.markLocalMutation(
             accountId: accountId,
             operationId: operationId,
             now: date
         )
+    }
+
+    func markedDeleted(at date: Date, operationId: UUID? = nil) -> InsightDeliveryRecord {
+        var copy = self
+        copy.deletedAt = date
+        copy.syncMetadata.markLocalMutation(
+            accountId: accountId,
+            operationId: operationId,
+            now: date
+        )
+        return copy
+    }
+
+    func restored(operationId: UUID? = nil, now: Date = Date()) -> InsightDeliveryRecord {
+        var copy = self
+        copy.deletedAt = nil
+        copy.syncMetadata.markLocalMutation(
+            accountId: accountId,
+            operationId: operationId,
+            now: now
+        )
+        return copy
     }
 
     func withAccountId(
@@ -56,23 +138,45 @@ nonisolated struct InsightDeliveryRecord: Codable, Equatable {
         now: Date = Date()
     ) -> InsightDeliveryRecord {
         let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
-        var copy = self
-        copy = InsightDeliveryRecord(
+        return InsightDeliveryRecord(
             accountId: normalizedAccountId,
             dedupeKey: dedupeKey,
-            presentedAt: firstPresentedAt,
-            surface: .dashboard,
+            firstPresentedAt: firstPresentedAt,
+            lastPresentedAt: lastPresentedAt,
+            presentationCount: presentationCount,
+            surfaceLastPresentedAt: surfaceLastPresentedAt,
+            deletedAt: deletedAt,
             syncMetadata: syncMetadata.markedForLocalMutation(
                 accountId: normalizedAccountId,
                 operationId: operationId,
                 now: now
             )
         )
-        copy.firstPresentedAt = firstPresentedAt
-        copy.lastPresentedAt = lastPresentedAt
-        copy.presentationCount = presentationCount
-        copy.surfaceLastPresentedAt = surfaceLastPresentedAt
-        return copy
+    }
+
+    static func merged(
+        local: InsightDeliveryRecord,
+        remote: InsightDeliveryRecord
+    ) -> InsightDeliveryRecord {
+        var mergedSurfaces = local.surfaceLastPresentedAt
+        for (surface, date) in remote.surfaceLastPresentedAt {
+            if let existingDate = mergedSurfaces[surface] {
+                mergedSurfaces[surface] = max(existingDate, date)
+            } else {
+                mergedSurfaces[surface] = date
+            }
+        }
+
+        return InsightDeliveryRecord(
+            accountId: remote.accountId ?? local.accountId,
+            dedupeKey: local.dedupeKey,
+            firstPresentedAt: min(local.firstPresentedAt, remote.firstPresentedAt),
+            lastPresentedAt: max(local.lastPresentedAt, remote.lastPresentedAt),
+            presentationCount: max(max(local.presentationCount, remote.presentationCount), 0),
+            surfaceLastPresentedAt: mergedSurfaces,
+            deletedAt: maxOptionalDate(local.deletedAt, remote.deletedAt),
+            syncMetadata: SyncMetadata.preferredForMerge(local.syncMetadata, remote.syncMetadata)
+        )
     }
 }
 
@@ -84,21 +188,30 @@ nonisolated extension InsightDeliveryRecord {
         case lastPresentedAt
         case presentationCount
         case surfaceLastPresentedAt
+        case deletedAt
         case syncMetadata
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        accountId = AccountOwnership.normalizedAccountId(
+        let decodedAccountId = AccountOwnership.normalizedAccountId(
             try container.decodeIfPresent(String.self, forKey: .accountId)
         )
-        dedupeKey = try container.decode(String.self, forKey: .dedupeKey)
-        firstPresentedAt = try container.decode(Date.self, forKey: .firstPresentedAt)
-        lastPresentedAt = try container.decode(Date.self, forKey: .lastPresentedAt)
-        presentationCount = try container.decode(Int.self, forKey: .presentationCount)
-        surfaceLastPresentedAt = try container.decode([String: Date].self, forKey: .surfaceLastPresentedAt)
-        syncMetadata = try container.decodeIfPresent(SyncMetadata.self, forKey: .syncMetadata)
-            ?? .initialLocalOnly(now: lastPresentedAt)
+        let dedupeKey = try container.decode(String.self, forKey: .dedupeKey)
+        let firstPresentedAt = try container.decode(Date.self, forKey: .firstPresentedAt)
+        let lastPresentedAt = try container.decode(Date.self, forKey: .lastPresentedAt)
+        let deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+        self.init(
+            accountId: decodedAccountId,
+            dedupeKey: dedupeKey,
+            firstPresentedAt: firstPresentedAt,
+            lastPresentedAt: lastPresentedAt,
+            presentationCount: try container.decode(Int.self, forKey: .presentationCount),
+            surfaceLastPresentedAt: try container.decode([String: Date].self, forKey: .surfaceLastPresentedAt),
+            deletedAt: deletedAt,
+            syncMetadata: try container.decodeIfPresent(SyncMetadata.self, forKey: .syncMetadata)
+                ?? .initialLocalOnly(now: maxOptionalDate(deletedAt, lastPresentedAt) ?? lastPresentedAt)
+        )
     }
 }
 
@@ -114,6 +227,7 @@ nonisolated struct InsightEngagementRecord: Codable, Equatable {
     let dedupeKey: String
     private var engagementCounts: [String: Int]
     private var lastEngagementDates: [String: Date]
+    var deletedAt: Date?
     var syncMetadata: SyncMetadata
 
     init(
@@ -121,6 +235,7 @@ nonisolated struct InsightEngagementRecord: Codable, Equatable {
         dedupeKey: String,
         engagementCounts: [String: Int] = [:],
         lastEngagementDates: [String: Date] = [:],
+        deletedAt: Date? = nil,
         syncMetadata: SyncMetadata? = nil
     ) {
         let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
@@ -128,12 +243,17 @@ nonisolated struct InsightEngagementRecord: Codable, Equatable {
         self.dedupeKey = dedupeKey
         self.engagementCounts = engagementCounts
         self.lastEngagementDates = lastEngagementDates
-        let localUpdatedAt = lastEngagementDates.values.max() ?? Date()
+        self.deletedAt = deletedAt
+        let localUpdatedAt = maxOptionalDate(lastEngagementDates.values.max(), deletedAt) ?? Date()
         self.syncMetadata = syncMetadata ?? (
             normalizedAccountId == nil
                 ? .initialLocalOnly(now: localUpdatedAt)
                 : .initialPendingUpload(operationId: nil, now: localUpdatedAt)
         )
+    }
+
+    var isDeleted: Bool {
+        deletedAt != nil
     }
 
     mutating func record(
@@ -143,6 +263,7 @@ nonisolated struct InsightEngagementRecord: Codable, Equatable {
     ) {
         engagementCounts[kind.rawValue, default: 0] += 1
         lastEngagementDates[kind.rawValue] = date
+        deletedAt = nil
         syncMetadata.markLocalMutation(
             accountId: accountId,
             operationId: operationId,
@@ -158,20 +279,54 @@ nonisolated struct InsightEngagementRecord: Codable, Equatable {
         lastEngagementDates[kind.rawValue]
     }
 
+    func latestEngagedAt() -> Date? {
+        lastEngagementDates.values.max()
+    }
+
     func merged(with other: InsightEngagementRecord) -> InsightEngagementRecord {
-        var merged = self
+        var mergedCounts = engagementCounts
         for (kind, count) in other.engagementCounts {
-            merged.engagementCounts[kind, default: 0] += count
+            mergedCounts[kind, default: 0] += count
         }
+        var mergedDates = lastEngagementDates
         for (kind, date) in other.lastEngagementDates {
-            if let existingDate = merged.lastEngagementDates[kind] {
-                merged.lastEngagementDates[kind] = max(existingDate, date)
+            if let existingDate = mergedDates[kind] {
+                mergedDates[kind] = max(existingDate, date)
             } else {
-                merged.lastEngagementDates[kind] = date
+                mergedDates[kind] = date
             }
         }
-        merged.syncMetadata = SyncMetadata.preferredForMerge(syncMetadata, other.syncMetadata)
-        return merged
+
+        return InsightEngagementRecord(
+            accountId: other.accountId ?? accountId,
+            dedupeKey: dedupeKey,
+            engagementCounts: mergedCounts,
+            lastEngagementDates: mergedDates,
+            deletedAt: maxOptionalDate(deletedAt, other.deletedAt),
+            syncMetadata: SyncMetadata.preferredForMerge(syncMetadata, other.syncMetadata)
+        )
+    }
+
+    func markedDeleted(at date: Date, operationId: UUID? = nil) -> InsightEngagementRecord {
+        var copy = self
+        copy.deletedAt = date
+        copy.syncMetadata.markLocalMutation(
+            accountId: accountId,
+            operationId: operationId,
+            now: date
+        )
+        return copy
+    }
+
+    func restored(operationId: UUID? = nil, now: Date = Date()) -> InsightEngagementRecord {
+        var copy = self
+        copy.deletedAt = nil
+        copy.syncMetadata.markLocalMutation(
+            accountId: accountId,
+            operationId: operationId,
+            now: now
+        )
+        return copy
     }
 
     func withAccountId(
@@ -185,6 +340,7 @@ nonisolated struct InsightEngagementRecord: Codable, Equatable {
             dedupeKey: dedupeKey,
             engagementCounts: engagementCounts,
             lastEngagementDates: lastEngagementDates,
+            deletedAt: deletedAt,
             syncMetadata: syncMetadata.markedForLocalMutation(
                 accountId: normalizedAccountId,
                 operationId: operationId,
@@ -200,19 +356,22 @@ nonisolated extension InsightEngagementRecord {
         case dedupeKey
         case engagementCounts
         case lastEngagementDates
+        case deletedAt
         case syncMetadata
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let decodedDates = try container.decode([String: Date].self, forKey: .lastEngagementDates)
-        let localUpdatedAt = decodedDates.values.max() ?? Date()
+        let deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+        let localUpdatedAt = maxOptionalDate(decodedDates.values.max(), deletedAt) ?? Date()
 
         self.init(
             accountId: try container.decodeIfPresent(String.self, forKey: .accountId),
             dedupeKey: try container.decode(String.self, forKey: .dedupeKey),
             engagementCounts: try container.decode([String: Int].self, forKey: .engagementCounts),
             lastEngagementDates: decodedDates,
+            deletedAt: deletedAt,
             syncMetadata: try container.decodeIfPresent(SyncMetadata.self, forKey: .syncMetadata)
                 ?? .initialLocalOnly(now: localUpdatedAt)
         )
@@ -423,6 +582,79 @@ final class InsightStore: ObservableObject {
 
     func engagementRecordsSnapshot() -> [String: InsightEngagementRecord] {
         engagementRecords
+    }
+
+    func allDeliveryRecordsIncludingTombstones() -> [InsightDeliveryRecord] {
+        sortedDeliveryRecords(allDeliveryRecords.values.filter(isVisible))
+    }
+
+    func allEngagementRecordsIncludingTombstones() -> [InsightEngagementRecord] {
+        sortedEngagementRecords(allEngagementRecords.values.filter(isVisible))
+    }
+
+    @discardableResult
+    func applyRemoteDeliveryRecords(_ remoteRecords: [InsightDeliveryRecord]) -> Bool {
+        let incomingRecords = remoteRecords.filter(isVisible)
+        guard !incomingRecords.isEmpty else { return true }
+
+        let previousAllInsights = allInsights
+        let previousAllDeliveryRecords = allDeliveryRecords
+        let previousAllEngagementRecords = allEngagementRecords
+
+        for remoteRecord in incomingRecords {
+            let key = storageKey(accountId: remoteRecord.accountId, dedupeKey: remoteRecord.dedupeKey)
+            if let existingRecord = allDeliveryRecords[key] {
+                allDeliveryRecords[key] = InsightDeliveryRecord.merged(
+                    local: existingRecord,
+                    remote: remoteRecord
+                )
+            } else {
+                allDeliveryRecords[key] = remoteRecord
+            }
+        }
+        allDeliveryRecords = bestDeliveryRecordsByStorageKey(Array(allDeliveryRecords.values))
+        applyVisibleState()
+
+        guard persist() else {
+            restoreState(
+                insights: previousAllInsights,
+                deliveryRecords: previousAllDeliveryRecords,
+                engagementRecords: previousAllEngagementRecords
+            )
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func applyRemoteEngagementRecords(_ remoteRecords: [InsightEngagementRecord]) -> Bool {
+        let incomingRecords = remoteRecords.filter(isVisible)
+        guard !incomingRecords.isEmpty else { return true }
+
+        let previousAllInsights = allInsights
+        let previousAllDeliveryRecords = allDeliveryRecords
+        let previousAllEngagementRecords = allEngagementRecords
+
+        for remoteRecord in incomingRecords {
+            let key = storageKey(accountId: remoteRecord.accountId, dedupeKey: remoteRecord.dedupeKey)
+            if let existingRecord = allEngagementRecords[key] {
+                allEngagementRecords[key] = existingRecord.merged(with: remoteRecord)
+            } else {
+                allEngagementRecords[key] = remoteRecord
+            }
+        }
+        allEngagementRecords = bestEngagementRecordsByStorageKey(Array(allEngagementRecords.values))
+        applyVisibleState()
+
+        guard persist() else {
+            restoreState(
+                insights: previousAllInsights,
+                deliveryRecords: previousAllDeliveryRecords,
+                engagementRecords: previousAllEngagementRecords
+            )
+            return false
+        }
+        return true
     }
 
     func canPresentOnce(
@@ -800,8 +1032,10 @@ private extension InsightStore {
             storageKey(accountId: $0.accountId, dedupeKey: $0.dedupeKey)
         })
         allDeliveryRecords = allDeliveryRecords.filter { element in
-            retainedInsightKeys.contains(element.key) ||
-                element.value.lastPresentedAt > staleDeliveryCutoff(now: now)
+            let recordActivityAt = maxOptionalDate(element.value.deletedAt, element.value.lastPresentedAt)
+                ?? element.value.lastPresentedAt
+            return retainedInsightKeys.contains(element.key) ||
+                recordActivityAt > staleDeliveryCutoff(now: now)
         }
         applyVisibleState()
     }
@@ -981,10 +1215,10 @@ private extension InsightStore {
             .values
             .sorted { $0.createdAt > $1.createdAt }
         deliveryRecords = bestDeliveryRecordsByDedupeKey(
-            allDeliveryRecords.values.filter { isVisible($0) }
+            allDeliveryRecords.values.filter { !$0.isDeleted && isVisible($0) }
         )
         engagementRecords = bestEngagementRecordsByDedupeKey(
-            allEngagementRecords.values.filter { isVisible($0) }
+            allEngagementRecords.values.filter { !$0.isDeleted && isVisible($0) }
         )
     }
 
@@ -1023,6 +1257,38 @@ private extension InsightStore {
         AccountOwnership.storageKey(accountId: accountId, recordId: dedupeKey)
     }
 
+    func sortedDeliveryRecords(
+        _ records: [InsightDeliveryRecord]
+    ) -> [InsightDeliveryRecord] {
+        records.sorted {
+            if $0.dedupeKey != $1.dedupeKey {
+                return $0.dedupeKey < $1.dedupeKey
+            }
+            if ($0.accountId ?? "") != ($1.accountId ?? "") {
+                return ($0.accountId ?? "") < ($1.accountId ?? "")
+            }
+            let leftActivityAt = maxOptionalDate($0.deletedAt, $0.lastPresentedAt) ?? $0.lastPresentedAt
+            let rightActivityAt = maxOptionalDate($1.deletedAt, $1.lastPresentedAt) ?? $1.lastPresentedAt
+            return leftActivityAt > rightActivityAt
+        }
+    }
+
+    func sortedEngagementRecords(
+        _ records: [InsightEngagementRecord]
+    ) -> [InsightEngagementRecord] {
+        records.sorted {
+            if $0.dedupeKey != $1.dedupeKey {
+                return $0.dedupeKey < $1.dedupeKey
+            }
+            if ($0.accountId ?? "") != ($1.accountId ?? "") {
+                return ($0.accountId ?? "") < ($1.accountId ?? "")
+            }
+            let leftActivityAt = maxOptionalDate($0.deletedAt, $0.latestEngagedAt())
+            let rightActivityAt = maxOptionalDate($1.deletedAt, $1.latestEngagedAt())
+            return (leftActivityAt ?? .distantPast) > (rightActivityAt ?? .distantPast)
+        }
+    }
+
     func dedupedInsightsByStorageKey(_ insights: [AIInsight]) -> [AIInsight] {
         let groupedInsights = Dictionary(grouping: insights) {
             storageKey(accountId: $0.accountId, dedupeKey: $0.dedupeKey)
@@ -1044,7 +1310,7 @@ private extension InsightStore {
         records.reduce(into: [String: InsightDeliveryRecord]()) { result, record in
             let key = storageKey(accountId: record.accountId, dedupeKey: record.dedupeKey)
             if let existing = result[key] {
-                result[key] = mergedDeliveryRecord(existing, record)
+                result[key] = InsightDeliveryRecord.merged(local: existing, remote: record)
             } else {
                 result[key] = record
             }
@@ -1111,31 +1377,11 @@ private extension InsightStore {
     ) -> [String: InsightDeliveryRecord] {
         records.reduce(into: [String: InsightDeliveryRecord]()) { result, record in
             if let existing = result[record.dedupeKey] {
-                result[record.dedupeKey] = mergedDeliveryRecord(existing, record)
+                result[record.dedupeKey] = InsightDeliveryRecord.merged(local: existing, remote: record)
             } else {
                 result[record.dedupeKey] = record
             }
         }
-    }
-
-    func mergedDeliveryRecord(
-        _ lhs: InsightDeliveryRecord,
-        _ rhs: InsightDeliveryRecord
-    ) -> InsightDeliveryRecord {
-        var merged = lhs
-        merged.firstPresentedAt = min(lhs.firstPresentedAt, rhs.firstPresentedAt)
-        merged.lastPresentedAt = max(lhs.lastPresentedAt, rhs.lastPresentedAt)
-        merged.presentationCount = max(lhs.presentationCount + rhs.presentationCount, 1)
-        merged.surfaceLastPresentedAt = lhs.surfaceLastPresentedAt
-        for (surface, date) in rhs.surfaceLastPresentedAt {
-            if let existingDate = merged.surfaceLastPresentedAt[surface] {
-                merged.surfaceLastPresentedAt[surface] = max(existingDate, date)
-            } else {
-                merged.surfaceLastPresentedAt[surface] = date
-            }
-        }
-        merged.syncMetadata = SyncMetadata.preferredForMerge(lhs.syncMetadata, rhs.syncMetadata)
-        return merged
     }
 
     func bestEngagementRecordsByDedupeKey(

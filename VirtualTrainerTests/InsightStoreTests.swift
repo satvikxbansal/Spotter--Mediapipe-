@@ -154,6 +154,120 @@ final class InsightStoreTests: XCTestCase {
         XCTAssertEqual(record.lastEngagedAt(for: .helpful), now)
     }
 
+    func testDeliveryRecordMergeWithOverlappingSurfacesUsesDateBoundsAndMaxCount() {
+        let now = Date(timeIntervalSince1970: 1_778_067_200)
+        let local = InsightDeliveryRecord(
+            accountId: "account-a",
+            dedupeKey: "merge-delivery",
+            firstPresentedAt: now.addingTimeInterval(10),
+            lastPresentedAt: now.addingTimeInterval(30),
+            presentationCount: 2,
+            surfaceLastPresentedAt: [
+                InsightSurface.dashboard.rawValue: now.addingTimeInterval(30),
+                InsightSurface.profile.rawValue: now.addingTimeInterval(20)
+            ]
+        )
+        let remote = InsightDeliveryRecord(
+            accountId: "account-a",
+            dedupeKey: "merge-delivery",
+            firstPresentedAt: now,
+            lastPresentedAt: now.addingTimeInterval(40),
+            presentationCount: 5,
+            surfaceLastPresentedAt: [
+                InsightSurface.dashboard.rawValue: now.addingTimeInterval(35),
+                InsightSurface.workoutSummary.rawValue: now.addingTimeInterval(40)
+            ]
+        )
+
+        let merged = InsightDeliveryRecord.merged(local: local, remote: remote)
+
+        XCTAssertEqual(merged.firstPresentedAt, now)
+        XCTAssertEqual(merged.lastPresentedAt, now.addingTimeInterval(40))
+        XCTAssertEqual(merged.presentationCount, 5)
+        XCTAssertEqual(merged.surfaceLastPresentedAt[InsightSurface.dashboard.rawValue], now.addingTimeInterval(35))
+        XCTAssertEqual(merged.surfaceLastPresentedAt[InsightSurface.profile.rawValue], now.addingTimeInterval(20))
+        XCTAssertEqual(merged.surfaceLastPresentedAt[InsightSurface.workoutSummary.rawValue], now.addingTimeInterval(40))
+    }
+
+    func testEngagementMergeSumsHelpfulAndNotHelpfulCounts() {
+        let now = Date(timeIntervalSince1970: 1_778_067_200)
+        var local = InsightEngagementRecord(accountId: "account-a", dedupeKey: "merge-engagement")
+        local.record(.helpful, at: now)
+        local.record(.helpful, at: now.addingTimeInterval(20))
+        local.record(.notHelpful, at: now.addingTimeInterval(10))
+
+        var remote = InsightEngagementRecord(accountId: "account-a", dedupeKey: "merge-engagement")
+        remote.record(.helpful, at: now.addingTimeInterval(30))
+        remote.record(.notHelpful, at: now.addingTimeInterval(40))
+
+        let merged = local.merged(with: remote)
+
+        XCTAssertEqual(merged.count(for: .helpful), 3)
+        XCTAssertEqual(merged.count(for: .notHelpful), 2)
+        XCTAssertEqual(merged.lastEngagedAt(for: .helpful), now.addingTimeInterval(30))
+        XCTAssertEqual(merged.lastEngagedAt(for: .notHelpful), now.addingTimeInterval(40))
+    }
+
+    func testRemoteDeliveryTombstoneExportsButNoLongerSuppressesSelection() throws {
+        let now = Date(timeIntervalSince1970: 1_778_067_200)
+        let accountId = "account-a"
+        let store = InsightStore(fileURL: temporaryInsightURL(), accountId: accountId)
+        let profile = makeProfile()
+        let insight = makeInsight(
+            dedupeKey: "remote-delivery-tombstone",
+            score: 100,
+            surface: .dashboard,
+            now: now
+        )
+
+        let first = try XCTUnwrap(
+            store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now).first
+        )
+        store.recordImpression(first, on: .dashboard, now: now)
+        let tombstone = try XCTUnwrap(store.deliveryRecord(for: insight.dedupeKey))
+            .markedDeleted(at: now.addingTimeInterval(60))
+
+        XCTAssertTrue(store.applyRemoteDeliveryRecords([tombstone]))
+
+        XCTAssertNil(store.deliveryRecord(for: insight.dedupeKey))
+        XCTAssertEqual(store.allDeliveryRecordsIncludingTombstones().first?.deletedAt, now.addingTimeInterval(60))
+        XCTAssertEqual(
+            store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now.addingTimeInterval(120)).first?.dedupeKey,
+            insight.dedupeKey
+        )
+    }
+
+    func testRemoteEngagementRecordsMergeAndPersistIncludingTombstones() throws {
+        let now = Date(timeIntervalSince1970: 1_778_067_200)
+        let accountId = "account-a"
+        let url = temporaryInsightURL()
+        let store = InsightStore(fileURL: url, accountId: accountId)
+        let insight = makeInsight(
+            dedupeKey: "remote-engagement",
+            score: 100,
+            surface: .profile,
+            now: now
+        )
+        store.recordEngagement(insight, kind: .helpful, now: now)
+        var remote = InsightEngagementRecord(accountId: accountId, dedupeKey: insight.dedupeKey)
+        remote.record(.helpful, at: now.addingTimeInterval(10))
+        remote.record(.notHelpful, at: now.addingTimeInterval(20))
+
+        XCTAssertTrue(store.applyRemoteEngagementRecords([remote]))
+
+        let merged = try XCTUnwrap(store.engagementRecord(for: insight.dedupeKey))
+        XCTAssertEqual(merged.count(for: .helpful), 2)
+        XCTAssertEqual(merged.count(for: .notHelpful), 1)
+        XCTAssertEqual(
+            store.allEngagementRecordsIncludingTombstones().map(\.dedupeKey),
+            [insight.dedupeKey]
+        )
+
+        let reloaded = InsightStore(fileURL: url, accountId: accountId)
+        XCTAssertEqual(reloaded.engagementRecord(for: insight.dedupeKey)?.count(for: .helpful), 2)
+        XCTAssertEqual(reloaded.engagementRecord(for: insight.dedupeKey)?.count(for: .notHelpful), 1)
+    }
+
     func testLegacySnapshotWithoutEngagementRecordsStillDecodes() throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let url = temporaryInsightURL()

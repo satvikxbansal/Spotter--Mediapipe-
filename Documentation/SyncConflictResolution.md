@@ -32,7 +32,7 @@ Merge by `dedupeKey`. The latest `sourcePolicyVersion` wins because policy chang
 
 ## InsightDeliveryRecord
 
-Merge by `dedupeKey`. Preserve the earliest `firstPresentedAt`, use the latest `lastPresentedAt`, merge each surface by max `lastPresentedAt`, and sum `presentationCount` where both records represent independent presentations. If counts cannot be trusted, prefer max count and mark the record for review rather than overstating impressions.
+Merge by `dedupeKey`. Preserve the earliest `firstPresentedAt`, use the latest `lastPresentedAt`, merge each surface by max `lastPresentedAt`, and use the max `presentationCount`. Delivery records are aggregate counters rather than per-impression event logs, so max is idempotent when the same remote aggregate is applied again and avoids overstating impressions.
 
 ## InsightEngagementRecord
 
