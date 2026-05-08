@@ -336,6 +336,84 @@ final class TrophyEngineTests: XCTestCase {
 
         XCTAssertTrue(firstEvents.contains { $0.trophyId == TrophyDefinitionCatalog.ID.spark })
         XCTAssertFalse(secondEvents.contains { $0.trophyId == TrophyDefinitionCatalog.ID.spark })
+        XCTAssertEqual(store.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).count, 1)
+        XCTAssertEqual(store.allUnlockEvents().count, 1)
+    }
+
+    func testRecomputePreservesOriginalCanonicalEarnedAt() {
+        let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
+        let summary = makeSummary(idSuffix: "3021", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
+        let firstEarnedAt = date(year: 2026, month: 5, day: 1, hour: 11)
+
+        store.updateAll(
+            history: [summary],
+            calibrationStatus: .notStarted,
+            now: firstEarnedAt
+        )
+        store.updateAll(
+            history: [summary],
+            calibrationStatus: .notStarted,
+            now: date(year: 2026, month: 5, day: 2, hour: 11)
+        )
+
+        XCTAssertEqual(store.snapshot.progress(for: TrophyDefinitionCatalog.ID.spark)?.earnedAt, firstEarnedAt)
+        XCTAssertEqual(store.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).first?.earnedAt, firstEarnedAt)
+        XCTAssertEqual(store.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).count, 1)
+    }
+
+    func testComingSoonTrophyDoesNotEmitUnlockEvent() {
+        let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
+
+        let events = store.updateAll(
+            history: [],
+            calibrationStatus: .notStarted,
+            now: date(year: 2026, month: 5, day: 1, hour: 11)
+        )
+
+        XCTAssertFalse(events.contains { $0.trophyId == TrophyDefinitionCatalog.ID.neonPulse })
+        XCTAssertFalse(store.allUnlockEvents().contains { $0.trophyId == TrophyDefinitionCatalog.ID.neonPulse })
+        XCTAssertFalse(store.snapshot.progress(for: TrophyDefinitionCatalog.ID.neonPulse)?.earned ?? true)
+    }
+
+    func testDeletingWorkoutDoesNotEraseCanonicalUnlockEvent() {
+        let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
+        let summary = makeSummary(idSuffix: "3031", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
+
+        store.updateAll(
+            history: [summary],
+            calibrationStatus: .notStarted,
+            now: date(year: 2026, month: 5, day: 1, hour: 11)
+        )
+        let eventsAfterDelete = store.updateAll(
+            history: [],
+            calibrationStatus: .notStarted,
+            now: date(year: 2026, month: 5, day: 1, hour: 12)
+        )
+
+        XCTAssertTrue(eventsAfterDelete.isEmpty)
+        XCTAssertTrue(store.snapshot.progress(for: TrophyDefinitionCatalog.ID.spark)?.earned ?? false)
+        XCTAssertEqual(store.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).count, 1)
+        XCTAssertFalse(store.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).first?.isRetracted ?? true)
+    }
+
+    func testUnlockEventsCanBeQueriedByTrophyAndDateInterval() {
+        let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
+        let summary = makeSummary(idSuffix: "3041", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
+        let earnedAt = date(year: 2026, month: 5, day: 1, hour: 11)
+
+        store.updateAll(
+            history: [summary],
+            calibrationStatus: .notStarted,
+            now: earnedAt
+        )
+
+        let interval = DateInterval(
+            start: date(year: 2026, month: 5, day: 1, hour: 10),
+            end: date(year: 2026, month: 5, day: 1, hour: 12)
+        )
+
+        XCTAssertEqual(store.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).count, 1)
+        XCTAssertEqual(store.unlockEvents(in: interval).map(\.trophyId), [TrophyDefinitionCatalog.ID.spark])
     }
 
     func testDeletedWorkoutRecomputeDoesNotRetractAlreadyEarnedTrophyState() {
@@ -392,6 +470,26 @@ final class TrophyEngineTests: XCTestCase {
             store.snapshot.progress(for: TrophyDefinitionCatalog.ID.calibrated)?.earnedAt,
             calibratedEarnedAt
         )
+        XCTAssertTrue(store.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).first?.isRetracted ?? false)
+        XCTAssertNotNil(store.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).first?.retractedAt)
+    }
+
+    func testAdminRetractionCanTombstoneCanonicalUnlockEvent() {
+        let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
+        let summary = makeSummary(idSuffix: "3071", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
+        let retractedAt = date(year: 2026, month: 5, day: 1, hour: 12)
+
+        store.updateAll(
+            history: [summary],
+            calibrationStatus: .notStarted,
+            now: date(year: 2026, month: 5, day: 1, hour: 11)
+        )
+
+        XCTAssertTrue(store.retractUnlockEvent(for: TrophyDefinitionCatalog.ID.spark, retractedAt: retractedAt))
+
+        let event = store.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).first
+        XCTAssertFalse(store.snapshot.progress(for: TrophyDefinitionCatalog.ID.spark)?.earned ?? true)
+        XCTAssertEqual(event?.retractedAt, retractedAt)
     }
 
     func testTrophyProgressPersistsAfterReload() {
@@ -409,6 +507,8 @@ final class TrophyEngineTests: XCTestCase {
 
         XCTAssertTrue(reloaded.snapshot.progress(for: TrophyDefinitionCatalog.ID.spark)?.earned ?? false)
         XCTAssertTrue(reloaded.snapshot.newlyEarnedEvents.isEmpty)
+        XCTAssertEqual(reloaded.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).count, 1)
+        XCTAssertEqual(reloaded.allUnlockEvents().count, 1)
     }
 
     func testFailedTrophyUpdateDoesNotExposeUnsavedProgressOrEvents() throws {
