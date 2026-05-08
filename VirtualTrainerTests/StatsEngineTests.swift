@@ -99,6 +99,31 @@ final class StatsEngineTests: XCTestCase {
         XCTAssertNil(stats.lastWorkoutAt)
     }
 
+    func testStatsEnginePrefersServerEndedAtForStreaksAndLastWorkoutDate() {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let serverTimedSummary = makeSummary(
+            idSuffix: "4051",
+            mode: .plannedWorkout,
+            endedAt: date(year: 2026, month: 5, day: 1, hour: 23),
+            serverEndedAt: now
+        )
+        let yesterdaySummary = makeSummary(
+            idSuffix: "4052",
+            mode: .freeAnalysis,
+            endedAt: date(year: 2026, month: 5, day: 5, hour: 10)
+        )
+
+        let stats = StatsEngine(calendar: calendar).makeStats(
+            history: [serverTimedSummary, yesterdaySummary],
+            trophySnapshot: trophySnapshot(earnedIDs: [], now: now),
+            now: now
+        )
+
+        XCTAssertEqual(stats.currentStreak, 2)
+        XCTAssertEqual(stats.longestStreak, 2)
+        XCTAssertEqual(stats.lastWorkoutAt, now)
+    }
+
     func testHistorySelectionReturnsDetailSummary() {
         let first = makeSummary(
             idSuffix: "4101",
@@ -156,7 +181,8 @@ private extension StatsEngineTests {
         completionPercent: Double? = 1,
         outcome: WorkoutOutcome? = nil,
         goodFormReps: Int = 0,
-        excellentFormReps: Int = 0
+        excellentFormReps: Int = 0,
+        serverEndedAt: Date? = nil
     ) -> WorkoutSessionSummary {
         WorkoutSessionSummary(
             id: UUID(uuidString: "00000000-0000-0000-0000-00000000\(idSuffix)") ?? UUID(),
@@ -167,6 +193,7 @@ private extension StatsEngineTests {
             coach: .good,
             startedAt: endedAt.addingTimeInterval(-600),
             endedAt: endedAt,
+            serverEndedAt: serverEndedAt,
             durationSeconds: 600,
             totalReps: reps,
             totalHoldSeconds: holdSeconds,

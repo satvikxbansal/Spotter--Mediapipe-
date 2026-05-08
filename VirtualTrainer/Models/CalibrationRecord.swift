@@ -34,6 +34,7 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
     let completedReps: Int
     let startedAt: Date
     let completedAt: Date
+    let serverCompletedAt: Date?
     let visibilityPassed: Bool
     let averageFormScore: Double?
     let notes: String?
@@ -49,6 +50,7 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
         completedReps: Int,
         startedAt: Date,
         completedAt: Date,
+        serverCompletedAt: Date? = nil,
         visibilityPassed: Bool,
         averageFormScore: Double?,
         notes: String? = nil,
@@ -64,6 +66,7 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
         self.completedReps = max(completedReps, 0)
         self.startedAt = startedAt
         self.completedAt = completedAt
+        self.serverCompletedAt = serverCompletedAt
         self.visibilityPassed = visibilityPassed
         self.averageFormScore = averageFormScore.map { max(0, min($0, 100)) }
         self.notes = notes
@@ -85,6 +88,10 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
 
     var isDeleted: Bool {
         deletedAt != nil
+    }
+
+    var authoritativeCompletedAt: Date {
+        serverCompletedAt ?? completedAt
     }
 
     func markedDeleted(at date: Date, operationId: UUID? = nil) -> CalibrationRecord {
@@ -135,6 +142,7 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
         completedReps: Int,
         startedAt: Date,
         completedAt: Date,
+        serverCompletedAt: Date? = nil,
         visibilityPassed: Bool,
         averageFormScore: Double?,
         notes: String? = nil
@@ -148,6 +156,7 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
             completedReps: completedReps,
             startedAt: startedAt,
             completedAt: completedAt,
+            serverCompletedAt: serverCompletedAt,
             visibilityPassed: visibilityPassed,
             averageFormScore: averageFormScore,
             notes: notes
@@ -235,6 +244,7 @@ nonisolated extension CalibrationRecord {
         case completedReps
         case startedAt
         case completedAt
+        case serverCompletedAt
         case visibilityPassed
         case averageFormScore
         case notes
@@ -255,6 +265,7 @@ nonisolated extension CalibrationRecord {
             completedReps: try container.decode(Int.self, forKey: .completedReps),
             startedAt: try container.decode(Date.self, forKey: .startedAt),
             completedAt: completedAt,
+            serverCompletedAt: try container.decodeIfPresent(Date.self, forKey: .serverCompletedAt),
             visibilityPassed: try container.decode(Bool.self, forKey: .visibilityPassed),
             averageFormScore: try container.decodeIfPresent(Double.self, forKey: .averageFormScore),
             notes: try container.decodeIfPresent(String.self, forKey: .notes),

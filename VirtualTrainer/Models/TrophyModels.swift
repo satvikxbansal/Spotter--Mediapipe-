@@ -291,6 +291,7 @@ nonisolated struct TrophyUnlockEvent: Identifiable, Codable, Equatable {
     let title: String
     let subtitle: String
     let earnedAt: Date
+    let serverEarnedAt: Date?
     let reason: String
     let celebrationStyle: TrophyCelebrationStyle
     var syncMetadata: SyncMetadata
@@ -302,6 +303,7 @@ nonisolated struct TrophyUnlockEvent: Identifiable, Codable, Equatable {
         title: String,
         subtitle: String,
         earnedAt: Date,
+        serverEarnedAt: Date? = nil,
         reason: String,
         celebrationStyle: TrophyCelebrationStyle,
         syncMetadata: SyncMetadata? = nil
@@ -313,6 +315,7 @@ nonisolated struct TrophyUnlockEvent: Identifiable, Codable, Equatable {
         self.title = title
         self.subtitle = subtitle
         self.earnedAt = earnedAt
+        self.serverEarnedAt = serverEarnedAt
         self.reason = reason
         self.celebrationStyle = celebrationStyle
         self.syncMetadata = syncMetadata ?? (
@@ -320,6 +323,10 @@ nonisolated struct TrophyUnlockEvent: Identifiable, Codable, Equatable {
                 ? .initialLocalOnly(now: earnedAt)
                 : .initialPendingUpload(operationId: nil, now: earnedAt)
         )
+    }
+
+    var authoritativeEarnedAt: Date {
+        serverEarnedAt ?? earnedAt
     }
 
     func withAccountId(
@@ -335,6 +342,7 @@ nonisolated struct TrophyUnlockEvent: Identifiable, Codable, Equatable {
             title: title,
             subtitle: subtitle,
             earnedAt: earnedAt,
+            serverEarnedAt: serverEarnedAt,
             reason: reason,
             celebrationStyle: celebrationStyle,
             syncMetadata: syncMetadata.markedForLocalMutation(
@@ -354,6 +362,7 @@ nonisolated extension TrophyUnlockEvent {
         case title
         case subtitle
         case earnedAt
+        case serverEarnedAt
         case reason
         case celebrationStyle
         case syncMetadata
@@ -370,6 +379,7 @@ nonisolated extension TrophyUnlockEvent {
             title: try container.decode(String.self, forKey: .title),
             subtitle: try container.decode(String.self, forKey: .subtitle),
             earnedAt: earnedAt,
+            serverEarnedAt: try container.decodeIfPresent(Date.self, forKey: .serverEarnedAt),
             reason: try container.decode(String.self, forKey: .reason),
             celebrationStyle: try container.decode(TrophyCelebrationStyle.self, forKey: .celebrationStyle),
             syncMetadata: try container.decodeIfPresent(SyncMetadata.self, forKey: .syncMetadata)
@@ -924,10 +934,10 @@ nonisolated struct TrophyEngine {
         now: Date = Date()
     ) -> TrophyEngineResult {
         let sortedHistory = history.sorted {
-            if $0.endedAt == $1.endedAt {
+            if $0.authoritativeEndedAt == $1.authoritativeEndedAt {
                 return $0.createdAt < $1.createdAt
             }
-            return $0.endedAt < $1.endedAt
+            return $0.authoritativeEndedAt < $1.authoritativeEndedAt
         }
         let previousById = previousSnapshot?.progressByTrophyId ?? [:]
         var mergedById: [String: TrophyProgress] = [:]
@@ -1097,6 +1107,7 @@ nonisolated struct TrophyEngine {
                 title: definition.title,
                 subtitle: definition.subtitle,
                 earnedAt: progress.earnedAt ?? now,
+                serverEarnedAt: nil,
                 reason: unlockReason(for: definition, progress: progress),
                 celebrationStyle: celebrationStyle(for: definition)
             )
@@ -1158,7 +1169,7 @@ nonisolated struct TrophyEngine {
     }
 
     private func uniqueWorkoutDays(in history: [WorkoutSessionSummary]) -> Set<Date> {
-        Set(history.map { calendar.startOfDay(for: $0.endedAt) })
+        Set(history.map { calendar.startOfDay(for: $0.authoritativeEndedAt) })
     }
 
     private func maxSingleSessionReps(
@@ -1302,12 +1313,13 @@ nonisolated struct TrophyEngine {
 
     private func maxWeekendDayCoverage(in history: [WorkoutSessionSummary]) -> Int {
         let weekendDaysByWeek = history.reduce(into: [String: Set<Int>]()) { result, summary in
-            let weekday = calendar.component(.weekday, from: summary.endedAt)
+            let endedAt = summary.authoritativeEndedAt
+            let weekday = calendar.component(.weekday, from: endedAt)
             guard weekday == 1 || weekday == 7 else { return }
 
             let weekendAnchor = weekday == 1
-                ? calendar.date(byAdding: .day, value: -1, to: summary.endedAt) ?? summary.endedAt
-                : summary.endedAt
+                ? calendar.date(byAdding: .day, value: -1, to: endedAt) ?? endedAt
+                : endedAt
             let weekKey = "\(calendar.startOfDay(for: weekendAnchor).timeIntervalSince1970)"
             result[weekKey, default: []].insert(weekday)
         }

@@ -215,7 +215,7 @@ nonisolated extension ExerciseSetSummary {
 }
 
 nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
-    static let currentSchemaVersion = 2
+    static let currentSchemaVersion = 3
 
     let id: UUID
     let accountId: String?
@@ -229,6 +229,7 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
     let coach: CoachPersonality
     let startedAt: Date
     let endedAt: Date
+    let serverEndedAt: Date?
     let durationSeconds: Int
     let totalReps: Int
     let totalHoldSeconds: Int
@@ -259,6 +260,7 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
         coach: CoachPersonality,
         startedAt: Date,
         endedAt: Date,
+        serverEndedAt: Date? = nil,
         durationSeconds: Int,
         totalReps: Int,
         totalHoldSeconds: Int,
@@ -289,6 +291,7 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
         self.coach = coach
         self.startedAt = startedAt
         self.endedAt = endedAt
+        self.serverEndedAt = serverEndedAt
         self.durationSeconds = max(durationSeconds, 0)
         self.totalReps = max(totalReps, 0)
         self.totalHoldSeconds = max(totalHoldSeconds, 0)
@@ -320,6 +323,10 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
 
     var isDeleted: Bool {
         deletedAt != nil
+    }
+
+    var authoritativeEndedAt: Date {
+        serverEndedAt ?? endedAt
     }
 
     func markedDeleted(at date: Date, operationId: UUID? = nil) -> WorkoutSessionSummary {
@@ -378,6 +385,7 @@ nonisolated extension WorkoutSessionSummary {
         case coach
         case startedAt
         case endedAt
+        case serverEndedAt
         case durationSeconds
         case totalReps
         case totalHoldSeconds
@@ -414,6 +422,7 @@ nonisolated extension WorkoutSessionSummary {
         coach = try container.decode(CoachPersonality.self, forKey: .coach)
         startedAt = try container.decode(Date.self, forKey: .startedAt)
         endedAt = try container.decode(Date.self, forKey: .endedAt)
+        serverEndedAt = try container.decodeIfPresent(Date.self, forKey: .serverEndedAt)
         durationSeconds = max(try container.decode(Int.self, forKey: .durationSeconds), 0)
         totalReps = max(try container.decode(Int.self, forKey: .totalReps), 0)
         totalHoldSeconds = max(try container.decode(Int.self, forKey: .totalHoldSeconds), 0)
@@ -457,6 +466,7 @@ nonisolated private extension WorkoutSessionSummary {
             coach: coach,
             startedAt: startedAt,
             endedAt: endedAt,
+            serverEndedAt: serverEndedAt,
             durationSeconds: durationSeconds,
             totalReps: totalReps,
             totalHoldSeconds: totalHoldSeconds,

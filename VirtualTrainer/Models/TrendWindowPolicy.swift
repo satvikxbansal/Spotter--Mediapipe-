@@ -18,12 +18,12 @@ nonisolated struct TrendWindowPolicy: Equatable {
         now: Date
     ) -> [WorkoutSessionSummary] {
         let sortedHistory = history.sorted {
-            if $0.endedAt == $1.endedAt {
+            if $0.authoritativeEndedAt == $1.authoritativeEndedAt {
                 return $0.createdAt > $1.createdAt
             }
-            return $0.endedAt > $1.endedAt
+            return $0.authoritativeEndedAt > $1.authoritativeEndedAt
         }
-        let eligibleHistory = sortedHistory.filter { contains($0.endedAt, now: now) }
+        let eligibleHistory = sortedHistory.filter { contains($0.authoritativeEndedAt, now: now) }
         return maxSessions.map { Array(eligibleHistory.prefix($0)) } ?? eligibleHistory
     }
 

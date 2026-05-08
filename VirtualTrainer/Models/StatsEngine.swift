@@ -54,7 +54,7 @@ nonisolated struct StatsEngine {
         let totalExcellentFormReps = history.reduce(0) { $0 + $1.totalExcellentFormReps }
         let totalDurationSeconds = history.reduce(0) { $0 + $1.durationSeconds }
         let formScores = history.compactMap(\.averageFormScore)
-        let workoutDays = Set(history.map { calendar.startOfDay(for: $0.endedAt) })
+        let workoutDays = Set(history.map { calendar.startOfDay(for: $0.authoritativeEndedAt) })
         let currentStreak = currentStreakDays(from: workoutDays, now: now)
         let longestStreak = longestStreakDays(from: workoutDays)
         let trophiesEarned = trophySnapshot.availableProgress.filter(\.earned).count
@@ -85,7 +85,7 @@ nonisolated struct StatsEngine {
             xp: xp,
             level: Self.level(forXP: xp),
             trophiesEarned: trophiesEarned,
-            lastWorkoutAt: history.map(\.endedAt).max()
+            lastWorkoutAt: history.map(\.authoritativeEndedAt).max()
         )
     }
 
@@ -194,7 +194,7 @@ nonisolated struct StatsEngine {
     private func workoutsThisWeek(in history: [WorkoutSessionSummary], now: Date) -> Int {
         let currentWeek = calendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: now)
         return history.filter { summary in
-            let workoutWeek = calendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: summary.endedAt)
+            let workoutWeek = calendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: summary.authoritativeEndedAt)
             return workoutWeek.weekOfYear == currentWeek.weekOfYear &&
                 workoutWeek.yearForWeekOfYear == currentWeek.yearForWeekOfYear
         }.count

@@ -81,7 +81,7 @@ nonisolated struct TrendEngine {
     ) -> [Date: Int] {
         let localCalendar = calendar(for: profile)
         return history.reduce(into: [Date: Int]()) { result, summary in
-            result[localCalendar.startOfDay(for: summary.endedAt), default: 0] += 1
+            result[localCalendar.startOfDay(for: summary.authoritativeEndedAt), default: 0] += 1
         }
     }
 
@@ -106,7 +106,7 @@ nonisolated struct TrendEngine {
         let holds = dailyHoldSeconds(history: history, profile: profile)
         let form = dailyAverageForm(history: history, profile: profile)
         let sessionsByDay = Dictionary(grouping: sorted(history)) { summary in
-            localCalendar.startOfDay(for: summary.endedAt)
+            localCalendar.startOfDay(for: summary.authoritativeEndedAt)
         }
 
         return (0..<safeDays).reduce(into: [Date: DayIntensitySummary]()) { result, offset in
@@ -131,7 +131,7 @@ nonisolated struct TrendEngine {
     ) -> [Date: Int] {
         let localCalendar = calendar(for: profile)
         return history.reduce(into: [Date: Int]()) { result, summary in
-            result[localCalendar.startOfDay(for: summary.endedAt), default: 0] += summary.totalReps
+            result[localCalendar.startOfDay(for: summary.authoritativeEndedAt), default: 0] += summary.totalReps
         }
     }
 
@@ -141,7 +141,7 @@ nonisolated struct TrendEngine {
     ) -> [Date: Int] {
         let localCalendar = calendar(for: profile)
         return history.reduce(into: [Date: Int]()) { result, summary in
-            result[localCalendar.startOfDay(for: summary.endedAt), default: 0] += summary.totalHoldSeconds
+            result[localCalendar.startOfDay(for: summary.authoritativeEndedAt), default: 0] += summary.totalHoldSeconds
         }
     }
 
@@ -152,7 +152,7 @@ nonisolated struct TrendEngine {
         let localCalendar = calendar(for: profile)
         let grouped = history.reduce(into: [Date: [Double]]()) { result, summary in
             guard let averageFormScore = summary.averageFormScore else { return }
-            result[localCalendar.startOfDay(for: summary.endedAt), default: []].append(averageFormScore)
+            result[localCalendar.startOfDay(for: summary.authoritativeEndedAt), default: []].append(averageFormScore)
         }
 
         return grouped.mapValues { values in
@@ -166,7 +166,7 @@ nonisolated struct TrendEngine {
     ) -> [Date: Int] {
         let localCalendar = calendar(for: profile)
         return history.reduce(into: [Date: Int]()) { result, summary in
-            result[localCalendar.startOfDay(for: summary.endedAt), default: 0] += summary.durationSeconds
+            result[localCalendar.startOfDay(for: summary.authoritativeEndedAt), default: 0] += summary.durationSeconds
         }
     }
 
@@ -233,13 +233,13 @@ nonisolated struct TrendEngine {
         case .currentWeek:
             let currentWeek = localCalendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: now)
             windowHistory = history.filter { summary in
-                let workoutWeek = localCalendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: summary.endedAt)
+                let workoutWeek = localCalendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: summary.authoritativeEndedAt)
                 return workoutWeek.weekOfYear == currentWeek.weekOfYear &&
                     workoutWeek.yearForWeekOfYear == currentWeek.yearForWeekOfYear
             }
         case .currentMonth:
             guard let month = localCalendar.dateInterval(of: .month, for: now) else { return nil }
-            windowHistory = history.filter { month.contains($0.endedAt) }
+            windowHistory = history.filter { month.contains($0.authoritativeEndedAt) }
         }
 
         return average(windowHistory.compactMap(\.averageFormScore))
@@ -365,10 +365,10 @@ nonisolated private extension TrendEngine {
 
     func sorted(_ history: [WorkoutSessionSummary]) -> [WorkoutSessionSummary] {
         history.sorted {
-            if $0.endedAt == $1.endedAt {
+            if $0.authoritativeEndedAt == $1.authoritativeEndedAt {
                 return $0.createdAt > $1.createdAt
             }
-            return $0.endedAt > $1.endedAt
+            return $0.authoritativeEndedAt > $1.authoritativeEndedAt
         }
     }
 
@@ -376,7 +376,7 @@ nonisolated private extension TrendEngine {
         in history: [WorkoutSessionSummary],
         calendar: Calendar
     ) -> Set<Date> {
-        Set(history.map { calendar.startOfDay(for: $0.endedAt) })
+        Set(history.map { calendar.startOfDay(for: $0.authoritativeEndedAt) })
     }
 
     func currentStreakDays(
@@ -433,7 +433,7 @@ nonisolated private extension TrendEngine {
     ) -> Int {
         let currentWeek = calendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: now)
         return history.filter { summary in
-            let workoutWeek = calendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: summary.endedAt)
+            let workoutWeek = calendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: summary.authoritativeEndedAt)
             return workoutWeek.weekOfYear == currentWeek.weekOfYear &&
                 workoutWeek.yearForWeekOfYear == currentWeek.yearForWeekOfYear
         }.count
@@ -446,11 +446,11 @@ nonisolated private extension TrendEngine {
     ) -> Int {
         let currentWeek = calendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: now)
         let days = history.reduce(into: Set<Date>()) { result, summary in
-            let workoutWeek = calendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: summary.endedAt)
+            let workoutWeek = calendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: summary.authoritativeEndedAt)
             guard workoutWeek.weekOfYear == currentWeek.weekOfYear,
                   workoutWeek.yearForWeekOfYear == currentWeek.yearForWeekOfYear
             else { return }
-            result.insert(calendar.startOfDay(for: summary.endedAt))
+            result.insert(calendar.startOfDay(for: summary.authoritativeEndedAt))
         }
         return days.count
     }
@@ -682,7 +682,7 @@ nonisolated private extension TrendEngine {
 
             return ExerciseObservation(
                 summaryId: summary.id,
-                endedAt: summary.endedAt,
+                endedAt: summary.authoritativeEndedAt,
                 exerciseType: setSummary.exerciseType,
                 reps: setSummary.achievedReps,
                 holdSeconds: setSummary.achievedHoldSeconds,

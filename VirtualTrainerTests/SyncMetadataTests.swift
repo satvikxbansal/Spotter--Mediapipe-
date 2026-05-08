@@ -80,6 +80,10 @@ final class SyncMetadataTests: XCTestCase {
         XCTAssertEqual(deliveryRecord.syncMetadata.syncState, .localOnly)
         XCTAssertEqual(engagementRecord.syncMetadata.syncState, .localOnly)
         XCTAssertEqual(calibrationRecord.syncMetadata.syncState, .localOnly)
+        XCTAssertNil(summary.serverEndedAt)
+        XCTAssertNil(trophyEvent.serverEarnedAt)
+        XCTAssertNil(insight.serverCreatedAt)
+        XCTAssertNil(calibrationRecord.serverCompletedAt)
 
         let themeURL = temporaryURL(named: "LegacyTheme.json")
         try XCTUnwrap("""

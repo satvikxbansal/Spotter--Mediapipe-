@@ -61,6 +61,39 @@ final class TrendEngineTests: XCTestCase {
         XCTAssertEqual(streak, 2)
     }
 
+    func testTrendDateWindowsPreferServerEndedAtWhenAvailable() throws {
+        let now = date(year: 2026, month: 5, day: 6, hour: 12)
+        let localEndedAt = date(year: 2026, month: 4, day: 30, hour: 23)
+        let serverEndedAt = date(year: 2026, month: 5, day: 6, hour: 1)
+        let history = [
+            makeSummary(
+                idSuffix: "7025",
+                endedAt: localEndedAt,
+                reps: 14,
+                averageFormScore: 91,
+                serverEndedAt: serverEndedAt
+            )
+        ]
+        let engine = TrendEngine(calendar: calendar)
+        let profile = makeProfile()
+        let serverDay = calendar.startOfDay(for: serverEndedAt)
+        let localDay = calendar.startOfDay(for: localEndedAt)
+
+        let counts = engine.dailyWorkoutCounts(history: history, profile: profile)
+        let weeklyAverage = try XCTUnwrap(
+            engine.averageForm(
+                history: history,
+                window: .currentWeek,
+                profile: profile,
+                now: now
+            )
+        )
+
+        XCTAssertEqual(counts[serverDay], 1)
+        XCTAssertNil(counts[localDay])
+        XCTAssertEqual(weeklyAverage, 91)
+    }
+
     func testSevenWorkoutAverageFormCalculation() throws {
         let now = date(year: 2026, month: 5, day: 8, hour: 12)
         let scores = [60, 70, 72, 74, 76, 78, 80, 82]
@@ -667,7 +700,8 @@ private extension TrendEngineTests {
         scores: [Int] = [],
         cueMessages: [String] = [],
         restExtended: Bool = false,
-        skipped: Bool = false
+        skipped: Bool = false,
+        serverEndedAt: Date? = nil
     ) -> WorkoutSessionSummary {
         let setSummary = makeSetSummary(
             exerciseType: exerciseType,
@@ -693,6 +727,7 @@ private extension TrendEngineTests {
             coach: .good,
             startedAt: endedAt.addingTimeInterval(-600),
             endedAt: endedAt,
+            serverEndedAt: serverEndedAt,
             durationSeconds: 600,
             totalReps: resolvedReps,
             totalHoldSeconds: holdSeconds,

@@ -148,6 +148,7 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
     let relatedExerciseType: ExerciseType?
     let relatedGoal: FitnessGoal?
     let createdAt: Date
+    let serverCreatedAt: Date?
     let sourcePolicyVersion: String
     let expiresAt: Date?
     let dedupeKey: String
@@ -171,6 +172,7 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
         relatedExerciseType: ExerciseType? = nil,
         relatedGoal: FitnessGoal? = nil,
         createdAt: Date = Date(),
+        serverCreatedAt: Date? = nil,
         sourcePolicyVersion: String = AIInsight.currentSourcePolicyVersion,
         expiresAt: Date? = nil,
         dedupeKey: String,
@@ -193,6 +195,7 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
         self.relatedExerciseType = relatedExerciseType
         self.relatedGoal = relatedGoal
         self.createdAt = createdAt
+        self.serverCreatedAt = serverCreatedAt
         self.sourcePolicyVersion = sourcePolicyVersion
         self.expiresAt = expiresAt
         self.dedupeKey = dedupeKey
@@ -211,6 +214,10 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
 
     var isDeleted: Bool {
         deletedAt != nil
+    }
+
+    var authoritativeCreatedAt: Date {
+        serverCreatedAt ?? createdAt
     }
 
     func markedDeleted(at date: Date, operationId: UUID? = nil) -> AIInsight {
@@ -294,6 +301,7 @@ nonisolated private extension AIInsight {
             relatedExerciseType: relatedExerciseType,
             relatedGoal: relatedGoal,
             createdAt: createdAt,
+            serverCreatedAt: serverCreatedAt,
             sourcePolicyVersion: sourcePolicyVersion,
             expiresAt: expiresAt,
             dedupeKey: dedupeKey,
@@ -321,6 +329,7 @@ nonisolated extension AIInsight {
         case relatedExerciseType
         case relatedGoal
         case createdAt
+        case serverCreatedAt
         case sourcePolicyVersion
         case expiresAt
         case dedupeKey
@@ -349,6 +358,7 @@ nonisolated extension AIInsight {
             relatedExerciseType: try container.decodeIfPresent(ExerciseType.self, forKey: .relatedExerciseType),
             relatedGoal: try container.decodeIfPresent(FitnessGoal.self, forKey: .relatedGoal),
             createdAt: createdAt,
+            serverCreatedAt: try container.decodeIfPresent(Date.self, forKey: .serverCreatedAt),
             sourcePolicyVersion: try container.decode(String.self, forKey: .sourcePolicyVersion),
             expiresAt: try container.decodeIfPresent(Date.self, forKey: .expiresAt),
             dedupeKey: try container.decode(String.self, forKey: .dedupeKey),

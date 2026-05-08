@@ -224,7 +224,7 @@ final class WorkoutHistoryStore: ObservableObject {
             .reduce(into: [ExerciseType: Int]()) { result, exercise in
                 result[exercise.exerciseType, default: 0] += 1
             }
-        let workoutDays = Set(summaries.map { calendar.startOfDay(for: $0.endedAt) })
+        let workoutDays = Set(summaries.map { calendar.startOfDay(for: $0.authoritativeEndedAt) })
 
         return WorkoutHistoryStats(
             sessionCount: summaries.count,
@@ -241,8 +241,8 @@ final class WorkoutHistoryStore: ObservableObject {
             totalHighSeverityCues: summaries.reduce(0) { $0 + $1.totalHighSeverityCues },
             averageFormScore: average(formScores),
             averageCompletionPercent: average(completionScores),
-            firstWorkoutAt: summaries.map(\.endedAt).min(),
-            latestWorkoutAt: summaries.map(\.endedAt).max(),
+            firstWorkoutAt: summaries.map(\.authoritativeEndedAt).min(),
+            latestWorkoutAt: summaries.map(\.authoritativeEndedAt).max(),
             mostTrainedExerciseType: exerciseCounts.max { lhs, rhs in
                 if lhs.value == rhs.value {
                     return lhs.key.rawValue < rhs.key.rawValue
@@ -259,7 +259,7 @@ final class WorkoutHistoryStore: ObservableObject {
             return RecentWorkoutHistoryItem(
                 id: summary.id,
                 exerciseType: exerciseType,
-                completedAt: summary.endedAt
+                completedAt: summary.authoritativeEndedAt
             )
         }
     }
@@ -385,10 +385,10 @@ final class WorkoutHistoryStore: ObservableObject {
         _ summaries: [WorkoutSessionSummary]
     ) -> [WorkoutSessionSummary] {
         summaries.sorted {
-            if $0.endedAt == $1.endedAt {
+            if $0.authoritativeEndedAt == $1.authoritativeEndedAt {
                 return $0.createdAt > $1.createdAt
             }
-            return $0.endedAt > $1.endedAt
+            return $0.authoritativeEndedAt > $1.authoritativeEndedAt
         }
     }
 
@@ -447,7 +447,7 @@ final class WorkoutHistoryStore: ObservableObject {
     private func workoutsThisWeek(now: Date) -> Int {
         let currentWeek = calendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: now)
         return summaries.filter { summary in
-            let workoutWeek = calendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: summary.endedAt)
+            let workoutWeek = calendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: summary.authoritativeEndedAt)
             return workoutWeek.weekOfYear == currentWeek.weekOfYear &&
                 workoutWeek.yearForWeekOfYear == currentWeek.yearForWeekOfYear
         }.count

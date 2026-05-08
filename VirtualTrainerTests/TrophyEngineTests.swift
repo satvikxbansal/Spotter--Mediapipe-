@@ -25,6 +25,29 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(result.newlyEarnedEvents.contains { $0.trophyId == TrophyDefinitionCatalog.ID.spark })
     }
 
+    func testTrophyUnlockEventCanCarryServerEarnedAt() throws {
+        let earnedAt = date(year: 2026, month: 5, day: 1, hour: 10)
+        let serverEarnedAt = date(year: 2026, month: 5, day: 1, hour: 10).addingTimeInterval(12)
+        let event = TrophyUnlockEvent(
+            trophyId: TrophyDefinitionCatalog.ID.spark,
+            title: "The Spark",
+            subtitle: "First workout complete",
+            earnedAt: earnedAt,
+            serverEarnedAt: serverEarnedAt,
+            reason: "You saved your first workout.",
+            celebrationStyle: .standard
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let decoded = try decoder.decode(TrophyUnlockEvent.self, from: encoder.encode(event))
+
+        XCTAssertEqual(decoded.serverEarnedAt, serverEarnedAt)
+        XCTAssertEqual(decoded.authoritativeEarnedAt, serverEarnedAt)
+    }
+
     func testCompletedCalibrationUnlocksCalibrated() {
         let result = engine.updateAll(
             history: [],

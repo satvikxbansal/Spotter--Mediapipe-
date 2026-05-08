@@ -167,6 +167,8 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(decoded.totalHighSeverityCues, 0)
         XCTAssertTrue(decoded.exerciseSummaries.first?.repQualityEvents.isEmpty ?? false)
         XCTAssertNotNil(decoded.exerciseSummaries.first?.cueEvents.first?.id)
+        XCTAssertNil(decoded.serverEndedAt)
+        XCTAssertEqual(decoded.authoritativeEndedAt, decoded.endedAt)
         XCTAssertNil(decoded.deletedAt)
     }
 
