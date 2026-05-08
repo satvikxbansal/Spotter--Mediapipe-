@@ -74,10 +74,13 @@ final class PoseEstimator: NSObject, ObservableObject {
     // MARK: - Private
 
     private var poseLandmarker: PoseLandmarker?
-    private var timestampMs: Int = 0
+    private var timestampMs: Int = -1
     private var isProcessingFrame = false
     private var activeFrameTimestampMs: Int?
+    private var activeFrameGeneration: UInt64?
+    private var processingGeneration: UInt64 = 0
     private let stateLock = NSLock()
+    private let smootherLock = NSLock()
     private let frameTimeoutSeconds: TimeInterval = 1.5
 
     private let logger = Logger(
@@ -126,6 +129,19 @@ final class PoseEstimator: NSObject, ObservableObject {
 
     // MARK: - Frame Processing
 
+    func reset() {
+        stateLock.lock()
+        processingGeneration &+= 1
+        let generation = processingGeneration
+        timestampMs = -1
+        isProcessingFrame = false
+        activeFrameTimestampMs = nil
+        activeFrameGeneration = nil
+        stateLock.unlock()
+
+        clearPoseDetection(for: generation)
+    }
+
     /// Feed a camera sample buffer into MediaPipe for async detection.
     /// Call from the capture-output delegate on its serial queue.
     func processFrame(_ sampleBuffer: CMSampleBuffer) {
@@ -155,18 +171,22 @@ final class PoseEstimator: NSObject, ObservableObject {
 
     // MARK: - Result Processing
 
-    private func processResult(_ result: PoseLandmarkerResult?, timestampInMilliseconds: Int) {
+    private func processResult(
+        _ result: PoseLandmarkerResult?,
+        timestampInMilliseconds: Int,
+        frameGeneration: UInt64
+    ) {
         guard let result,
               let landmarks = result.landmarks.first,
               !landmarks.isEmpty else {
-            DispatchQueue.main.async { [weak self] in
+            publishPoseDetection(for: frameGeneration) { [weak self] in
                 self?.bodyJoints = [:]
                 self?.jointVisibility = [:]
                 self?.overlayBodyJoints = [:]
                 self?.worldJoints = [:]
                 self?.confidence = 0
                 self?.segmentationMask = nil
-                self?.overlaySmoother.reset()
+                self?.resetOverlaySmoother()
             }
             return
         }
@@ -226,8 +246,10 @@ final class PoseEstimator: NSObject, ObservableObject {
             converted3D[.root] = (lh + rh) / 2
         }
 
+        guard isCurrentGeneration(frameGeneration) else { return }
+
         let timestampSeconds = TimeInterval(timestampInMilliseconds) / 1000.0
-        let overlayJoints = overlaySmoother.smooth(converted2D, timestamp: timestampSeconds)
+        let overlayJoints = smoothOverlayJoints(converted2D, timestamp: timestampSeconds)
 
         // --- Segmentation mask ---
         var maskData: SegmentationMaskData?
@@ -244,7 +266,7 @@ final class PoseEstimator: NSObject, ObservableObject {
 
         let topConfidence = landmarks.first?.visibility?.floatValue ?? 0
 
-        DispatchQueue.main.async { [weak self] in
+        publishPoseDetection(for: frameGeneration) { [weak self] in
             self?.bodyJoints = converted2D
             self?.jointVisibility = visibility
             self?.overlayBodyJoints = overlayJoints
@@ -272,6 +294,7 @@ final class PoseEstimator: NSObject, ObservableObject {
 
         isProcessingFrame = true
         activeFrameTimestampMs = currentTimestamp
+        activeFrameGeneration = processingGeneration
         timestampMs = currentTimestamp
         scheduleFrameTimeout(timestampInMilliseconds: currentTimestamp)
         return true
@@ -288,16 +311,20 @@ final class PoseEstimator: NSObject, ObservableObject {
 
         isProcessingFrame = false
         activeFrameTimestampMs = nil
+        activeFrameGeneration = nil
     }
 
-    private func finishFrame(timestampInMilliseconds completedTimestamp: Int) -> Bool {
+    private func finishFrame(timestampInMilliseconds completedTimestamp: Int) -> UInt64? {
         stateLock.lock()
         defer { stateLock.unlock() }
 
-        guard activeFrameTimestampMs == completedTimestamp else { return false }
+        guard activeFrameTimestampMs == completedTimestamp,
+              let generation = activeFrameGeneration
+        else { return nil }
         isProcessingFrame = false
         activeFrameTimestampMs = nil
-        return true
+        activeFrameGeneration = nil
+        return generation
     }
 
     private func scheduleFrameTimeout(timestampInMilliseconds submittedTimestamp: Int) {
@@ -312,6 +339,7 @@ final class PoseEstimator: NSObject, ObservableObject {
         if didExpire {
             isProcessingFrame = false
             activeFrameTimestampMs = nil
+            activeFrameGeneration = nil
         }
         stateLock.unlock()
 
@@ -321,16 +349,59 @@ final class PoseEstimator: NSObject, ObservableObject {
         }
     }
 
-    private func clearPoseDetection() {
-        DispatchQueue.main.async { [weak self] in
+    private func clearPoseDetection(for generation: UInt64? = nil) {
+        publishPoseDetection(for: generation) { [weak self] in
             self?.bodyJoints = [:]
             self?.jointVisibility = [:]
             self?.overlayBodyJoints = [:]
             self?.worldJoints = [:]
             self?.confidence = 0
             self?.segmentationMask = nil
-            self?.overlaySmoother.reset()
+            self?.resetOverlaySmoother()
         }
+    }
+
+    private func publishPoseDetection(
+        for generation: UInt64?,
+        update: @escaping () -> Void
+    ) {
+        let guardedUpdate = { [weak self] in
+            guard let self else { return }
+            if let generation,
+               !self.isCurrentGeneration(generation) {
+                return
+            }
+            update()
+        }
+
+        if Thread.isMainThread {
+            guardedUpdate()
+        } else {
+            DispatchQueue.main.async(execute: guardedUpdate)
+        }
+    }
+
+    private func isCurrentGeneration(_ generation: UInt64) -> Bool {
+        stateLock.lock()
+        let isCurrent = processingGeneration == generation
+        stateLock.unlock()
+        return isCurrent
+    }
+
+    private func smoothOverlayJoints(
+        _ joints: [JointName: CGPoint],
+        timestamp: TimeInterval
+    ) -> [JointName: CGPoint] {
+        smootherLock.lock()
+        let smoothed = overlaySmoother.smooth(joints, timestamp: timestamp)
+        smootherLock.unlock()
+        return smoothed
+    }
+
+    private func resetOverlaySmoother() {
+        smootherLock.lock()
+        overlaySmoother.reset()
+        smootherLock.unlock()
     }
 
     private func publishImageAspectRatio(from sampleBuffer: CMSampleBuffer) {
@@ -360,12 +431,16 @@ extension PoseEstimator: PoseLandmarkerLiveStreamDelegate {
         timestampInMilliseconds: Int,
         error: Error?
     ) {
-        guard finishFrame(timestampInMilliseconds: timestampInMilliseconds) else { return }
+        guard let frameGeneration = finishFrame(timestampInMilliseconds: timestampInMilliseconds) else { return }
 
         if let error {
             logger.error("Pose landmarker error: \(error.localizedDescription)")
         }
-        processResult(result, timestampInMilliseconds: timestampInMilliseconds)
+        processResult(
+            result,
+            timestampInMilliseconds: timestampInMilliseconds,
+            frameGeneration: frameGeneration
+        )
     }
 }
 

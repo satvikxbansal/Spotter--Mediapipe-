@@ -322,28 +322,44 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
         deletedAt != nil
     }
 
-    func markedDeleted(at date: Date) -> WorkoutSessionSummary {
+    func markedDeleted(at date: Date, operationId: UUID? = nil) -> WorkoutSessionSummary {
         copy(
             accountId: accountId,
             deletedAt: date,
-            syncMetadata: syncMetadata.markedForLocalMutation(accountId: accountId, now: date)
+            syncMetadata: syncMetadata.markedForLocalMutation(
+                accountId: accountId,
+                operationId: operationId,
+                now: date
+            )
         )
     }
 
-    func restored() -> WorkoutSessionSummary {
+    func restored(operationId: UUID? = nil) -> WorkoutSessionSummary {
         let now = Date()
         return copy(
             accountId: accountId,
             deletedAt: nil,
-            syncMetadata: syncMetadata.markedForLocalMutation(accountId: accountId, now: now)
+            syncMetadata: syncMetadata.markedForLocalMutation(
+                accountId: accountId,
+                operationId: operationId,
+                now: now
+            )
         )
     }
 
-    func withAccountId(_ accountId: String?) -> WorkoutSessionSummary {
+    func withAccountId(
+        _ accountId: String?,
+        operationId: UUID? = nil,
+        now: Date = Date()
+    ) -> WorkoutSessionSummary {
         let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         let metadata = normalizedAccountId == nil
-            ? syncMetadata.markedForLocalMutation(accountId: nil)
-            : syncMetadata.markedForLocalMutation(accountId: normalizedAccountId)
+            ? syncMetadata.markedForLocalMutation(accountId: nil, now: now)
+            : syncMetadata.markedForLocalMutation(
+                accountId: normalizedAccountId,
+                operationId: operationId,
+                now: now
+            )
         return copy(accountId: normalizedAccountId, deletedAt: deletedAt, syncMetadata: metadata)
     }
 }

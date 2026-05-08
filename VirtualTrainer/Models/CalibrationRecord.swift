@@ -87,28 +87,43 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
         deletedAt != nil
     }
 
-    func markedDeleted(at date: Date) -> CalibrationRecord {
+    func markedDeleted(at date: Date, operationId: UUID? = nil) -> CalibrationRecord {
         copy(
             accountId: accountId,
             deletedAt: date,
-            syncMetadata: syncMetadata.markedForLocalMutation(accountId: accountId, now: date)
+            syncMetadata: syncMetadata.markedForLocalMutation(
+                accountId: accountId,
+                operationId: operationId,
+                now: date
+            )
         )
     }
 
-    func restored() -> CalibrationRecord {
+    func restored(operationId: UUID? = nil) -> CalibrationRecord {
         copy(
             accountId: accountId,
             deletedAt: nil,
-            syncMetadata: syncMetadata.markedForLocalMutation(accountId: accountId)
+            syncMetadata: syncMetadata.markedForLocalMutation(
+                accountId: accountId,
+                operationId: operationId
+            )
         )
     }
 
-    func withAccountId(_ accountId: String?) -> CalibrationRecord {
+    func withAccountId(
+        _ accountId: String?,
+        operationId: UUID? = nil,
+        now: Date = Date()
+    ) -> CalibrationRecord {
         let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         return copy(
             accountId: normalizedAccountId,
             deletedAt: deletedAt,
-            syncMetadata: syncMetadata.markedForLocalMutation(accountId: normalizedAccountId)
+            syncMetadata: syncMetadata.markedForLocalMutation(
+                accountId: normalizedAccountId,
+                operationId: operationId,
+                now: now
+            )
         )
     }
 

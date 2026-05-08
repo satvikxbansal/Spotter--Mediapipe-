@@ -185,6 +185,57 @@ final class InsightStoreTests: XCTestCase {
         XCTAssertNil(reloaded.engagementRecord(for: insight.dedupeKey))
     }
 
+    func testFailedSelectDoesNotExposeUnsavedInsights() throws {
+        let now = Date(timeIntervalSince1970: 1_778_067_200)
+        let store = InsightStore(fileURL: try unwritableInsightURL())
+        let profile = makeProfile()
+        let insight = makeInsight(
+            dedupeKey: "unwritable-select",
+            score: 100,
+            surface: .dashboard,
+            now: now
+        )
+
+        let selected = store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now)
+
+        XCTAssertTrue(selected.isEmpty)
+        XCTAssertTrue(store.recentInsights.isEmpty)
+        XCTAssertTrue(store.insights(for: .dashboard, profile: profile, limit: 1, now: now).isEmpty)
+        XCTAssertNotNil(store.persistenceError)
+    }
+
+    func testFailedImpressionDoesNotExposeUnsavedDeliveryRecord() throws {
+        let now = Date(timeIntervalSince1970: 1_778_067_200)
+        let store = InsightStore(fileURL: try unwritableInsightURL())
+        let insight = makeInsight(
+            dedupeKey: "unwritable-impression",
+            score: 100,
+            surface: .dashboard,
+            now: now
+        )
+
+        store.recordImpression(insight, on: .dashboard, now: now)
+
+        XCTAssertNil(store.deliveryRecord(for: insight.dedupeKey))
+        XCTAssertNotNil(store.persistenceError)
+    }
+
+    func testFailedEngagementDoesNotExposeUnsavedEngagementRecord() throws {
+        let now = Date(timeIntervalSince1970: 1_778_067_200)
+        let store = InsightStore(fileURL: try unwritableInsightURL())
+        let insight = makeInsight(
+            dedupeKey: "unwritable-engagement",
+            score: 100,
+            surface: .profile,
+            now: now
+        )
+
+        store.recordEngagement(insight, kind: .helpful, now: now)
+
+        XCTAssertNil(store.engagementRecord(for: insight.dedupeKey))
+        XCTAssertNotNil(store.persistenceError)
+    }
+
     func testLegacyAIInsightJSONWithoutDeletedAtDecodes() throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let insight = makeInsight(
@@ -386,6 +437,13 @@ private extension InsightStoreTests {
             withIntermediateDirectories: true
         )
         return directory.appendingPathComponent("CoachInsights.json")
+    }
+
+    func unwritableInsightURL() throws -> URL {
+        let blockedParentURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("InsightStoreTests-blocked-\(UUID().uuidString)")
+        try Data().write(to: blockedParentURL)
+        return blockedParentURL.appendingPathComponent("CoachInsights.json")
     }
 
     func makeInsight(

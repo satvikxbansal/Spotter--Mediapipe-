@@ -17,6 +17,7 @@ final class OnboardingStore: ObservableObject {
     @Published var persistenceError: String?
 
     private let fileURL: URL
+    private let writeJournal: LocalWriteJournal
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private var currentAccountId: String?
@@ -26,8 +27,12 @@ final class OnboardingStore: ObservableObject {
         profile != nil
     }
 
-    init(fileURL: URL? = nil, accountId: String? = nil) {
-        self.fileURL = fileURL ?? Self.defaultProfileURL()
+    init(fileURL: URL? = nil, accountId: String? = nil, writeJournal: LocalWriteJournal? = nil) {
+        let resolvedFileURL = fileURL ?? Self.defaultProfileURL()
+        self.fileURL = resolvedFileURL
+        self.writeJournal = writeJournal ?? LocalWriteJournal(
+            fileURL: LocalWriteJournal.defaultJournalURL(alongside: resolvedFileURL)
+        )
         self.currentAccountId = AccountOwnership.normalizedAccountId(accountId)
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
@@ -149,7 +154,7 @@ final class OnboardingStore: ObservableObject {
         }
     }
 
-    func completeOnboarding() {
+    func completeOnboarding(operationId: UUID? = nil) {
         guard canCompleteProfile,
               let genderIdentity = draft.genderIdentity,
               let age = draft.ageValue,
@@ -189,7 +194,7 @@ final class OnboardingStore: ObservableObject {
             updatedAt: now
         )
 
-        save(profile)
+        save(profile, operationId: operationId)
     }
 
     func updateTrainingPreferences(
@@ -198,7 +203,8 @@ final class OnboardingStore: ObservableObject {
         workoutDaysPerWeek: Int?,
         reminderPreference: ReminderPreference,
         timezoneIdentifier: String,
-        avatarStyle: AvatarStyle?
+        avatarStyle: AvatarStyle?,
+        operationId: UUID? = nil
     ) {
         guard var profile else {
             persistenceError = "No profile exists yet."
@@ -213,7 +219,7 @@ final class OnboardingStore: ObservableObject {
         profile.avatarStyle = avatarStyle
         profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
         profile.updatedAt = Date()
-        save(profile)
+        save(profile, operationId: operationId)
     }
 
     func resetOnboarding() {
@@ -231,7 +237,9 @@ final class OnboardingStore: ObservableObject {
     }
 
     @discardableResult
-    func claimLocalDataForAccount(id accountId: String) -> Bool {
+    func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) -> Bool {
+        let writeOperationId = operationId ?? UUID()
+        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
         guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
             persistenceError = "Account id is required before local profile data can be claimed."
             return false
@@ -242,12 +250,18 @@ final class OnboardingStore: ObservableObject {
         let now = Date()
         storedProfile.accountId = normalizedAccountId
         storedProfile.updatedAt = now
-        storedProfile.syncMetadata.markLocalMutation(accountId: normalizedAccountId, now: now)
-        return persist(storedProfile)
+        storedProfile.syncMetadata.markLocalMutation(
+            accountId: normalizedAccountId,
+            operationId: writeOperationId,
+            now: now
+        )
+        guard persist(storedProfile) else { return false }
+        recordWriteOperation(writeOperationId, createdAt: now)
+        return true
     }
 
     @discardableResult
-    func updatePrimaryGoal(_ goal: FitnessGoal) -> Bool {
+    func updatePrimaryGoal(_ goal: FitnessGoal, operationId: UUID? = nil) -> Bool {
         guard var profile else {
             persistenceError = "No profile exists yet."
             return false
@@ -258,11 +272,11 @@ final class OnboardingStore: ObservableObject {
         profile.primaryGoal = goal
         profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
         profile.updatedAt = Date()
-        return save(profile)
+        return save(profile, operationId: operationId)
     }
 
     @discardableResult
-    func updatePreferredCoach(_ coach: CoachPreference) -> Bool {
+    func updatePreferredCoach(_ coach: CoachPreference, operationId: UUID? = nil) -> Bool {
         guard var profile else {
             persistenceError = "No profile exists yet."
             return false
@@ -273,11 +287,11 @@ final class OnboardingStore: ObservableObject {
         profile.preferredCoach = coach
         profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
         profile.updatedAt = Date()
-        return save(profile)
+        return save(profile, operationId: operationId)
     }
 
     @discardableResult
-    func updateSelectedTheme(_ theme: SpotterThemeOption) -> Bool {
+    func updateSelectedTheme(_ theme: SpotterThemeOption, operationId: UUID? = nil) -> Bool {
         guard var profile else {
             persistenceError = "No profile exists yet."
             return false
@@ -288,11 +302,11 @@ final class OnboardingStore: ObservableObject {
         profile.selectedTheme = theme
         profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
         profile.updatedAt = Date()
-        return save(profile)
+        return save(profile, operationId: operationId)
     }
 
     @discardableResult
-    func updatePreferredSessionLength(_ sessionLength: PlanSessionLength) -> Bool {
+    func updatePreferredSessionLength(_ sessionLength: PlanSessionLength, operationId: UUID? = nil) -> Bool {
         guard var profile else {
             persistenceError = "No profile exists yet."
             return false
@@ -303,7 +317,7 @@ final class OnboardingStore: ObservableObject {
         profile.preferredSessionLength = sessionLength
         profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
         profile.updatedAt = Date()
-        return save(profile)
+        return save(profile, operationId: operationId)
     }
 
     private var canCompleteProfile: Bool {
@@ -356,16 +370,30 @@ final class OnboardingStore: ObservableObject {
     }
 
     @discardableResult
-    private func save(_ profile: UserProfile) -> Bool {
+    private func save(_ profile: UserProfile, operationId: UUID? = nil) -> Bool {
+        let writeOperationId = operationId ?? UUID()
+        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+
         var accountStampedProfile = profile
         if let currentAccountId {
             accountStampedProfile.accountId = currentAccountId
         }
         accountStampedProfile.syncMetadata.markLocalMutation(
             accountId: accountStampedProfile.accountId,
+            operationId: writeOperationId,
             now: accountStampedProfile.updatedAt
         )
-        return persist(accountStampedProfile)
+        guard persist(accountStampedProfile) else { return false }
+        recordWriteOperation(writeOperationId, createdAt: accountStampedProfile.updatedAt)
+        return true
+    }
+
+    private func recordWriteOperation(_ operationId: UUID, createdAt: Date) {
+        _ = writeJournal.record(
+            operationId: operationId,
+            entityKind: .profile,
+            createdAt: createdAt
+        )
     }
 
     @discardableResult

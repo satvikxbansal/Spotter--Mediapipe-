@@ -77,10 +77,13 @@ final class HandGestureDetector: NSObject, ObservableObject {
     private var gestureRecognizer: GestureRecognizer?
     private var handLandmarker: HandLandmarker?
     private var usingGestureRecognizer = false
-    private var timestampMs: Int = 0
+    private var timestampMs: Int = -90
     private var isProcessingFrame = false
     private var activeFrameTimestampMs: Int?
+    private var activeFrameGeneration: UInt64?
+    private var processingGeneration: UInt64 = 0
     private let stateLock = NSLock()
+    private let candidateLock = NSLock()
     private let minimumFrameIntervalMs = 90
     private let frameTimeoutSeconds: TimeInterval = 1.0
 
@@ -185,14 +188,16 @@ final class HandGestureDetector: NSObject, ObservableObject {
 
     func reset() {
         stateLock.lock()
-        timestampMs = 0
+        processingGeneration &+= 1
+        let generation = processingGeneration
+        timestampMs = -minimumFrameIntervalMs
         isProcessingFrame = false
         activeFrameTimestampMs = nil
+        activeFrameGeneration = nil
         stateLock.unlock()
 
-        candidateGesture = .none
-        candidateCount = 0
-        DispatchQueue.main.async { [weak self] in
+        resetCandidateState()
+        publishDetection(for: generation) { [weak self] in
             self?.currentGesture = .none
             self?.raisedFingerCount = 0
             self?.handConfidence = 0
@@ -203,9 +208,9 @@ final class HandGestureDetector: NSObject, ObservableObject {
 
     // MARK: - GestureRecognizer Result Processing
 
-    private func processGestureResult(_ result: GestureRecognizerResult?) {
+    private func processGestureResult(_ result: GestureRecognizerResult?, frameGeneration: UInt64) {
         guard let result, !result.landmarks.isEmpty else {
-            clearDetection()
+            clearDetection(for: frameGeneration)
             return
         }
 
@@ -215,7 +220,12 @@ final class HandGestureDetector: NSObject, ObservableObject {
         let conf = result.gestures.first?.first?.score ?? 0
         let gesture = confidenceFilteredGesture(rawGesture, confidence: conf)
 
-        updateWithCandidate(gesture, confidence: conf, allHands: allHands)
+        updateWithCandidate(
+            gesture,
+            confidence: conf,
+            allHands: allHands,
+            frameGeneration: frameGeneration
+        )
     }
 
     /// Maps MediaPipe's category labels to our `HandGesture` enum.
@@ -243,16 +253,16 @@ final class HandGestureDetector: NSObject, ObservableObject {
 
     // MARK: - HandLandmarker Fallback Result Processing
 
-    private func processHandLandmarkerResult(_ result: HandLandmarkerResult?) {
+    private func processHandLandmarkerResult(_ result: HandLandmarkerResult?, frameGeneration: UInt64) {
         guard let result, !result.landmarks.isEmpty else {
-            clearDetection()
+            clearDetection(for: frameGeneration)
             return
         }
 
         let allHands = extractLandmarks(from: result.landmarks)
 
         guard let firstHand = result.landmarks.first, firstHand.count >= 21 else {
-            clearDetection()
+            clearDetection(for: frameGeneration)
             return
         }
 
@@ -260,7 +270,12 @@ final class HandGestureDetector: NSObject, ObservableObject {
         let gesture = analyzeHandPoseFallback(points)
         let conf = Float(firstHand.first?.visibility?.floatValue ?? 0.8)
 
-        updateWithCandidate(gesture, confidence: conf, allHands: allHands)
+        updateWithCandidate(
+            gesture,
+            confidence: conf,
+            allHands: allHands,
+            frameGeneration: frameGeneration
+        )
     }
 
     // MARK: - Shared Helpers
@@ -286,23 +301,14 @@ final class HandGestureDetector: NSObject, ObservableObject {
     private func updateWithCandidate(
         _ gesture: HandGesture,
         confidence: Float,
-        allHands: [[Int: CGPoint]]
+        allHands: [[Int: CGPoint]],
+        frameGeneration: UInt64
     ) {
-        if gesture == candidateGesture {
-            candidateCount += 1
-        } else {
-            candidateGesture = gesture
-            candidateCount = 1
-        }
+        guard isCurrentGeneration(frameGeneration) else { return }
 
-        let confirmed: Bool
-        if gesture == .thumbsUp || gesture == .thumbsDown {
-            confirmed = candidateCount >= confirmationFrames
-        } else {
-            confirmed = candidateCount >= max(confirmationFrames - 1, 2)
-        }
+        let confirmed = updateCandidateState(with: gesture)
 
-        DispatchQueue.main.async { [weak self] in
+        publishDetection(for: frameGeneration) { [weak self] in
             guard let self else { return }
             self.allHandLandmarks = allHands
 
@@ -316,11 +322,15 @@ final class HandGestureDetector: NSObject, ObservableObject {
         }
     }
 
-    private func clearDetection() {
-        candidateGesture = .none
-        candidateCount = 0
+    private func clearDetection(for generation: UInt64? = nil) {
+        if let generation,
+           !isCurrentGeneration(generation) {
+            return
+        }
 
-        DispatchQueue.main.async { [weak self] in
+        resetCandidateState()
+
+        publishDetection(for: generation) { [weak self] in
             self?.handDetected = false
             self?.handConfidence = 0
             if self?.currentGesture != HandGesture.none {
@@ -403,6 +413,7 @@ final class HandGestureDetector: NSObject, ObservableObject {
 
         isProcessingFrame = true
         activeFrameTimestampMs = currentTimestamp
+        activeFrameGeneration = processingGeneration
         timestampMs = currentTimestamp
         scheduleFrameTimeout(timestampInMilliseconds: currentTimestamp)
         return true
@@ -419,16 +430,20 @@ final class HandGestureDetector: NSObject, ObservableObject {
 
         isProcessingFrame = false
         activeFrameTimestampMs = nil
+        activeFrameGeneration = nil
     }
 
-    private func finishFrame(timestampInMilliseconds completedTimestamp: Int) -> Bool {
+    private func finishFrame(timestampInMilliseconds completedTimestamp: Int) -> UInt64? {
         stateLock.lock()
         defer { stateLock.unlock() }
 
-        guard activeFrameTimestampMs == completedTimestamp else { return false }
+        guard activeFrameTimestampMs == completedTimestamp,
+              let generation = activeFrameGeneration
+        else { return nil }
         isProcessingFrame = false
         activeFrameTimestampMs = nil
-        return true
+        activeFrameGeneration = nil
+        return generation
     }
 
     private func scheduleFrameTimeout(timestampInMilliseconds submittedTimestamp: Int) {
@@ -443,6 +458,7 @@ final class HandGestureDetector: NSObject, ObservableObject {
         if didExpire {
             isProcessingFrame = false
             activeFrameTimestampMs = nil
+            activeFrameGeneration = nil
         }
         stateLock.unlock()
 
@@ -450,6 +466,57 @@ final class HandGestureDetector: NSObject, ObservableObject {
             logger.warning("Hand detection timed out for frame \(expiredTimestamp); clearing stale hand overlay")
             clearDetection()
         }
+    }
+
+    private func publishDetection(
+        for generation: UInt64?,
+        update: @escaping () -> Void
+    ) {
+        let guardedUpdate = { [weak self] in
+            guard let self else { return }
+            if let generation,
+               !self.isCurrentGeneration(generation) {
+                return
+            }
+            update()
+        }
+
+        if Thread.isMainThread {
+            guardedUpdate()
+        } else {
+            DispatchQueue.main.async(execute: guardedUpdate)
+        }
+    }
+
+    private func isCurrentGeneration(_ generation: UInt64) -> Bool {
+        stateLock.lock()
+        let isCurrent = processingGeneration == generation
+        stateLock.unlock()
+        return isCurrent
+    }
+
+    private func updateCandidateState(with gesture: HandGesture) -> Bool {
+        candidateLock.lock()
+        if gesture == candidateGesture {
+            candidateCount += 1
+        } else {
+            candidateGesture = gesture
+            candidateCount = 1
+        }
+        let count = candidateCount
+        candidateLock.unlock()
+
+        if gesture == .thumbsUp || gesture == .thumbsDown {
+            return count >= confirmationFrames
+        }
+        return count >= max(confirmationFrames - 1, 2)
+    }
+
+    private func resetCandidateState() {
+        candidateLock.lock()
+        candidateGesture = .none
+        candidateCount = 0
+        candidateLock.unlock()
     }
 }
 
@@ -464,12 +531,12 @@ extension HandGestureDetector: GestureRecognizerLiveStreamDelegate {
         timestampInMilliseconds: Int,
         error: Error?
     ) {
-        guard finishFrame(timestampInMilliseconds: timestampInMilliseconds) else { return }
+        guard let frameGeneration = finishFrame(timestampInMilliseconds: timestampInMilliseconds) else { return }
 
         if let error {
             logger.error("Gesture recognizer error: \(error.localizedDescription)")
         }
-        processGestureResult(result)
+        processGestureResult(result, frameGeneration: frameGeneration)
     }
 }
 
@@ -484,11 +551,11 @@ extension HandGestureDetector: HandLandmarkerLiveStreamDelegate {
         timestampInMilliseconds: Int,
         error: Error?
     ) {
-        guard finishFrame(timestampInMilliseconds: timestampInMilliseconds) else { return }
+        guard let frameGeneration = finishFrame(timestampInMilliseconds: timestampInMilliseconds) else { return }
 
         if let error {
             logger.error("Hand landmarker error: \(error.localizedDescription)")
         }
-        processHandLandmarkerResult(result)
+        processHandLandmarkerResult(result, frameGeneration: frameGeneration)
     }
 }

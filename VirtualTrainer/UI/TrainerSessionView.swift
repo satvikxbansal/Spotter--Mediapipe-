@@ -180,6 +180,9 @@ struct TrainerSessionView: View {
             cueHistory = []
             cueEventHistory = []
             repQualityEvents = []
+            poseEstimator.reset()
+            handGesture.reset()
+            faceLandmarker.reset()
             exertionAnalyzer.reset()
             motivationEngine.reset()
             formEngine.reset()
@@ -217,7 +220,9 @@ struct TrainerSessionView: View {
         }
         .onDisappear {
             stopLivePipelines()
+            poseEstimator.reset()
             handGesture.reset()
+            faceLandmarker.reset()
             readyCoordinator.reset()
             exertionAnalyzer.reset()
             currentEffortScore = 0
@@ -226,6 +231,10 @@ struct TrainerSessionView: View {
         }
         .onChange(of: poseEstimator.bodyJoints) {
             let joints = poseEstimator.bodyJoints
+            let landmarkVisibilityResult = BodyVisibilityChecker.evaluate(
+                joints: joints,
+                for: exerciseType
+            )
 
             visibilityResult = BodyVisibilityChecker.evaluateFrame(
                 mask: poseEstimator.segmentationMask,
@@ -246,6 +255,17 @@ struct TrainerSessionView: View {
 
             guard readyCoordinator.state == .exerciseActive,
                   let counter = repCounter else {
+                angleOverlays = []
+                violatedJoints = []
+                return
+            }
+
+            guard landmarkVisibilityResult.isReady else {
+                counter.handleTrackingLoss()
+                currentPhase = counter.currentPhase
+                debugAngle = nil
+                holdDuration = counter.holdDuration
+                isHolding = false
                 angleOverlays = []
                 violatedJoints = []
                 return

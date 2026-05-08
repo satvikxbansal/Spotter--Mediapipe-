@@ -311,6 +311,34 @@ nonisolated final class UniversalRepCounter: RepCounter {
         }
     }
 
+    /// Drop only the in-progress movement when pose tracking becomes unusable.
+    /// Completed reps and accumulated set quality stay intact.
+    func handleTrackingLoss() {
+        if definition.movementType == .isometric {
+            pauseIsometricHoldIfNeeded()
+        } else {
+            currentPhase = .idle
+            extremeAngleDuringDown = nil
+            extremeAnglesDuringDown = [:]
+            repStartTime = nil
+        }
+
+        pendingActiveSide = nil
+        lockedActiveSide = nil
+        lastActiveSide = nil
+        lastPrimaryAngle = nil
+        lastAngles = [:]
+        lastBilateralAngles = [:]
+        emaAngles = [:]
+        consecutiveDownFrames = 0
+        consecutiveUpFrames = 0
+        upPhaseFramesRemaining = 0
+        lastAngleSample = nil
+        peakAngularVelocityDuringRep = 0
+        lastPeakAngularVelocity = 0
+        currentRepFeedbackCount = 0
+    }
+
     // MARK: - Isometric State Machine
 
     private func processIsometric(primaryAngle: Double, angles: [String: Double]) -> RepCounterOutput {

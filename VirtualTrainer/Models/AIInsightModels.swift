@@ -213,28 +213,43 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
         deletedAt != nil
     }
 
-    func markedDeleted(at date: Date) -> AIInsight {
+    func markedDeleted(at date: Date, operationId: UUID? = nil) -> AIInsight {
         copy(
             accountId: accountId,
             deletedAt: date,
-            syncMetadata: syncMetadata.markedForLocalMutation(accountId: accountId, now: date)
+            syncMetadata: syncMetadata.markedForLocalMutation(
+                accountId: accountId,
+                operationId: operationId,
+                now: date
+            )
         )
     }
 
-    func restored() -> AIInsight {
+    func restored(operationId: UUID? = nil) -> AIInsight {
         copy(
             accountId: accountId,
             deletedAt: nil,
-            syncMetadata: syncMetadata.markedForLocalMutation(accountId: accountId)
+            syncMetadata: syncMetadata.markedForLocalMutation(
+                accountId: accountId,
+                operationId: operationId
+            )
         )
     }
 
-    func withAccountId(_ accountId: String?) -> AIInsight {
+    func withAccountId(
+        _ accountId: String?,
+        operationId: UUID? = nil,
+        now: Date = Date()
+    ) -> AIInsight {
         let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         return copy(
             accountId: normalizedAccountId,
             deletedAt: deletedAt,
-            syncMetadata: syncMetadata.markedForLocalMutation(accountId: normalizedAccountId)
+            syncMetadata: syncMetadata.markedForLocalMutation(
+                accountId: normalizedAccountId,
+                operationId: operationId,
+                now: now
+            )
         )
     }
 

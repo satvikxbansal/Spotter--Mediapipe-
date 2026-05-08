@@ -388,6 +388,23 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(reloaded.snapshot.newlyEarnedEvents.isEmpty)
     }
 
+    func testFailedTrophyUpdateDoesNotExposeUnsavedProgressOrEvents() throws {
+        let summary = makeSummary(idSuffix: "3151", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
+        let store = TrophyStore(fileURL: try unwritableTrophyURL(), calendar: calendar)
+
+        let events = store.update(
+            after: summary,
+            history: [summary],
+            calibrationStatus: .notStarted,
+            now: date(year: 2026, month: 5, day: 1, hour: 11)
+        )
+
+        XCTAssertTrue(events.isEmpty)
+        XCTAssertFalse(store.snapshot.progress(for: TrophyDefinitionCatalog.ID.spark)?.earned ?? true)
+        XCTAssertTrue(store.snapshot.newlyEarnedEvents.isEmpty)
+        XCTAssertNotNil(store.persistenceError)
+    }
+
     func testDuplicatePersistedProgressDoesNotCrashLookup() {
         let id = TrophyDefinitionCatalog.ID.spark
         let older = makeProgress(
@@ -647,5 +664,12 @@ private extension TrophyEngineTests {
         FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
             .appendingPathComponent("TrophyProgress.json")
+    }
+
+    func unwritableTrophyURL() throws -> URL {
+        let blockedParentURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TrophyEngineTests-blocked-\(UUID().uuidString)")
+        try Data().write(to: blockedParentURL)
+        return blockedParentURL.appendingPathComponent("TrophyProgress.json")
     }
 }

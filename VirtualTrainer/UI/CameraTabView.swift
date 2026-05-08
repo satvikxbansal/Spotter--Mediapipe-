@@ -209,6 +209,8 @@ struct CameraReadinessView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             readyCoordinator.setPersonality(coach)
+            poseEstimator.reset()
+            handGesture.reset()
             cameraManager.onFrame = { [weak poseEstimator, weak handGesture] sampleBuffer in
                 poseEstimator?.processFrame(sampleBuffer)
                 handGesture?.processFrame(sampleBuffer)
@@ -217,6 +219,7 @@ struct CameraReadinessView: View {
         }
         .onDisappear {
             stopReadinessCamera()
+            poseEstimator.reset()
             handGesture.reset()
             readyCoordinator.reset()
         }

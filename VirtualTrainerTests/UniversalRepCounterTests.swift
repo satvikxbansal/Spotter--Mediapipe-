@@ -93,6 +93,39 @@ final class UniversalRepCounterTests: XCTestCase {
         XCTAssertEqual(counter.repCount, 0)
     }
 
+    func testTrackingLossAbandonsIncompleteRepWithoutClearingCompletedReps() {
+        let definition = counterDefinition(
+            down: PhaseThreshold(angleKey: "kneeAngle", enterBelow: 150, enterAbove: nil),
+            up: PhaseThreshold(angleKey: "kneeAngle", enterBelow: nil, enterAbove: 160)
+        )
+        let counter = UniversalRepCounter(definition: definition)
+
+        _ = counter.process(angles: ["kneeAngle": 170])
+        for _ in 0..<5 {
+            _ = counter.process(angles: ["kneeAngle": 120])
+        }
+        XCTAssertEqual(counter.currentPhase, .down)
+
+        counter.handleTrackingLoss()
+        XCTAssertEqual(counter.currentPhase, .idle)
+        XCTAssertEqual(counter.repCount, 0)
+
+        _ = counter.process(angles: ["kneeAngle": 190])
+        _ = counter.process(angles: ["kneeAngle": 190])
+        XCTAssertEqual(counter.repCount, 0)
+
+        for _ in 0..<5 {
+            _ = counter.process(angles: ["kneeAngle": 120])
+        }
+
+        var output = counter.process(angles: ["kneeAngle": 190])
+        for _ in 0..<4 {
+            output = counter.process(angles: ["kneeAngle": 190])
+        }
+
+        XCTAssertEqual(output.repCount, 1)
+    }
+
     func testRussianTwistMagnitudeCountsEachSideExcursion() {
         let definition = counterDefinition(
             down: PhaseThreshold(angleKey: "trunkTwistMagnitude", enterBelow: nil, enterAbove: 25),

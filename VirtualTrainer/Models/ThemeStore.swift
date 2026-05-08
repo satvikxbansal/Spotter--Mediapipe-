@@ -8,15 +8,25 @@ final class ThemeStore: ObservableObject {
 
     private let fileURL: URL
     private let defaultTheme: SpotterThemeOption
+    private let writeJournal: LocalWriteJournal
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private var currentAccountId: String?
     private var storedEnvelope: ThemeEnvelope?
 
-    init(fileURL: URL? = nil, defaultTheme: SpotterThemeOption = .hyper, accountId: String? = nil) {
-        self.fileURL = fileURL ?? Self.defaultThemeURL()
+    init(
+        fileURL: URL? = nil,
+        defaultTheme: SpotterThemeOption = .hyper,
+        accountId: String? = nil,
+        writeJournal: LocalWriteJournal? = nil
+    ) {
+        let resolvedFileURL = fileURL ?? Self.defaultThemeURL()
+        self.fileURL = resolvedFileURL
         self.defaultTheme = defaultTheme
         self.selectedTheme = defaultTheme
+        self.writeJournal = writeJournal ?? LocalWriteJournal(
+            fileURL: LocalWriteJournal.defaultJournalURL(alongside: resolvedFileURL)
+        )
         self.currentAccountId = AccountOwnership.normalizedAccountId(accountId)
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         loadTheme()
@@ -32,7 +42,10 @@ final class ThemeStore: ObservableObject {
     }
 
     @discardableResult
-    func updateSelectedTheme(_ theme: SpotterThemeOption) -> Bool {
+    func updateSelectedTheme(_ theme: SpotterThemeOption, operationId: UUID? = nil) -> Bool {
+        let writeOperationId = operationId ?? UUID()
+        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+
         let previousTheme = selectedTheme
         let previousEnvelope = storedEnvelope
         let shouldPersist = selectedTheme != theme ||
@@ -41,13 +54,25 @@ final class ThemeStore: ObservableObject {
 
         guard shouldPersist else { return true }
 
+        let writeCreatedAt = Date()
+        let baseMetadata = storedEnvelope?.syncMetadata
+            ?? ThemeEnvelope(selectedTheme: theme, accountId: currentAccountId).syncMetadata
         selectedTheme = theme
-        storedEnvelope = ThemeEnvelope(selectedTheme: theme, accountId: currentAccountId)
+        storedEnvelope = ThemeEnvelope(
+            selectedTheme: theme,
+            accountId: currentAccountId,
+            syncMetadata: baseMetadata.markedForLocalMutation(
+                accountId: currentAccountId,
+                operationId: writeOperationId,
+                now: writeCreatedAt
+            )
+        )
         guard persist() else {
             selectedTheme = previousTheme
             storedEnvelope = previousEnvelope
             return false
         }
+        recordWriteOperation(writeOperationId, createdAt: writeCreatedAt)
         return true
     }
 
@@ -62,19 +87,27 @@ final class ThemeStore: ObservableObject {
     }
 
     @discardableResult
-    func claimLocalDataForAccount(id accountId: String) -> Bool {
+    func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) -> Bool {
         guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
             persistenceError = "Account id is required before local theme data can be claimed."
             return false
         }
         guard let storedEnvelope, storedEnvelope.accountId == nil else { return true }
 
+        let writeOperationId = operationId ?? UUID()
+        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+
+        let writeCreatedAt = Date()
         let previousEnvelope = self.storedEnvelope
         let previousTheme = selectedTheme
         self.storedEnvelope = ThemeEnvelope(
             selectedTheme: storedEnvelope.selectedTheme,
             accountId: normalizedAccountId,
-            syncMetadata: storedEnvelope.syncMetadata.markedForLocalMutation(accountId: normalizedAccountId)
+            syncMetadata: storedEnvelope.syncMetadata.markedForLocalMutation(
+                accountId: normalizedAccountId,
+                operationId: writeOperationId,
+                now: writeCreatedAt
+            )
         )
         applyStoredEnvelope()
         guard persist() else {
@@ -82,7 +115,16 @@ final class ThemeStore: ObservableObject {
             selectedTheme = previousTheme
             return false
         }
+        recordWriteOperation(writeOperationId, createdAt: writeCreatedAt)
         return true
+    }
+
+    private func recordWriteOperation(_ operationId: UUID, createdAt: Date) {
+        _ = writeJournal.record(
+            operationId: operationId,
+            entityKind: .theme,
+            createdAt: createdAt
+        )
     }
 
     private func loadTheme() {

@@ -50,14 +50,24 @@ final class WorkoutHistoryStore: ObservableObject {
 
     private let fileURL: URL
     private let calendar: Calendar
+    private let writeJournal: LocalWriteJournal
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private var currentAccountId: String?
     private var allSummaries: [WorkoutSessionSummary] = []
 
-    init(fileURL: URL? = nil, calendar: Calendar = .current, accountId: String? = nil) {
-        self.fileURL = fileURL ?? Self.defaultHistoryURL()
+    init(
+        fileURL: URL? = nil,
+        calendar: Calendar = .current,
+        accountId: String? = nil,
+        writeJournal: LocalWriteJournal? = nil
+    ) {
+        let resolvedFileURL = fileURL ?? Self.defaultHistoryURL()
+        self.fileURL = resolvedFileURL
         self.calendar = calendar
+        self.writeJournal = writeJournal ?? LocalWriteJournal(
+            fileURL: LocalWriteJournal.defaultJournalURL(alongside: resolvedFileURL)
+        )
         self.currentAccountId = AccountOwnership.normalizedAccountId(accountId)
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
@@ -75,17 +85,19 @@ final class WorkoutHistoryStore: ObservableObject {
     }
 
     @discardableResult
-    func addSummary(_ summary: WorkoutSessionSummary) -> Bool {
-        upsert(summary)
+    func addSummary(_ summary: WorkoutSessionSummary, operationId: UUID? = nil) -> Bool {
+        upsert(summary, operationId: operationId)
     }
 
     @discardableResult
-    func updateSummary(_ summary: WorkoutSessionSummary) -> Bool {
-        upsert(summary)
+    func updateSummary(_ summary: WorkoutSessionSummary, operationId: UUID? = nil) -> Bool {
+        upsert(summary, operationId: operationId)
     }
 
     @discardableResult
-    func deleteSummary(id: UUID, deletedAt: Date = Date()) -> Bool {
+    func deleteSummary(id: UUID, deletedAt: Date = Date(), operationId: UUID? = nil) -> Bool {
+        let writeOperationId = operationId ?? UUID()
+        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
         guard let existingIndex = allSummaries.firstIndex(where: {
             $0.id == id && isVisible($0)
         }) else {
@@ -94,33 +106,43 @@ final class WorkoutHistoryStore: ObservableObject {
 
         let previousAllSummaries = allSummaries
         var updatedSummaries = allSummaries
-        updatedSummaries[existingIndex] = updatedSummaries[existingIndex].markedDeleted(at: deletedAt)
+        updatedSummaries[existingIndex] = updatedSummaries[existingIndex].markedDeleted(
+            at: deletedAt,
+            operationId: writeOperationId
+        )
         applyAllSummaries(updatedSummaries)
 
         guard persist() else {
             applyAllSummaries(previousAllSummaries)
             return false
         }
+        recordWriteOperation(writeOperationId, entityKind: .workout, createdAt: deletedAt)
         return true
     }
 
     @discardableResult
-    func restoreSummary(id: UUID) -> Bool {
+    func restoreSummary(id: UUID, operationId: UUID? = nil) -> Bool {
+        let writeOperationId = operationId ?? UUID()
+        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
         guard let existingIndex = allSummaries.firstIndex(where: {
             $0.id == id && isVisible($0)
         }) else {
             return false
         }
 
+        let writeCreatedAt = Date()
         let previousAllSummaries = allSummaries
         var updatedSummaries = allSummaries
-        updatedSummaries[existingIndex] = updatedSummaries[existingIndex].restored()
+        updatedSummaries[existingIndex] = updatedSummaries[existingIndex].restored(
+            operationId: writeOperationId
+        )
         applyAllSummaries(updatedSummaries)
 
         guard persist() else {
             applyAllSummaries(previousAllSummaries)
             return false
         }
+        recordWriteOperation(writeOperationId, entityKind: .workout, createdAt: writeCreatedAt)
         return true
     }
 
@@ -247,16 +269,26 @@ final class WorkoutHistoryStore: ObservableObject {
     }
 
     @discardableResult
-    func claimLocalDataForAccount(id accountId: String) -> Bool {
+    func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) -> Bool {
         guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
             persistenceError = "Account id is required before local workout history can be claimed."
             return false
         }
         guard allSummaries.contains(where: { $0.accountId == nil }) else { return true }
 
+        let writeOperationId = operationId ?? UUID()
+        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+
+        let writeCreatedAt = Date()
         let previousAllSummaries = allSummaries
         let updatedSummaries = allSummaries.map { summary in
-            summary.accountId == nil ? summary.withAccountId(normalizedAccountId) : summary
+            summary.accountId == nil
+                ? summary.withAccountId(
+                    normalizedAccountId,
+                    operationId: writeOperationId,
+                    now: writeCreatedAt
+                )
+                : summary
         }
         applyAllSummaries(updatedSummaries)
 
@@ -264,6 +296,7 @@ final class WorkoutHistoryStore: ObservableObject {
             applyAllSummaries(previousAllSummaries)
             return false
         }
+        recordWriteOperation(writeOperationId, entityKind: .workout, createdAt: writeCreatedAt)
         return true
     }
 
@@ -287,10 +320,18 @@ final class WorkoutHistoryStore: ObservableObject {
     }
 
     @discardableResult
-    private func upsert(_ summary: WorkoutSessionSummary) -> Bool {
+    private func upsert(_ summary: WorkoutSessionSummary, operationId: UUID? = nil) -> Bool {
+        let writeOperationId = operationId ?? UUID()
+        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+
+        let writeCreatedAt = Date()
         let previousAllSummaries = allSummaries
         var updatedSummaries = allSummaries
-        let accountStampedSummary = summary.withAccountId(currentAccountId)
+        let accountStampedSummary = summary.withAccountId(
+            currentAccountId,
+            operationId: writeOperationId,
+            now: writeCreatedAt
+        )
         if let existingIndex = updatedSummaries.firstIndex(where: { $0.id == accountStampedSummary.id }) {
             updatedSummaries[existingIndex] = accountStampedSummary
         } else {
@@ -302,7 +343,20 @@ final class WorkoutHistoryStore: ObservableObject {
             applyAllSummaries(previousAllSummaries)
             return false
         }
+        recordWriteOperation(writeOperationId, entityKind: .workout, createdAt: writeCreatedAt)
         return true
+    }
+
+    private func recordWriteOperation(
+        _ operationId: UUID,
+        entityKind: WriteEntityKind,
+        createdAt: Date
+    ) {
+        _ = writeJournal.record(
+            operationId: operationId,
+            entityKind: entityKind,
+            createdAt: createdAt
+        )
     }
 
     @discardableResult

@@ -579,6 +579,67 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.allSummariesIncludingTombstones().map(\.id), [summary.id])
     }
 
+    func testSameOperationIdAddsSummaryOnlyOnce() throws {
+        let url = temporaryHistoryURL()
+        let journal = LocalWriteJournal(
+            fileURL: LocalWriteJournal.defaultJournalURL(alongside: url)
+        )
+        let store = WorkoutHistoryStore(fileURL: url, accountId: "history-retry", writeJournal: journal)
+        let summaryId = UUID(uuidString: "00000000-0000-0000-0000-000000001093") ?? UUID()
+        let operationId = UUID(uuidString: "00000000-0000-0000-0000-00000000B001") ?? UUID()
+        let first = makeStoredSummary(
+            id: summaryId,
+            title: "First Write",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_500)
+        )
+        let retryPayload = makeStoredSummary(
+            id: summaryId,
+            title: "Retry Should Not Replace",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_700),
+            totalReps: 30
+        )
+
+        XCTAssertTrue(store.addSummary(first, operationId: operationId))
+        XCTAssertTrue(store.addSummary(retryPayload, operationId: operationId))
+
+        let fetched = try XCTUnwrap(store.fetchSummary(id: summaryId))
+        XCTAssertEqual(store.fetchRecentSummaries().map(\.id), [summaryId])
+        XCTAssertEqual(fetched.title, "First Write")
+        XCTAssertEqual(fetched.totalReps, 12)
+        XCTAssertEqual(fetched.syncMetadata.pendingOperationId, operationId)
+    }
+
+    func testDifferentOperationIdUpdatesSummaryNormally() throws {
+        let url = temporaryHistoryURL()
+        let journal = LocalWriteJournal(
+            fileURL: LocalWriteJournal.defaultJournalURL(alongside: url)
+        )
+        let store = WorkoutHistoryStore(fileURL: url, accountId: "history-retry", writeJournal: journal)
+        let summaryId = UUID(uuidString: "00000000-0000-0000-0000-000000001094") ?? UUID()
+        let firstOperationId = UUID(uuidString: "00000000-0000-0000-0000-00000000B002") ?? UUID()
+        let secondOperationId = UUID(uuidString: "00000000-0000-0000-0000-00000000B003") ?? UUID()
+        let first = makeStoredSummary(
+            id: summaryId,
+            title: "Original Write",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_500)
+        )
+        let replacement = makeStoredSummary(
+            id: summaryId,
+            title: "Replacement Write",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_700),
+            totalReps: 30
+        )
+
+        XCTAssertTrue(store.addSummary(first, operationId: firstOperationId))
+        XCTAssertTrue(store.addSummary(replacement, operationId: secondOperationId))
+
+        let fetched = try XCTUnwrap(store.fetchSummary(id: summaryId))
+        XCTAssertEqual(store.fetchRecentSummaries().map(\.id), [summaryId])
+        XCTAssertEqual(fetched.title, "Replacement Write")
+        XCTAssertEqual(fetched.totalReps, 30)
+        XCTAssertEqual(fetched.syncMetadata.pendingOperationId, secondOperationId)
+    }
+
     func testFailedSaveDoesNotExposeUnsavedSummary() throws {
         let blockedParentURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

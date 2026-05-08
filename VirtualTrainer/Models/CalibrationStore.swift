@@ -7,6 +7,7 @@ final class CalibrationStore: ObservableObject {
     @Published var persistenceError: String?
 
     private let fileURL: URL
+    private let writeJournal: LocalWriteJournal
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private var currentAccountId: String?
@@ -25,8 +26,12 @@ final class CalibrationStore: ObservableObject {
         record?.isSuccessfulCalibration ?? false
     }
 
-    init(fileURL: URL? = nil, accountId: String? = nil) {
-        self.fileURL = fileURL ?? Self.defaultCalibrationURL()
+    init(fileURL: URL? = nil, accountId: String? = nil, writeJournal: LocalWriteJournal? = nil) {
+        let resolvedFileURL = fileURL ?? Self.defaultCalibrationURL()
+        self.fileURL = resolvedFileURL
+        self.writeJournal = writeJournal ?? LocalWriteJournal(
+            fileURL: LocalWriteJournal.defaultJournalURL(alongside: resolvedFileURL)
+        )
         self.currentAccountId = AccountOwnership.normalizedAccountId(accountId)
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
@@ -50,7 +55,7 @@ final class CalibrationStore: ObservableObject {
     }
 
     @discardableResult
-    func saveCompleted(_ completedRecord: CalibrationRecord) -> Bool {
+    func saveCompleted(_ completedRecord: CalibrationRecord, operationId: UUID? = nil) -> Bool {
         guard completedRecord.status == .completed else {
             persistenceError = "Calibration completion must use a completed record."
             return false
@@ -59,7 +64,7 @@ final class CalibrationStore: ObservableObject {
             persistenceError = "Calibration needs target reps and camera visibility before it can be completed."
             return false
         }
-        return save(completedRecord)
+        return save(completedRecord, operationId: operationId)
     }
 
     @discardableResult
@@ -71,7 +76,8 @@ final class CalibrationStore: ObservableObject {
         completedAt: Date,
         visibilityPassed: Bool,
         averageFormScore: Double?,
-        notes: String? = nil
+        notes: String? = nil,
+        operationId: UUID? = nil
     ) -> Bool {
         saveCompleted(
             CalibrationRecord.completed(
@@ -83,25 +89,27 @@ final class CalibrationStore: ObservableObject {
                 visibilityPassed: visibilityPassed,
                 averageFormScore: averageFormScore,
                 notes: notes
-            )
+            ),
+            operationId: operationId
         )
     }
 
     @discardableResult
     func saveSkipped(
         at date: Date = Date(),
-        notes: String? = "Skipped during setup."
+        notes: String? = "Skipped during setup.",
+        operationId: UUID? = nil
     ) -> Bool {
-        save(.skipped(at: date, notes: notes))
+        save(.skipped(at: date, notes: notes), operationId: operationId)
     }
 
     @discardableResult
-    func saveFailed(_ failedRecord: CalibrationRecord) -> Bool {
+    func saveFailed(_ failedRecord: CalibrationRecord, operationId: UUID? = nil) -> Bool {
         guard failedRecord.status == .failed else {
             persistenceError = "Calibration failure must use a failed record."
             return false
         }
-        return save(failedRecord)
+        return save(failedRecord, operationId: operationId)
     }
 
     @discardableResult
@@ -113,7 +121,8 @@ final class CalibrationStore: ObservableObject {
         completedAt: Date = Date(),
         visibilityPassed: Bool = false,
         averageFormScore: Double? = nil,
-        notes: String
+        notes: String,
+        operationId: UUID? = nil
     ) -> Bool {
         saveFailed(
             CalibrationRecord.failed(
@@ -125,7 +134,8 @@ final class CalibrationStore: ObservableObject {
                 visibilityPassed: visibilityPassed,
                 averageFormScore: averageFormScore,
                 notes: notes
-            )
+            ),
+            operationId: operationId
         )
     }
 
@@ -143,14 +153,23 @@ final class CalibrationStore: ObservableObject {
     }
 
     @discardableResult
-    func claimLocalDataForAccount(id accountId: String) -> Bool {
+    func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) -> Bool {
         guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
             persistenceError = "Account id is required before local calibration data can be claimed."
             return false
         }
         guard let storedRecord, storedRecord.accountId == nil else { return true }
 
-        return save(storedRecord.withAccountId(normalizedAccountId), stampWithCurrentAccount: false)
+        let writeOperationId = operationId ?? UUID()
+        return save(
+            storedRecord.withAccountId(
+                normalizedAccountId,
+                operationId: writeOperationId,
+                now: storedRecord.completedAt
+            ),
+            stampWithCurrentAccount: false,
+            operationId: writeOperationId
+        )
     }
 
     private func loadRecord() {
@@ -176,12 +195,20 @@ final class CalibrationStore: ObservableObject {
     @discardableResult
     private func save(
         _ updatedRecord: CalibrationRecord,
-        stampWithCurrentAccount: Bool = true
+        stampWithCurrentAccount: Bool = true,
+        operationId: UUID? = nil
     ) -> Bool {
+        let writeOperationId = operationId ?? UUID()
+        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+
         let previousRecord = record
         let previousStoredRecord = storedRecord
         let accountStampedRecord = stampWithCurrentAccount
-            ? updatedRecord.withAccountId(currentAccountId)
+            ? updatedRecord.withAccountId(
+                currentAccountId,
+                operationId: writeOperationId,
+                now: updatedRecord.completedAt
+            )
             : updatedRecord
         storedRecord = accountStampedRecord
         applyStoredRecord()
@@ -190,7 +217,16 @@ final class CalibrationStore: ObservableObject {
             storedRecord = previousStoredRecord
             return false
         }
+        recordWriteOperation(writeOperationId, createdAt: accountStampedRecord.completedAt)
         return true
+    }
+
+    private func recordWriteOperation(_ operationId: UUID, createdAt: Date) {
+        _ = writeJournal.record(
+            operationId: operationId,
+            entityKind: .calibration,
+            createdAt: createdAt
+        )
     }
 
     @discardableResult

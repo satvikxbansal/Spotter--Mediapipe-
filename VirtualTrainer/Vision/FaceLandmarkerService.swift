@@ -38,9 +38,11 @@ final class FaceLandmarkerService: NSObject, ObservableObject {
     // MARK: - Private
 
     private var faceLandmarker: FaceLandmarker?
-    private var timestampMs: Int = 0
+    private var timestampMs: Int = -250
     private var isProcessingFrame = false
     private var activeFrameTimestampMs: Int?
+    private var activeFrameGeneration: UInt64?
+    private var processingGeneration: UInt64 = 0
     private let stateLock = NSLock()
     private let minimumFrameIntervalMs = 250
     private let frameTimeoutSeconds: TimeInterval = 1.0
@@ -87,6 +89,19 @@ final class FaceLandmarkerService: NSObject, ObservableObject {
 
     // MARK: - Frame Processing
 
+    func reset() {
+        stateLock.lock()
+        processingGeneration &+= 1
+        let generation = processingGeneration
+        timestampMs = -minimumFrameIntervalMs
+        isProcessingFrame = false
+        activeFrameTimestampMs = nil
+        activeFrameGeneration = nil
+        stateLock.unlock()
+
+        clearDetection(for: generation)
+    }
+
     func processFrame(_ sampleBuffer: CMSampleBuffer) {
         guard let faceLandmarker else { return }
 
@@ -111,11 +126,11 @@ final class FaceLandmarkerService: NSObject, ObservableObject {
 
     // MARK: - Result Processing
 
-    private func processResult(_ result: FaceLandmarkerResult?) {
+    private func processResult(_ result: FaceLandmarkerResult?, frameGeneration: UInt64) {
         guard let result,
               !result.faceBlendshapes.isEmpty,
               let firstFace = result.faceBlendshapes.first else {
-            DispatchQueue.main.async { [weak self] in
+            publishDetection(for: frameGeneration) { [weak self] in
                 self?.blendshapes = [:]
                 self?.faceDetected = false
             }
@@ -131,7 +146,7 @@ final class FaceLandmarkerService: NSObject, ObservableObject {
             }
         }
 
-        DispatchQueue.main.async { [weak self] in
+        publishDetection(for: frameGeneration) { [weak self] in
             self?.blendshapes = shapes
             self?.faceDetected = true
         }
@@ -156,6 +171,7 @@ final class FaceLandmarkerService: NSObject, ObservableObject {
 
         isProcessingFrame = true
         activeFrameTimestampMs = currentTimestamp
+        activeFrameGeneration = processingGeneration
         timestampMs = currentTimestamp
         scheduleFrameTimeout(timestampInMilliseconds: currentTimestamp)
         return true
@@ -172,16 +188,20 @@ final class FaceLandmarkerService: NSObject, ObservableObject {
 
         isProcessingFrame = false
         activeFrameTimestampMs = nil
+        activeFrameGeneration = nil
     }
 
-    private func finishFrame(timestampInMilliseconds completedTimestamp: Int) -> Bool {
+    private func finishFrame(timestampInMilliseconds completedTimestamp: Int) -> UInt64? {
         stateLock.lock()
         defer { stateLock.unlock() }
 
-        guard activeFrameTimestampMs == completedTimestamp else { return false }
+        guard activeFrameTimestampMs == completedTimestamp,
+              let generation = activeFrameGeneration
+        else { return nil }
         isProcessingFrame = false
         activeFrameTimestampMs = nil
-        return true
+        activeFrameGeneration = nil
+        return generation
     }
 
     private func scheduleFrameTimeout(timestampInMilliseconds submittedTimestamp: Int) {
@@ -196,16 +216,48 @@ final class FaceLandmarkerService: NSObject, ObservableObject {
         if didExpire {
             isProcessingFrame = false
             activeFrameTimestampMs = nil
+            activeFrameGeneration = nil
         }
         stateLock.unlock()
 
         if didExpire {
             logger.warning("Face detection timed out for frame \(expiredTimestamp); clearing stale effort state")
-            DispatchQueue.main.async { [weak self] in
-                self?.blendshapes = [:]
-                self?.faceDetected = false
-            }
+            clearDetection()
         }
+    }
+
+    private func clearDetection(for generation: UInt64? = nil) {
+        publishDetection(for: generation) { [weak self] in
+            self?.blendshapes = [:]
+            self?.faceDetected = false
+        }
+    }
+
+    private func publishDetection(
+        for generation: UInt64?,
+        update: @escaping () -> Void
+    ) {
+        let guardedUpdate = { [weak self] in
+            guard let self else { return }
+            if let generation,
+               !self.isCurrentGeneration(generation) {
+                return
+            }
+            update()
+        }
+
+        if Thread.isMainThread {
+            guardedUpdate()
+        } else {
+            DispatchQueue.main.async(execute: guardedUpdate)
+        }
+    }
+
+    private func isCurrentGeneration(_ generation: UInt64) -> Bool {
+        stateLock.lock()
+        let isCurrent = processingGeneration == generation
+        stateLock.unlock()
+        return isCurrent
     }
 }
 
@@ -220,11 +272,11 @@ extension FaceLandmarkerService: FaceLandmarkerLiveStreamDelegate {
         timestampInMilliseconds: Int,
         error: Error?
     ) {
-        guard finishFrame(timestampInMilliseconds: timestampInMilliseconds) else { return }
+        guard let frameGeneration = finishFrame(timestampInMilliseconds: timestampInMilliseconds) else { return }
 
         if let error {
             logger.error("Face landmarker error: \(error.localizedDescription)")
         }
-        processResult(result)
+        processResult(result, frameGeneration: frameGeneration)
     }
 }
