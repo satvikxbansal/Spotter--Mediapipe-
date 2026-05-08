@@ -225,6 +225,7 @@ nonisolated private extension CalibrationRecord {
             completedReps: completedReps,
             startedAt: startedAt,
             completedAt: completedAt,
+            serverCompletedAt: serverCompletedAt,
             visibilityPassed: visibilityPassed,
             averageFormScore: averageFormScore,
             notes: notes,

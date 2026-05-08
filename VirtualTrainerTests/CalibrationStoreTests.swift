@@ -94,6 +94,29 @@ final class CalibrationStoreTests: XCTestCase {
         XCTAssertTrue(decoded.isSuccessfulCalibration)
     }
 
+    func testServerCompletedAtSurvivesBackendReadinessCopies() throws {
+        let startedAt = Date(timeIntervalSince1970: 1_776_400_210)
+        let completedAt = Date(timeIntervalSince1970: 1_776_400_240)
+        let serverCompletedAt = Date(timeIntervalSince1970: 1_776_400_260)
+        let deletedAt = Date(timeIntervalSince1970: 1_776_400_300)
+        let record = CalibrationRecord.completed(
+            completedReps: 3,
+            startedAt: startedAt,
+            completedAt: completedAt,
+            serverCompletedAt: serverCompletedAt,
+            visibilityPassed: true,
+            averageFormScore: 91.5
+        )
+
+        let accountClaimed = record.withAccountId("calibration-sync-account")
+        let tombstoned = accountClaimed.markedDeleted(at: deletedAt)
+        let restored = tombstoned.restored()
+
+        XCTAssertEqual(accountClaimed.serverCompletedAt, serverCompletedAt)
+        XCTAssertEqual(tombstoned.serverCompletedAt, serverCompletedAt)
+        XCTAssertEqual(restored.serverCompletedAt, serverCompletedAt)
+    }
+
     func testTombstonedCalibrationRecordIsNotCompleted() throws {
         let url = temporaryCalibrationURL()
         let completed = CalibrationRecord.completed(

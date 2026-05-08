@@ -59,6 +59,58 @@ final class WeeklyRecapBuilderTests: XCTestCase {
         XCTAssertTrue(recap.narrative.contains("18 reps"))
     }
 
+    func testTopMomentUsesCanonicalTrophyEventLogAfterReload() throws {
+        let now = date(year: 2026, month: 5, day: 4, hour: 9)
+        let earnedAt = date(year: 2026, month: 5, day: 2, hour: 10)
+        let session = makeSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000103") ?? UUID(),
+            title: "Steady Squat",
+            endedAt: date(year: 2026, month: 5, day: 2, hour: 11),
+            exerciseType: .squat,
+            reps: 10,
+            holdSeconds: 0,
+            averageForm: 82
+        )
+        let event = TrophyUnlockEvent(
+            trophyId: TrophyDefinitionCatalog.ID.spark,
+            title: "Spark",
+            subtitle: "Save your first workout.",
+            earnedAt: earnedAt,
+            reason: "You saved your first workout.",
+            celebrationStyle: .standard
+        )
+        let trophies = TrophyProgressSnapshot(
+            catalogVersion: TrophyDefinitionCatalog.version,
+            generatedAt: now,
+            progress: [
+                TrophyProgress(
+                    trophyId: TrophyDefinitionCatalog.ID.spark,
+                    currentValue: 1,
+                    targetValue: 1,
+                    earned: true,
+                    earnedAt: earnedAt,
+                    lastUpdatedAt: earnedAt,
+                    confidence: .exact,
+                    progressLabel: "Earned"
+                )
+            ],
+            unlockEventLog: [event],
+            newlyEarnedEvents: []
+        )
+
+        let recap = try XCTUnwrap(
+            WeeklyRecapBuilder(calendar: calendar).build(
+                history: [session],
+                profile: makeProfile(goal: .strength),
+                trophies: trophies,
+                now: now
+            )
+        )
+
+        XCTAssertEqual(recap.topMoment, "Trophy earned: Spark.")
+        XCTAssertEqual(recap.stats.first { $0.label == "Trophies" }?.value, "1")
+    }
+
     func testAllRestWeekWithOlderHistoryTreatsRestAsSignal() throws {
         let now = date(year: 2026, month: 5, day: 4, hour: 9)
         let older = makeSummary(

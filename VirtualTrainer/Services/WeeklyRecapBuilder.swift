@@ -256,7 +256,7 @@ nonisolated private extension WeeklyRecapBuilder {
         trophies: TrophyProgressSnapshot,
         targetWeek: WeekInterval
     ) -> String {
-        if let event = trophies.newlyEarnedEvents.first(where: { targetWeek.contains($0.earnedAt) }) {
+        if let event = trophyUnlockEvents(in: trophies, week: targetWeek).first {
             return "Trophy earned: \(event.title)."
         }
         if let best = sessions.max(by: { ($0.averageFormScore ?? -1) < ($1.averageFormScore ?? -1) }),
@@ -267,6 +267,33 @@ nonisolated private extension WeeklyRecapBuilder {
             return "\(highestVolume.title) carried the week with \(highestVolume.totalReps) reps."
         }
         return "The week was logged without a standout scored moment."
+    }
+
+    func trophyUnlockEvents(
+        in trophies: TrophyProgressSnapshot,
+        week: WeekInterval
+    ) -> [TrophyUnlockEvent] {
+        let canonicalEvents = trophies.unlockEventLog.isEmpty
+            ? trophies.newlyEarnedEvents
+            : trophies.unlockEventLog
+        return canonicalEvents
+            .filter { !$0.isRetracted && week.contains($0.authoritativeEarnedAt) }
+            .sorted(by: isEarlierTrophyUnlock)
+    }
+
+    func isEarlierTrophyUnlock(
+        _ lhs: TrophyUnlockEvent,
+        _ rhs: TrophyUnlockEvent
+    ) -> Bool {
+        if lhs.authoritativeEarnedAt != rhs.authoritativeEarnedAt {
+            return lhs.authoritativeEarnedAt < rhs.authoritativeEarnedAt
+        }
+        let leftSortOrder = TrophyDefinitionCatalog.definition(for: lhs.trophyId)?.sortOrder ?? 0
+        let rightSortOrder = TrophyDefinitionCatalog.definition(for: rhs.trophyId)?.sortOrder ?? 0
+        if leftSortOrder != rightSortOrder {
+            return leftSortOrder < rightSortOrder
+        }
+        return lhs.id.uuidString < rhs.id.uuidString
     }
 
     func biggestSurprise(

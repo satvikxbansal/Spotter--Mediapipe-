@@ -778,3 +778,25 @@ Verified the current built `VirtualTrainer.app` could install and launch on a fr
 When build succeeds but Run fails with `NSPOSIXErrorDomain Code=64` / `host down`, first inspect `~/Library/Logs/DiagnosticReports/SpringBoard-*.ips` and `~/Library/Logs/CoreSimulator/CoreSimulator.log` before rolling back app code. Use `simctl launch` and, if needed, a fresh simulator to distinguish app crashes from SpringBoard/runtime crashes. Recovery order: shutdown/boot the affected simulator, then erase/recreate only if SpringBoard continues crashing. If `simctl launch` works but Xcode Run still fails, temporarily disable View Debugging insertion for the scheme.
 
 **Pattern Tags:** #xcode-simulator #springboard #crash-loop #launch-failure #rca
+
+---
+
+### [DL-036] Preserve Canonical Backend-Readiness Fields In Recaps And Calibration
+**Date:** 2026-05-08
+**Severity:** warning
+**Category:** persistence
+**File(s):** `VirtualTrainer/Services/WeeklyRecapBuilder.swift`, `VirtualTrainer/Models/CalibrationRecord.swift`, `VirtualTrainerTests/WeeklyRecapBuilderTests.swift`, `VirtualTrainerTests/CalibrationStoreTests.swift`
+
+**Error:**
+Weekly recaps still read trophy top moments from `newlyEarnedEvents`, which is now transient UI feedback after canonical trophy unlock logs were added. Separately, `CalibrationRecord.copy(...)` did not pass through `serverCompletedAt`, so account-claim, tombstone, or restore helpers could silently discard the future server completion timestamp.
+
+**Root Cause:**
+C6 made `TrophyUnlockEvent` canonical, but `WeeklyRecapBuilder` was not updated to consume `unlockEventLog`. The calibration copy helper was added before `serverCompletedAt` preservation was covered by regression tests.
+
+**Fix Applied:**
+Updated weekly recap top-moment selection to read non-retracted canonical unlock events, falling back to `newlyEarnedEvents` only for legacy snapshots that do not have an event log. Updated calibration copy semantics to preserve `serverCompletedAt`. Added regression tests for both behaviors and verified focused tests, the full workspace test suite, simulator build, bundled MediaPipe task resources, and a simulator launch smoke.
+
+**Prevention Rule:**
+Derived UI surfaces should read canonical event logs once a model has one, not transient presentation arrays. Copy helpers for backend-ready models must pass through server timestamps and metadata fields, with explicit tests for account-claim and tombstone paths.
+
+**Pattern Tags:** #persistence #sync-prep #weekly-recap #calibration #tests
