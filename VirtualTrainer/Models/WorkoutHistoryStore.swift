@@ -52,6 +52,7 @@ final class WorkoutHistoryStore: ObservableObject {
     private let calendar: Calendar
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private var allSummaries: [WorkoutSessionSummary] = []
 
     init(fileURL: URL? = nil, calendar: Calendar = .current) {
         self.fileURL = fileURL ?? Self.defaultHistoryURL()
@@ -66,15 +67,79 @@ final class WorkoutHistoryStore: ObservableObject {
 
     @discardableResult
     func addSummary(_ summary: WorkoutSessionSummary) -> Bool {
-        let previousSummaries = summaries
-        if let existingIndex = summaries.firstIndex(where: { $0.id == summary.id }) {
-            summaries[existingIndex] = summary
-        } else {
-            summaries.append(summary)
+        upsert(summary)
+    }
+
+    @discardableResult
+    func updateSummary(_ summary: WorkoutSessionSummary) -> Bool {
+        upsert(summary)
+    }
+
+    @discardableResult
+    func deleteSummary(id: UUID, deletedAt: Date = Date()) -> Bool {
+        guard let existingIndex = allSummaries.firstIndex(where: { $0.id == id }) else {
+            return false
         }
-        summaries = sortedSummaries(summaries)
+
+        let previousAllSummaries = allSummaries
+        var updatedSummaries = allSummaries
+        updatedSummaries[existingIndex] = updatedSummaries[existingIndex].markedDeleted(at: deletedAt)
+        applyAllSummaries(updatedSummaries)
+
         guard persist() else {
-            summaries = previousSummaries
+            applyAllSummaries(previousAllSummaries)
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func restoreSummary(id: UUID) -> Bool {
+        guard let existingIndex = allSummaries.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+
+        let previousAllSummaries = allSummaries
+        var updatedSummaries = allSummaries
+        updatedSummaries[existingIndex] = updatedSummaries[existingIndex].restored()
+        applyAllSummaries(updatedSummaries)
+
+        guard persist() else {
+            applyAllSummaries(previousAllSummaries)
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func purgeTombstones(olderThan cutoff: Date) -> Int {
+        let previousAllSummaries = allSummaries
+        let updatedSummaries = allSummaries.filter { summary in
+            guard let deletedAt = summary.deletedAt else { return true }
+            return deletedAt >= cutoff
+        }
+        let purgedCount = allSummaries.count - updatedSummaries.count
+        guard purgedCount > 0 else { return 0 }
+
+        applyAllSummaries(updatedSummaries)
+        guard persist() else {
+            applyAllSummaries(previousAllSummaries)
+            return 0
+        }
+        return purgedCount
+    }
+
+    @discardableResult
+    func removeSummariesForDebug(ids: Set<UUID>) -> Bool {
+        guard !ids.isEmpty else { return true }
+
+        let previousAllSummaries = allSummaries
+        let updatedSummaries = allSummaries.filter { !ids.contains($0.id) }
+        guard updatedSummaries.count != allSummaries.count else { return true }
+
+        applyAllSummaries(updatedSummaries)
+        guard persist() else {
+            applyAllSummaries(previousAllSummaries)
             return false
         }
         return true
@@ -87,6 +152,23 @@ final class WorkoutHistoryStore: ObservableObject {
 
     func fetchSummary(id: UUID) -> WorkoutSessionSummary? {
         summaries.first { $0.id == id }
+    }
+
+    func fetchSummaryIncludingDeleted(id: UUID) -> WorkoutSessionSummary? {
+        allSummaries.first { $0.id == id }
+    }
+
+    func allSummariesIncludingTombstones() -> [WorkoutSessionSummary] {
+        sortedSummaries(allSummaries)
+    }
+
+    func fetchDeletedSummaries() -> [WorkoutSessionSummary] {
+        sortedSummaries(allSummaries.filter(\.isDeleted))
+    }
+
+    func fetchDirtyOrDeletedSummaries() -> [WorkoutSessionSummary] {
+        // TODO(C2): Include locally dirty records once SyncMetadata exists.
+        fetchDeletedSummaries()
     }
 
     func aggregateStats(now: Date = Date()) -> WorkoutHistoryStats {
@@ -147,6 +229,7 @@ final class WorkoutHistoryStore: ObservableObject {
 
     private func loadSummaries() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            allSummaries = []
             summaries = []
             persistenceError = nil
             return
@@ -154,12 +237,31 @@ final class WorkoutHistoryStore: ObservableObject {
 
         do {
             let data = try Data(contentsOf: fileURL)
-            summaries = sortedSummaries(try decoder.decode([WorkoutSessionSummary].self, from: data))
+            applyAllSummaries(try decoder.decode([WorkoutSessionSummary].self, from: data))
             persistenceError = nil
         } catch {
+            allSummaries = []
             summaries = []
             persistenceError = "Could not load workout history: \(error.localizedDescription)"
         }
+    }
+
+    @discardableResult
+    private func upsert(_ summary: WorkoutSessionSummary) -> Bool {
+        let previousAllSummaries = allSummaries
+        var updatedSummaries = allSummaries
+        if let existingIndex = updatedSummaries.firstIndex(where: { $0.id == summary.id }) {
+            updatedSummaries[existingIndex] = summary
+        } else {
+            updatedSummaries.append(summary)
+        }
+        applyAllSummaries(updatedSummaries)
+
+        guard persist() else {
+            applyAllSummaries(previousAllSummaries)
+            return false
+        }
+        return true
     }
 
     @discardableResult
@@ -169,7 +271,7 @@ final class WorkoutHistoryStore: ObservableObject {
                 at: fileURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            let data = try encoder.encode(summaries)
+            let data = try encoder.encode(allSummaries)
             try data.write(to: fileURL, options: [.atomic])
             persistenceError = nil
             return true
@@ -177,6 +279,11 @@ final class WorkoutHistoryStore: ObservableObject {
             persistenceError = "Could not save workout history: \(error.localizedDescription)"
             return false
         }
+    }
+
+    private func applyAllSummaries(_ updatedSummaries: [WorkoutSessionSummary]) {
+        allSummaries = sortedSummaries(updatedSummaries)
+        summaries = sortedSummaries(allSummaries.filter { !$0.isDeleted })
     }
 
     private func sortedSummaries(

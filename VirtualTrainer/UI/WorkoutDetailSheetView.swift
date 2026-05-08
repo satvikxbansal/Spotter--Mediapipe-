@@ -2,7 +2,12 @@ import SwiftUI
 
 struct WorkoutDetailSheetView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var calibrationStore: CalibrationStore
+    @EnvironmentObject private var historyStore: WorkoutHistoryStore
+    @EnvironmentObject private var trophyStore: TrophyStore
+    @EnvironmentObject private var insightStore: InsightStore
     @State private var evidenceRequest: EvidenceSheetRequest?
+    @State private var isShowingDeleteConfirmation = false
 
     let summary: WorkoutSessionSummary
 
@@ -18,6 +23,7 @@ struct WorkoutDetailSheetView: View {
                 effortCard
                 topCueCard
                 setList
+                deleteWorkoutButton
             }
             .padding(Theme.Spacing.lg)
             .padding(.bottom, Theme.Spacing.xxxl)
@@ -50,6 +56,18 @@ struct WorkoutDetailSheetView: View {
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+        }
+        .confirmationDialog(
+            "Delete Workout?",
+            isPresented: $isShowingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Workout", role: .destructive) {
+                deleteWorkout()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the workout from your visible history.")
         }
         .preferredColorScheme(.dark)
     }
@@ -176,6 +194,17 @@ struct WorkoutDetailSheetView: View {
         )
     }
 
+    private var deleteWorkoutButton: some View {
+        Button(role: .destructive) {
+            HapticsEngine.shared.buttonTap()
+            isShowingDeleteConfirmation = true
+        } label: {
+            Label("Delete Workout", systemImage: "trash.fill")
+        }
+        .buttonStyle(PrimaryCTAStyle(destructive: true))
+        .accessibilityLabel("Delete workout")
+    }
+
     private var formText: String {
         guard let average = summary.averageFormScore else { return "N/A" }
         return "\(Int(average.rounded()))%"
@@ -196,6 +225,17 @@ struct WorkoutDetailSheetView: View {
         let safeSeconds = max(seconds, 0)
         guard safeSeconds >= 60 else { return "\(safeSeconds)s" }
         return String(format: "%d:%02d", safeSeconds / 60, safeSeconds % 60)
+    }
+
+    private func deleteWorkout() {
+        guard historyStore.deleteSummary(id: summary.id) else { return }
+        _ = insightStore.invalidateInsightsReferencingWorkout(id: summary.id)
+        trophyStore.updateAll(
+            history: historyStore.summaries,
+            calibrationStatus: calibrationStore.status
+        )
+        HapticsEngine.shared.successRipple()
+        dismiss()
     }
 }
 
@@ -1108,8 +1148,16 @@ private enum WorkoutDetailSheetPreviewData {
 
 #Preview("Clean Evidence") {
     WorkoutDetailSheetView(summary: WorkoutDetailSheetPreviewData.cleanSummary)
+        .environmentObject(CalibrationStore())
+        .environmentObject(WorkoutHistoryStore())
+        .environmentObject(TrophyStore())
+        .environmentObject(InsightStore())
 }
 
 #Preview("Faded Evidence") {
     WorkoutDetailSheetView(summary: WorkoutDetailSheetPreviewData.fadedSummary)
+        .environmentObject(CalibrationStore())
+        .environmentObject(WorkoutHistoryStore())
+        .environmentObject(TrophyStore())
+        .environmentObject(InsightStore())
 }

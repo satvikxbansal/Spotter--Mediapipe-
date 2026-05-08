@@ -242,6 +242,7 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
     let totalExcellentFormReps: Int
     let totalHighSeverityCues: Int
     let createdAt: Date
+    let deletedAt: Date?
 
     init(
         id: UUID = UUID(),
@@ -268,7 +269,8 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
         totalGoodFormReps: Int? = nil,
         totalExcellentFormReps: Int? = nil,
         totalHighSeverityCues: Int? = nil,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        deletedAt: Date? = nil
     ) {
         self.id = id
         self.summarySchemaVersion = summarySchemaVersion
@@ -298,10 +300,23 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
         self.totalExcellentFormReps = totalExcellentFormReps ?? Self.totalExcellentFormReps(in: exerciseSummaries)
         self.totalHighSeverityCues = totalHighSeverityCues ?? Self.totalHighSeverityCues(in: exerciseSummaries)
         self.createdAt = createdAt
+        self.deletedAt = deletedAt
     }
 
     var primaryExerciseType: ExerciseType? {
         exerciseSummaries.first?.exerciseType
+    }
+
+    var isDeleted: Bool {
+        deletedAt != nil
+    }
+
+    func markedDeleted(at date: Date) -> WorkoutSessionSummary {
+        copy(deletedAt: date)
+    }
+
+    func restored() -> WorkoutSessionSummary {
+        copy(deletedAt: nil)
     }
 }
 
@@ -332,6 +347,7 @@ nonisolated extension WorkoutSessionSummary {
         case totalExcellentFormReps
         case totalHighSeverityCues
         case createdAt
+        case deletedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -369,6 +385,40 @@ nonisolated extension WorkoutSessionSummary {
         totalHighSeverityCues = try container.decodeIfPresent(Int.self, forKey: .totalHighSeverityCues)
             ?? Self.totalHighSeverityCues(in: decodedExerciseSummaries)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? endedAt
+        deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+    }
+}
+
+nonisolated private extension WorkoutSessionSummary {
+    func copy(deletedAt: Date?) -> WorkoutSessionSummary {
+        WorkoutSessionSummary(
+            id: id,
+            summarySchemaVersion: summarySchemaVersion,
+            appBuildVersion: appBuildVersion,
+            mode: mode,
+            planId: planId,
+            planTitle: planTitle,
+            title: title,
+            goal: goal,
+            coach: coach,
+            startedAt: startedAt,
+            endedAt: endedAt,
+            durationSeconds: durationSeconds,
+            totalReps: totalReps,
+            totalHoldSeconds: totalHoldSeconds,
+            averageFormScore: averageFormScore,
+            completionPercent: completionPercent,
+            exerciseSummaries: exerciseSummaries,
+            topCue: topCue,
+            effortSummary: effortSummary,
+            workoutOutcome: workoutOutcome,
+            structuredEffortSummary: structuredEffortSummary,
+            totalGoodFormReps: totalGoodFormReps,
+            totalExcellentFormReps: totalExcellentFormReps,
+            totalHighSeverityCues: totalHighSeverityCues,
+            createdAt: createdAt,
+            deletedAt: deletedAt
+        )
     }
 }
 

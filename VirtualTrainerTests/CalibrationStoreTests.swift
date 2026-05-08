@@ -69,6 +69,56 @@ final class CalibrationStoreTests: XCTestCase {
         XCTAssertEqual(record.averageFormScore, 91.5)
     }
 
+    func testLegacyCalibrationRecordJSONWithoutDeletedAtDecodes() throws {
+        let record = CalibrationRecord.completed(
+            completedReps: 3,
+            startedAt: Date(timeIntervalSince1970: 1_776_400_200),
+            completedAt: Date(timeIntervalSince1970: 1_776_400_240),
+            visibilityPassed: true,
+            averageFormScore: 91.5
+        )
+        let encoder = JSONEncoder()
+        let decoder = JSONDecoder()
+        encoder.dateEncodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .iso8601
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try encoder.encode(record)) as? [String: Any]
+        )
+        object.removeValue(forKey: "deletedAt")
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try decoder.decode(CalibrationRecord.self, from: legacyData)
+
+        XCTAssertNil(decoded.deletedAt)
+        XCTAssertFalse(decoded.isDeleted)
+        XCTAssertTrue(decoded.isSuccessfulCalibration)
+    }
+
+    func testTombstonedCalibrationRecordIsNotCompleted() throws {
+        let url = temporaryCalibrationURL()
+        let completed = CalibrationRecord.completed(
+            completedReps: 3,
+            startedAt: Date(timeIntervalSince1970: 1_776_400_250),
+            completedAt: Date(timeIntervalSince1970: 1_776_400_280),
+            visibilityPassed: true,
+            averageFormScore: 90
+        ).markedDeleted(at: Date(timeIntervalSince1970: 1_776_400_300))
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try encoder.encode(completed).write(to: url, options: [.atomic])
+
+        let store = CalibrationStore(fileURL: url)
+
+        XCTAssertEqual(store.status, .notStarted)
+        XCTAssertFalse(store.hasCompletedCalibration)
+        XCTAssertFalse(store.record?.isSuccessfulCalibration ?? true)
+        XCTAssertTrue(store.record?.isDeleted ?? false)
+    }
+
     func testCalibrationDoesNotBreakFreeAnalysisMode() {
         let freeContext = LiveSessionContext.freeAnalysis(
             exerciseType: .pushup,

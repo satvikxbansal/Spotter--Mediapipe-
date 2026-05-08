@@ -150,6 +150,7 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
     let sourcePolicyVersion: String
     let expiresAt: Date?
     let dedupeKey: String
+    let deletedAt: Date?
 
     init(
         id: String? = nil,
@@ -169,7 +170,8 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
         createdAt: Date = Date(),
         sourcePolicyVersion: String = AIInsight.currentSourcePolicyVersion,
         expiresAt: Date? = nil,
-        dedupeKey: String
+        dedupeKey: String,
+        deletedAt: Date? = nil
     ) {
         self.type = type
         self.headline = headline
@@ -188,11 +190,24 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
         self.sourcePolicyVersion = sourcePolicyVersion
         self.expiresAt = expiresAt
         self.dedupeKey = dedupeKey
+        self.deletedAt = deletedAt
         self.id = id ?? Self.makeID(
             dedupeKey: dedupeKey,
             createdAt: createdAt,
             sourcePolicyVersion: sourcePolicyVersion
         )
+    }
+
+    var isDeleted: Bool {
+        deletedAt != nil
+    }
+
+    func markedDeleted(at date: Date) -> AIInsight {
+        copy(deletedAt: date)
+    }
+
+    func restored() -> AIInsight {
+        copy(deletedAt: nil)
     }
 
     func isExpired(now: Date = Date()) -> Bool {
@@ -210,6 +225,32 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
             dedupeKey,
             "\(Int(createdAt.timeIntervalSince1970))"
         ].joined(separator: "|")
+    }
+}
+
+nonisolated private extension AIInsight {
+    func copy(deletedAt: Date?) -> AIInsight {
+        AIInsight(
+            id: id,
+            type: type,
+            headline: headline,
+            message: message,
+            shortMessage: shortMessage,
+            evidence: evidence,
+            recommendedAction: recommendedAction,
+            severity: severity,
+            emotionalIntent: emotionalIntent,
+            userValueScore: userValueScore,
+            confidence: confidence,
+            surfaces: surfaces,
+            relatedExerciseType: relatedExerciseType,
+            relatedGoal: relatedGoal,
+            createdAt: createdAt,
+            sourcePolicyVersion: sourcePolicyVersion,
+            expiresAt: expiresAt,
+            dedupeKey: dedupeKey,
+            deletedAt: deletedAt
+        )
     }
 }
 

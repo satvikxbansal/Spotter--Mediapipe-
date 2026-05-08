@@ -49,7 +49,7 @@ struct WorkoutSummaryView: View {
         .background(Theme.Colors.background.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: Theme.Spacing.sm) {
-                if historySummary != nil {
+                if visibleHistorySummary != nil {
                     Button {
                         HapticsEngine.shared.buttonTap()
                         isShowingDetail = true
@@ -73,8 +73,8 @@ struct WorkoutSummaryView: View {
             .background(Theme.Colors.background)
         }
         .sheet(isPresented: $isShowingDetail) {
-            if let historySummary {
-                WorkoutDetailSheetView(summary: historySummary)
+            if let visibleHistorySummary {
+                WorkoutDetailSheetView(summary: visibleHistorySummary)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
@@ -90,6 +90,14 @@ struct WorkoutSummaryView: View {
             .presentationDragIndicator(.visible)
         }
         .preferredColorScheme(.dark)
+    }
+
+    private var visibleHistorySummary: WorkoutSessionSummary? {
+        guard let historySummary else { return nil }
+        if historyStore.fetchSummaryIncludingDeleted(id: historySummary.id)?.isDeleted == true {
+            return nil
+        }
+        return historyStore.fetchSummary(id: historySummary.id) ?? historySummary
     }
 
     private var header: some View {
@@ -498,4 +506,6 @@ private struct WorkoutSummaryExerciseRow: View {
     )
     .environmentObject(InsightStore())
     .environmentObject(WorkoutHistoryStore())
+    .environmentObject(CalibrationStore())
+    .environmentObject(TrophyStore())
 }

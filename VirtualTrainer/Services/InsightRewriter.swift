@@ -174,7 +174,8 @@ nonisolated extension AIInsight {
             createdAt: createdAt,
             sourcePolicyVersion: sourcePolicyVersion,
             expiresAt: expiresAt,
-            dedupeKey: dedupeKey
+            dedupeKey: dedupeKey,
+            deletedAt: deletedAt
         )
     }
 }

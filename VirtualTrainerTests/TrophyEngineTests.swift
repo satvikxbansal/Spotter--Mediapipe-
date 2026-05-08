@@ -315,6 +315,62 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertFalse(secondEvents.contains { $0.trophyId == TrophyDefinitionCatalog.ID.spark })
     }
 
+    func testDeletedWorkoutRecomputeDoesNotRetractAlreadyEarnedTrophyState() {
+        let summary = makeSummary(idSuffix: "3051", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
+        let earned = engine.updateAll(
+            history: [summary],
+            calibrationStatus: .notStarted,
+            now: date(year: 2026, month: 5, day: 1, hour: 11)
+        )
+
+        let afterDelete = engine.updateAll(
+            history: [],
+            calibrationStatus: .notStarted,
+            previousSnapshot: earned.snapshot,
+            now: date(year: 2026, month: 5, day: 1, hour: 12)
+        )
+
+        XCTAssertTrue(progress(TrophyDefinitionCatalog.ID.spark, in: afterDelete).earned)
+        XCTAssertTrue(afterDelete.newlyEarnedEvents.isEmpty)
+    }
+
+    func testDebugRecalculationCanRetractSampleOnlyTrophies() {
+        let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
+        let calibratedAt = date(year: 2026, month: 5, day: 1, hour: 9)
+        let sampleWorkoutAt = date(year: 2026, month: 5, day: 1, hour: 10)
+        let clearedAt = date(year: 2026, month: 5, day: 1, hour: 11)
+        let sampleSummary = makeSummary(idSuffix: "3061", endedAt: sampleWorkoutAt)
+
+        store.updateAll(
+            history: [],
+            calibrationStatus: .completed,
+            now: calibratedAt
+        )
+        let calibratedEarnedAt = store.snapshot.progress(for: TrophyDefinitionCatalog.ID.calibrated)?.earnedAt
+        store.updateAll(
+            history: [sampleSummary],
+            calibrationStatus: .completed,
+            now: sampleWorkoutAt
+        )
+
+        XCTAssertTrue(store.snapshot.progress(for: TrophyDefinitionCatalog.ID.spark)?.earned ?? false)
+
+        XCTAssertTrue(
+            store.recalculateForDebug(
+                history: [],
+                calibrationStatus: .completed,
+                now: clearedAt
+            )
+        )
+
+        XCTAssertFalse(store.snapshot.progress(for: TrophyDefinitionCatalog.ID.spark)?.earned ?? true)
+        XCTAssertTrue(store.snapshot.progress(for: TrophyDefinitionCatalog.ID.calibrated)?.earned ?? false)
+        XCTAssertEqual(
+            store.snapshot.progress(for: TrophyDefinitionCatalog.ID.calibrated)?.earnedAt,
+            calibratedEarnedAt
+        )
+    }
+
     func testTrophyProgressPersistsAfterReload() {
         let url = temporaryTrophyURL()
         let summary = makeSummary(idSuffix: "3101", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))

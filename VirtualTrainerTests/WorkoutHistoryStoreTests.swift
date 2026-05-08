@@ -89,6 +89,28 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         let decoded = try decoder.decode(WorkoutSessionSummary.self, from: data)
 
         XCTAssertEqual(decoded, summary)
+        XCTAssertNil(decoded.deletedAt)
+    }
+
+    func testSummaryTombstoneHelpersAndCodableRoundtrip() throws {
+        let encoder = JSONEncoder()
+        let decoder = JSONDecoder()
+        encoder.dateEncodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .iso8601
+        let deletedAt = Date(timeIntervalSince1970: 1_776_201_000)
+        let summary = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001008") ?? UUID(),
+            title: "Deleted Roundtrip",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_300)
+        )
+
+        let deleted = summary.markedDeleted(at: deletedAt)
+        let decoded = try decoder.decode(WorkoutSessionSummary.self, from: try encoder.encode(deleted))
+
+        XCTAssertTrue(deleted.isDeleted)
+        XCTAssertEqual(decoded.deletedAt, deletedAt)
+        XCTAssertNil(decoded.restored().deletedAt)
+        XCTAssertFalse(decoded.restored().isDeleted)
     }
 
     func testOldWorkoutSessionSummaryJSONDecodesWithEvidenceDefaults() throws {
@@ -145,6 +167,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(decoded.totalHighSeverityCues, 0)
         XCTAssertTrue(decoded.exerciseSummaries.first?.repQualityEvents.isEmpty ?? false)
         XCTAssertNotNil(decoded.exerciseSummaries.first?.cueEvents.first?.id)
+        XCTAssertNil(decoded.deletedAt)
     }
 
     func testOlderWorkoutSessionSummaryJSONDecodesWithoutCreatedAt() throws {
@@ -181,6 +204,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(decoded.createdAt, decoded.endedAt)
         XCTAssertEqual(decoded.workoutOutcome, .freeAnalysisSaved)
         XCTAssertEqual(decoded.exerciseSummaries.first?.cueEvents, [])
+        XCTAssertNil(decoded.deletedAt)
     }
 
     func testRepQualityEventCodableRoundtrip() throws {
@@ -396,6 +420,163 @@ final class WorkoutHistoryStoreTests: XCTestCase {
 
         XCTAssertEqual(firstSummary.id, secondSummary.id)
         XCTAssertEqual(store.fetchRecentSummaries().count, 1)
+    }
+
+    func testAddSummaryUpsertsByID() throws {
+        let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
+        let id = UUID(uuidString: "00000000-0000-0000-0000-000000001085") ?? UUID()
+        let first = makeStoredSummary(
+            id: id,
+            title: "Original",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_000),
+            totalReps: 8
+        )
+        let replacement = makeStoredSummary(
+            id: id,
+            title: "Replacement",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_100),
+            totalReps: 16
+        )
+
+        XCTAssertTrue(store.addSummary(first))
+        XCTAssertTrue(store.addSummary(replacement))
+
+        XCTAssertEqual(store.fetchRecentSummaries().count, 1)
+        XCTAssertEqual(store.fetchSummary(id: id)?.title, "Replacement")
+        XCTAssertEqual(store.fetchSummary(id: id)?.totalReps, 16)
+    }
+
+    func testDeleteSummaryHidesVisibleQueriesButKeepsTombstoneAndRestoreReturnsIt() throws {
+        let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
+        let deletedAt = Date(timeIntervalSince1970: 1_776_201_100)
+        let summary = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001086") ?? UUID(),
+            title: "Soft Delete",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_000)
+        )
+
+        XCTAssertTrue(store.addSummary(summary))
+        XCTAssertEqual(store.summaries.map(\.id), [summary.id])
+        XCTAssertTrue(store.deleteSummary(id: summary.id, deletedAt: deletedAt))
+
+        XCTAssertTrue(store.summaries.isEmpty)
+        XCTAssertTrue(store.fetchRecentSummaries().isEmpty)
+        XCTAssertNil(store.fetchSummary(id: summary.id))
+        XCTAssertEqual(store.fetchSummaryIncludingDeleted(id: summary.id)?.deletedAt, deletedAt)
+        XCTAssertEqual(store.allSummariesIncludingTombstones().map(\.id), [summary.id])
+        XCTAssertEqual(store.fetchDeletedSummaries().map(\.id), [summary.id])
+        XCTAssertEqual(store.fetchDirtyOrDeletedSummaries().map(\.id), [summary.id])
+
+        XCTAssertTrue(store.restoreSummary(id: summary.id))
+        XCTAssertEqual(store.summaries.map(\.id), [summary.id])
+        XCTAssertNil(store.fetchSummary(id: summary.id)?.deletedAt)
+    }
+
+    func testPurgeTombstonesRemovesOnlyDeletedRecordsOlderThanCutoff() throws {
+        let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
+        let cutoff = Date(timeIntervalSince1970: 1_776_201_000)
+        let oldDeleted = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001087") ?? UUID(),
+            title: "Old Deleted",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_000)
+        ).markedDeleted(at: cutoff.addingTimeInterval(-1))
+        let recentDeleted = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001088") ?? UUID(),
+            title: "Recent Deleted",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_100)
+        ).markedDeleted(at: cutoff)
+        let active = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001089") ?? UUID(),
+            title: "Active",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_200)
+        )
+
+        XCTAssertTrue(store.addSummary(oldDeleted))
+        XCTAssertTrue(store.addSummary(recentDeleted))
+        XCTAssertTrue(store.addSummary(active))
+
+        XCTAssertEqual(store.purgeTombstones(olderThan: cutoff), 1)
+
+        XCTAssertNil(store.fetchSummaryIncludingDeleted(id: oldDeleted.id))
+        XCTAssertNotNil(store.fetchSummaryIncludingDeleted(id: recentDeleted.id))
+        XCTAssertNotNil(store.fetchSummary(id: active.id))
+        XCTAssertEqual(store.fetchDeletedSummaries().map(\.id), [recentDeleted.id])
+    }
+
+    func testStatsAndRecentHistoryItemsIgnoreDeletedWorkouts() throws {
+        let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
+        let visible = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001090") ?? UUID(),
+            title: "Visible",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_300),
+            totalReps: 10,
+            averageFormScore: 90
+        )
+        let deleted = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001091") ?? UUID(),
+            title: "Deleted",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_400),
+            totalReps: 50,
+            averageFormScore: 50
+        )
+
+        XCTAssertTrue(store.addSummary(visible))
+        XCTAssertTrue(store.addSummary(deleted))
+        XCTAssertTrue(store.deleteSummary(id: deleted.id, deletedAt: Date(timeIntervalSince1970: 1_776_201_200)))
+
+        let stats = store.aggregateStats(now: Date(timeIntervalSince1970: 1_776_200_500))
+        XCTAssertEqual(stats.sessionCount, 1)
+        XCTAssertEqual(stats.totalReps, 10)
+        XCTAssertEqual(stats.averageFormScore, 90)
+        XCTAssertEqual(store.recentWorkoutHistoryItems(limit: 10).map(\.id), [visible.id])
+    }
+
+    func testRemoveSummariesForDebugPhysicallyRemovesOnlyMatchingRecords() throws {
+        let url = temporaryHistoryURL()
+        let store = WorkoutHistoryStore(fileURL: url)
+        let sample = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001093") ?? UUID(),
+            title: "Sample",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_500)
+        )
+        let kept = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001094") ?? UUID(),
+            title: "Real",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_600)
+        )
+
+        XCTAssertTrue(store.addSummary(sample))
+        XCTAssertTrue(store.addSummary(kept))
+        XCTAssertTrue(store.removeSummariesForDebug(ids: [sample.id]))
+
+        XCTAssertNil(store.fetchSummary(id: sample.id))
+        XCTAssertNil(store.fetchSummaryIncludingDeleted(id: sample.id))
+        XCTAssertEqual(store.fetchRecentSummaries().map(\.id), [kept.id])
+
+        let reloaded = WorkoutHistoryStore(fileURL: url)
+        XCTAssertNil(reloaded.fetchSummaryIncludingDeleted(id: sample.id))
+        XCTAssertEqual(reloaded.fetchRecentSummaries().map(\.id), [kept.id])
+    }
+
+    func testPersistedJSONKeepsTombstonesAfterReload() throws {
+        let url = temporaryHistoryURL()
+        let store = WorkoutHistoryStore(fileURL: url)
+        let deletedAt = Date(timeIntervalSince1970: 1_776_201_300)
+        let summary = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001092") ?? UUID(),
+            title: "Reload Tombstone",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_500)
+        )
+
+        XCTAssertTrue(store.addSummary(summary))
+        XCTAssertTrue(store.deleteSummary(id: summary.id, deletedAt: deletedAt))
+
+        let reloaded = WorkoutHistoryStore(fileURL: url)
+
+        XCTAssertTrue(reloaded.summaries.isEmpty)
+        XCTAssertNil(reloaded.fetchSummary(id: summary.id))
+        XCTAssertEqual(reloaded.fetchSummaryIncludingDeleted(id: summary.id)?.deletedAt, deletedAt)
+        XCTAssertEqual(reloaded.allSummariesIncludingTombstones().map(\.id), [summary.id])
     }
 
     func testFailedSaveDoesNotExposeUnsavedSummary() throws {

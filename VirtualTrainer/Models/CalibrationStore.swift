@@ -11,7 +11,8 @@ final class CalibrationStore: ObservableObject {
     private let decoder = JSONDecoder()
 
     var status: CalibrationStatus {
-        record?.status ?? .notStarted
+        guard record?.isDeleted != true else { return .notStarted }
+        return record?.status ?? .notStarted
     }
 
     var shouldShowCalibrationGate: Bool {

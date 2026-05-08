@@ -36,6 +36,7 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
     let visibilityPassed: Bool
     let averageFormScore: Double?
     let notes: String?
+    let deletedAt: Date?
 
     init(
         id: UUID = UUID(),
@@ -47,7 +48,8 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
         completedAt: Date,
         visibilityPassed: Bool,
         averageFormScore: Double?,
-        notes: String? = nil
+        notes: String? = nil,
+        deletedAt: Date? = nil
     ) {
         self.id = id
         self.status = status
@@ -59,13 +61,27 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
         self.visibilityPassed = visibilityPassed
         self.averageFormScore = averageFormScore.map { max(0, min($0, 100)) }
         self.notes = notes
+        self.deletedAt = deletedAt
     }
 
     var isSuccessfulCalibration: Bool {
-        status == .completed &&
+        !isDeleted &&
+            status == .completed &&
             targetReps > 0 &&
             completedReps >= targetReps &&
             visibilityPassed
+    }
+
+    var isDeleted: Bool {
+        deletedAt != nil
+    }
+
+    func markedDeleted(at date: Date) -> CalibrationRecord {
+        copy(deletedAt: date)
+    }
+
+    func restored() -> CalibrationRecord {
+        copy(deletedAt: nil)
     }
 
     static func completed(
@@ -132,6 +148,24 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
             visibilityPassed: visibilityPassed,
             averageFormScore: averageFormScore,
             notes: notes
+        )
+    }
+}
+
+nonisolated private extension CalibrationRecord {
+    func copy(deletedAt: Date?) -> CalibrationRecord {
+        CalibrationRecord(
+            id: id,
+            status: status,
+            exerciseType: exerciseType,
+            targetReps: targetReps,
+            completedReps: completedReps,
+            startedAt: startedAt,
+            completedAt: completedAt,
+            visibilityPassed: visibilityPassed,
+            averageFormScore: averageFormScore,
+            notes: notes,
+            deletedAt: deletedAt
         )
     }
 }

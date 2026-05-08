@@ -13,6 +13,10 @@ struct ProfileView: View {
     @State private var profileInsights: [AIInsight] = []
     @State private var weeklyRecap: WeeklyRecap?
     @State private var selectedInsightEvidence: AIInsight?
+    @State private var pendingDeleteSummary: WorkoutSessionSummary?
+    @State private var isConfirmingHistoryDelete = false
+    @State private var isSampleDataEnabled = false
+    @State private var debugStatusMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -29,13 +33,28 @@ struct ProfileView: View {
             .navigationDestination(isPresented: $isShowingAllHistory) {
                 WorkoutHistoryListView(
                     summaries: historyStore.fetchRecentSummaries(limit: historyStore.summaries.count),
-                    onSelect: openSummary
+                    onSelect: openSummary,
+                    onDelete: requestDelete
                 )
             }
             .sheet(item: $selectedSummary) { summary in
                 WorkoutDetailSheetView(summary: summary)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+            .confirmationDialog(
+                "Delete Workout?",
+                isPresented: $isConfirmingHistoryDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete Workout", role: .destructive) {
+                    if let pendingDeleteSummary {
+                        deleteSummary(pendingDeleteSummary)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes the workout from your visible history.")
             }
             .sheet(item: $selectedInsightEvidence) { insight in
                 InsightEvidenceSheetView(
@@ -150,6 +169,7 @@ struct ProfileView: View {
                 WorkoutHistorySection(
                     summaries: historyStore.fetchRecentSummaries(limit: 5),
                     onSelect: openSummary,
+                    onDelete: requestDelete,
                     onViewAll: {
                         HapticsEngine.shared.buttonTap()
                         isShowingAllHistory = true
@@ -159,6 +179,9 @@ struct ProfileView: View {
                 SettingsDebugSection(
                     profile: profile,
                     calibrationStatus: calibrationStore.status,
+                    isSampleDataEnabled: isSampleDataEnabled,
+                    debugStatusMessage: debugStatusMessage,
+                    onSampleDataToggle: setSampleDataEnabledForTesting,
                     onResetOnboarding: onboardingStore.resetOnboarding,
                     onResetCalibration: calibrationStore.resetForDebug
                 )
@@ -173,6 +196,7 @@ struct ProfileView: View {
         guard let profile = onboardingStore.profile else {
             profileInsights = []
             weeklyRecap = nil
+            isSampleDataEnabled = false
             return
         }
         let now = Date()
@@ -183,6 +207,10 @@ struct ProfileView: View {
         )
         weeklyRecap = makeWeeklyRecap(profile: profile, now: now)
         refreshProfileInsights(profile: profile, now: now)
+        isSampleDataEnabled = LocalUITestingSampleData.isPresent(
+            history: historyStore.summaries,
+            insights: insightStore.recentInsights
+        )
     }
 
     private func refreshTrophies() {
@@ -259,6 +287,120 @@ struct ProfileView: View {
         ) else { return }
         HapticsEngine.shared.buttonTap()
         selectedSummary = summary
+    }
+
+    private func requestDelete(_ summary: WorkoutSessionSummary) {
+        HapticsEngine.shared.buttonTap()
+        pendingDeleteSummary = summary
+        isConfirmingHistoryDelete = true
+    }
+
+    private func setSampleDataEnabledForTesting(_ isEnabled: Bool) {
+        if isEnabled {
+            loadSampleDataForTesting()
+        } else {
+            clearSampleDataForTesting()
+        }
+    }
+
+    private func loadSampleDataForTesting() {
+        guard let profile = onboardingStore.profile else { return }
+
+        debugStatusMessage = nil
+        let now = Date()
+        let sampleHistory = LocalUITestingSampleData.workoutHistory(
+            now: now,
+            coach: profile.preferredCoach.coachPersonality
+        )
+        let didSaveHistory = sampleHistory.reduce(true) { didSaveAll, summary in
+            historyStore.addSummary(summary) && didSaveAll
+        }
+
+        guard didSaveHistory else {
+            debugStatusMessage = historyStore.persistenceError ?? "Could not save sample workout history."
+            return
+        }
+
+        trophyStore.updateAll(
+            history: historyStore.summaries,
+            calibrationStatus: calibrationStore.status,
+            now: now
+        )
+        let didSaveInsights = insightStore.seedInsightsForDebug(
+            LocalUITestingSampleData.insights(
+                for: sampleHistory,
+                profile: profile,
+                now: now
+            ),
+            replacingInsightsReferencing: LocalUITestingSampleData.workoutIDs,
+            now: now
+        )
+        guard didSaveInsights else {
+            debugStatusMessage = insightStore.persistenceError ?? "Could not save sample coach insights."
+            return
+        }
+        refreshProfileData()
+        isSampleDataEnabled = true
+        debugStatusMessage = "Loaded 4 sample workouts and 3 coach insights."
+        HapticsEngine.shared.successRipple()
+    }
+
+    private func clearSampleDataForTesting() {
+        debugStatusMessage = nil
+        let sampleWorkoutIDs = LocalUITestingSampleData.workoutIDs
+        let now = Date()
+
+        guard historyStore.removeSummariesForDebug(ids: sampleWorkoutIDs) else {
+            debugStatusMessage = historyStore.persistenceError ?? "Could not clear sample workout history."
+            return
+        }
+        guard insightStore.removeInsightsForDebug(
+            dedupeKeys: LocalUITestingSampleData.insightDedupeKeys,
+            referencingWorkoutIds: sampleWorkoutIDs
+        ) else {
+            debugStatusMessage = insightStore.persistenceError ?? "Could not clear sample coach insights."
+            return
+        }
+        guard trophyStore.recalculateForDebug(
+            history: historyStore.summaries,
+            calibrationStatus: calibrationStore.status,
+            now: now
+        ) else {
+            debugStatusMessage = trophyStore.persistenceError ?? "Could not refresh trophies after clearing sample data."
+            return
+        }
+
+        if let selectedSummary, sampleWorkoutIDs.contains(selectedSummary.id) {
+            self.selectedSummary = nil
+        }
+        if let pendingDeleteSummary, sampleWorkoutIDs.contains(pendingDeleteSummary.id) {
+            self.pendingDeleteSummary = nil
+            isConfirmingHistoryDelete = false
+        }
+        if let selectedInsightEvidence,
+           LocalUITestingSampleData.isSampleInsight(selectedInsightEvidence) {
+            self.selectedInsightEvidence = nil
+        }
+
+        refreshProfileData()
+        isSampleDataEnabled = false
+        debugStatusMessage = "Cleared sample workouts and coach insights."
+        HapticsEngine.shared.successRipple()
+    }
+
+    private func deleteSummary(_ summary: WorkoutSessionSummary) {
+        guard historyStore.deleteSummary(id: summary.id) else { return }
+        _ = insightStore.invalidateInsightsReferencingWorkout(id: summary.id)
+        trophyStore.updateAll(
+            history: historyStore.summaries,
+            calibrationStatus: calibrationStore.status
+        )
+        if selectedSummary?.id == summary.id {
+            selectedSummary = nil
+        }
+        pendingDeleteSummary = nil
+        refreshProfileData()
+        HapticsEngine.shared.successRipple()
     }
 }
 
@@ -975,6 +1117,7 @@ private struct TrainingSignalRow: View {
 private struct WorkoutHistorySection: View {
     let summaries: [WorkoutSessionSummary]
     let onSelect: (UUID) -> Void
+    let onDelete: (WorkoutSessionSummary) -> Void
     let onViewAll: () -> Void
 
     var body: some View {
@@ -1001,12 +1144,27 @@ private struct WorkoutHistorySection: View {
             } else {
                 VStack(spacing: Theme.Spacing.sm) {
                     ForEach(summaries) { summary in
-                        Button {
-                            onSelect(summary.id)
-                        } label: {
-                            ProfileWorkoutHistoryRow(summary: summary)
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Button {
+                                onSelect(summary.id)
+                            } label: {
+                                ProfileWorkoutHistoryRow(summary: summary)
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity)
+
+                            Button(role: .destructive) {
+                                onDelete(summary)
+                            } label: {
+                                Image(systemName: "trash.fill")
+                                    .font(.system(size: 14, weight: .black))
+                                    .foregroundStyle(Theme.Colors.danger)
+                                    .frame(width: 44, height: 44)
+                                    .background(Theme.Colors.surface)
+                                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                            }
+                            .accessibilityLabel("Delete \(summary.title)")
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -1017,6 +1175,7 @@ private struct WorkoutHistorySection: View {
 private struct WorkoutHistoryListView: View {
     let summaries: [WorkoutSessionSummary]
     let onSelect: (UUID) -> Void
+    let onDelete: (WorkoutSessionSummary) -> Void
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -1029,12 +1188,27 @@ private struct WorkoutHistoryListView: View {
                     )
                 } else {
                     ForEach(summaries) { summary in
-                        Button {
-                            onSelect(summary.id)
-                        } label: {
-                            ProfileWorkoutHistoryRow(summary: summary)
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Button {
+                                onSelect(summary.id)
+                            } label: {
+                                ProfileWorkoutHistoryRow(summary: summary)
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity)
+
+                            Button(role: .destructive) {
+                                onDelete(summary)
+                            } label: {
+                                Image(systemName: "trash.fill")
+                                    .font(.system(size: 14, weight: .black))
+                                    .foregroundStyle(Theme.Colors.danger)
+                                    .frame(width: 44, height: 44)
+                                    .background(Theme.Colors.surface)
+                                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                            }
+                            .accessibilityLabel("Delete \(summary.title)")
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -1104,6 +1278,9 @@ private struct ProfileWorkoutHistoryRow: View {
 private struct SettingsDebugSection: View {
     let profile: UserProfile
     let calibrationStatus: CalibrationStatus
+    let isSampleDataEnabled: Bool
+    let debugStatusMessage: String?
+    let onSampleDataToggle: (Bool) -> Void
     let onResetOnboarding: () -> Void
     let onResetCalibration: () -> Void
 
@@ -1115,11 +1292,36 @@ private struct SettingsDebugSection: View {
                 ProfileInfoRow(label: "Equipment", value: profile.equipment.map(\.displayName).joined(separator: ", "))
                 ProfileInfoRow(label: "Calibration", value: calibrationStatus.displayName)
 
+                Toggle(
+                    isOn: Binding(
+                        get: { isSampleDataEnabled },
+                        set: onSampleDataToggle
+                    )
+                ) {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
+                        Text("Sample UI Data")
+                            .font(.system(size: 12, weight: .black))
+                            .tracking(1.0)
+                            .textCase(.uppercase)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text(isSampleDataEnabled ? "Loaded for local UI testing" : "Off")
+                            .caption()
+                    }
+                }
+                .toggleStyle(.switch)
+                .tint(Theme.Colors.accent)
+
                 HStack(spacing: Theme.Spacing.sm) {
                     Button("Reset onboarding", action: onResetOnboarding)
                         .buttonStyle(CompactDebugButtonStyle())
                     Button("Reset calibration", action: onResetCalibration)
                         .buttonStyle(CompactDebugButtonStyle())
+                }
+
+                if let debugStatusMessage {
+                    Text(debugStatusMessage)
+                        .caption()
+                        .foregroundStyle(statusColor(for: debugStatusMessage))
                 }
 
                 Text("Debug resets only clear local onboarding or calibration state.")
@@ -1137,6 +1339,12 @@ private struct SettingsDebugSection: View {
         .background(Theme.Colors.surface.opacity(0.62))
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .tint(Theme.Colors.textSecondary)
+    }
+
+    private func statusColor(for message: String) -> Color {
+        message.localizedCaseInsensitiveContains("could not")
+            ? Theme.Colors.danger
+            : Theme.Colors.positive
     }
 }
 
@@ -1158,11 +1366,17 @@ private struct ProfileInfoRow: View {
 }
 
 private struct CompactDebugButtonStyle: ButtonStyle {
+    let foregroundStyle: Color
+
+    init(foregroundStyle: Color = Theme.Colors.danger) {
+        self.foregroundStyle = foregroundStyle
+    }
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11, weight: .black))
             .textCase(.uppercase)
-            .foregroundStyle(Theme.Colors.danger)
+            .foregroundStyle(foregroundStyle)
             .frame(maxWidth: .infinity, minHeight: 38)
             .background(Theme.Colors.surfaceRaised)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
@@ -1262,6 +1476,424 @@ private enum ProfileFormat {
     static func formText(_ score: Double?) -> String {
         guard let score else { return "N/A" }
         return "\(Int(score.rounded()))%"
+    }
+}
+
+private enum LocalUITestingSampleData {
+    static let strengthWorkoutID = fixedUUID("00000000-0000-0000-0000-00000000A101")
+    static let coreWorkoutID = fixedUUID("00000000-0000-0000-0000-00000000A102")
+    static let pushupWorkoutID = fixedUUID("00000000-0000-0000-0000-00000000A103")
+    static let lowerBodyWorkoutID = fixedUUID("00000000-0000-0000-0000-00000000A104")
+    static let workoutIDs: Set<UUID> = [
+        strengthWorkoutID,
+        coreWorkoutID,
+        pushupWorkoutID,
+        lowerBodyWorkoutID
+    ]
+    static let insightDedupeKeys: Set<String> = [
+        "debug.sample.consistency",
+        "debug.sample.pushup-brace",
+        "debug.sample.squat-quality"
+    ]
+
+    static func workoutHistory(
+        now: Date,
+        coach: CoachPersonality
+    ) -> [WorkoutSessionSummary] {
+        [
+            makeRepSummary(
+                id: strengthWorkoutID,
+                planId: fixedUUID("00000000-0000-0000-0000-00000000B101"),
+                title: "Quick Strength Check",
+                exerciseType: .squat,
+                dayOffset: 0,
+                hour: 18,
+                minute: 15,
+                targetReps: 12,
+                scores: [82, 84, 86, 88, 90, 91, 92, 89, 91, 93, 94, 92],
+                cueMessage: "Keep knees tracking over toes",
+                cueSeverity: .info,
+                goal: "Build clean strength.",
+                coach: coach,
+                now: now
+            ),
+            makeHoldSummary(
+                id: coreWorkoutID,
+                planId: fixedUUID("00000000-0000-0000-0000-00000000B102"),
+                title: "Core Hold Builder",
+                exerciseType: .plank,
+                dayOffset: -1,
+                hour: 19,
+                minute: 0,
+                targetHoldSeconds: 90,
+                achievedHoldSeconds: 105,
+                form: 86,
+                cueMessage: "Press the floor away and keep breathing",
+                cueSeverity: .info,
+                goal: "Build a steadier core base.",
+                coach: coach,
+                now: now
+            ),
+            makeRepSummary(
+                id: pushupWorkoutID,
+                planId: nil,
+                title: "Push-Up Form Check",
+                mode: .freeAnalysis,
+                exerciseType: .pushup,
+                dayOffset: -3,
+                hour: 17,
+                minute: 45,
+                targetReps: 14,
+                scores: [74, 76, 79, 81, 83, 84, 82, 80, 84, 86, 87, 88, 89, 87],
+                cueMessage: "Keep your core braced",
+                cueSeverity: .warning,
+                goal: nil,
+                coach: coach,
+                now: now
+            ),
+            makeRepSummary(
+                id: lowerBodyWorkoutID,
+                planId: fixedUUID("00000000-0000-0000-0000-00000000B104"),
+                title: "Lower Body Baseline",
+                exerciseType: .lunge,
+                dayOffset: -8,
+                hour: 18,
+                minute: 30,
+                targetReps: 20,
+                scores: [72, 74, 77, 78, 80, 82, 81, 83, 84, 82, 80, 79, 81, 83, 84],
+                cueMessage: "Slow the descent before you drive up",
+                cueSeverity: .warning,
+                goal: "Find a safe lower-body baseline.",
+                coach: coach,
+                now: now
+            )
+        ]
+    }
+
+    static func isPresent(
+        history: [WorkoutSessionSummary],
+        insights: [AIInsight]
+    ) -> Bool {
+        history.contains { workoutIDs.contains($0.id) } ||
+            insights.contains { !$0.isDeleted && isSampleInsight($0) }
+    }
+
+    static func isSampleInsight(_ insight: AIInsight) -> Bool {
+        insightDedupeKeys.contains(insight.dedupeKey) ||
+            insight.evidence.contains { evidence in
+                guard let workoutId = evidence.workoutId else { return false }
+                return workoutIDs.contains(workoutId)
+            }
+    }
+
+    static func insights(
+        for history: [WorkoutSessionSummary],
+        profile: UserProfile,
+        now: Date
+    ) -> [AIInsight] {
+        guard history.count >= 4 else { return [] }
+        let strength = history[0]
+        let core = history[1]
+        let pushup = history[2]
+
+        return [
+            AIInsight(
+                type: .consistency,
+                headline: "Two straight training days are live",
+                message: "The sample history gives the dashboard an active streak, recent workouts, and enough week-level volume to test the filled-in state.",
+                shortMessage: "Sample streak and recent history are ready.",
+                evidence: [
+                    InsightEvidence(
+                        metric: "sampleStreak",
+                        value: "2 days",
+                        comparison: "Workouts saved today and yesterday",
+                        workoutId: strength.id,
+                        exerciseType: strength.primaryExerciseType,
+                        confidence: 0.94
+                    ),
+                    InsightEvidence(
+                        metric: "sampleCoreHold",
+                        value: "1:45 hold",
+                        comparison: "Yesterday's core session",
+                        workoutId: core.id,
+                        exerciseType: core.primaryExerciseType,
+                        confidence: 0.9
+                    )
+                ],
+                recommendedAction: .protectStreakWithSmartStart,
+                severity: .positive,
+                emotionalIntent: .reinforceConsistency,
+                userValueScore: 132,
+                confidence: 0.92,
+                surfaces: [.dashboard, .profile],
+                relatedExerciseType: strength.primaryExerciseType,
+                relatedGoal: profile.primaryGoal,
+                createdAt: now.addingTimeInterval(-240),
+                dedupeKey: "debug.sample.consistency"
+            ),
+            AIInsight(
+                type: .formCorrection,
+                headline: "Push-ups still want a braced midline",
+                message: "The sample form-check includes a repeated core-bracing cue, so the evidence sheet and insight controls have a caution case to render.",
+                shortMessage: "Core brace cue is ready for testing.",
+                evidence: [
+                    InsightEvidence(
+                        metric: "sampleCue",
+                        value: "Keep your core braced",
+                        comparison: "Warning cue near the middle reps",
+                        workoutId: pushup.id,
+                        exerciseType: .pushup,
+                        setIndex: 1,
+                        repIndex: 7,
+                        confidence: 0.88
+                    )
+                ],
+                recommendedAction: .focusCue,
+                severity: .caution,
+                emotionalIntent: .buildConfidence,
+                userValueScore: 126,
+                confidence: 0.88,
+                surfaces: [.profile, .dashboard],
+                relatedExerciseType: .pushup,
+                relatedGoal: profile.primaryGoal,
+                createdAt: now.addingTimeInterval(-180),
+                dedupeKey: "debug.sample.pushup-brace"
+            ),
+            AIInsight(
+                type: .growthCelebration,
+                headline: "Squat quality is ready for a tiny bump",
+                message: "The latest sample squat set finishes above 90% form, which gives progression cards a positive, evidence-backed coaching story.",
+                shortMessage: "Latest squat set finished clean.",
+                evidence: [
+                    InsightEvidence(
+                        metric: "sampleForm",
+                        value: "90% avg form",
+                        comparison: "Last six scored reps averaged above 91%",
+                        workoutId: strength.id,
+                        exerciseType: .squat,
+                        setIndex: 1,
+                        confidence: 0.93
+                    )
+                ],
+                recommendedAction: .increaseTarget,
+                severity: .positive,
+                emotionalIntent: .celebrateGrowth,
+                userValueScore: 118,
+                confidence: 0.9,
+                surfaces: [.profile, .workoutPreview],
+                relatedExerciseType: .squat,
+                relatedGoal: profile.primaryGoal,
+                createdAt: now.addingTimeInterval(-120),
+                dedupeKey: "debug.sample.squat-quality"
+            )
+        ]
+    }
+
+    private static func makeRepSummary(
+        id: UUID,
+        planId: UUID?,
+        title: String,
+        mode: WorkoutSessionSummaryMode = .plannedWorkout,
+        exerciseType: ExerciseType,
+        dayOffset: Int,
+        hour: Int,
+        minute: Int,
+        targetReps: Int,
+        scores: [Int],
+        cueMessage: String,
+        cueSeverity: CoachCue.Severity,
+        goal: String?,
+        coach: CoachPersonality,
+        now: Date
+    ) -> WorkoutSessionSummary {
+        let endedAt = sampleEndDate(dayOffset: dayOffset, hour: hour, minute: minute, now: now)
+        let durationSeconds = max(420, scores.count * 18 + 180)
+        let startedAt = endedAt.addingTimeInterval(TimeInterval(-durationSeconds))
+        let cueScoreIndex = max(scores.count / 2 - 1, 0)
+        let cueFormScore = scores.indices.contains(cueScoreIndex) ? scores[cueScoreIndex] : nil
+        let cue = CueEvent(
+            timestamp: startedAt.addingTimeInterval(TimeInterval(durationSeconds / 2)),
+            exerciseType: exerciseType,
+            cueMessage: cueMessage,
+            severity: cueSeverity,
+            setIndex: 1,
+            repIndex: scores.isEmpty ? nil : max(min(scores.count, scores.count / 2), 1),
+            secondsIntoSet: TimeInterval(durationSeconds / 2),
+            formScoreAtEvent: cueFormScore
+        )
+        let repQualityEvents = scores.enumerated().map { index, score in
+            RepQualityEvent(
+                exerciseType: exerciseType,
+                setIndex: 1,
+                repIndex: index + 1,
+                timestamp: startedAt.addingTimeInterval(TimeInterval((index + 1) * 16)),
+                secondsIntoSet: TimeInterval((index + 1) * 16),
+                formScore: score,
+                formGrade: formGrade(for: score),
+                phase: "rep",
+                cueMessageNearRep: index == scores.count / 2 ? cueMessage : nil,
+                cueSeverityNearRep: index == scores.count / 2 ? cueSeverity : nil,
+                effortAtRep: min(0.88, 0.38 + Double(index) * 0.025)
+            )
+        }
+        let qualitySummary = SetQualitySummary.build(
+            repQualityEvents: repQualityEvents,
+            cueEvents: [cue]
+        )
+        let exerciseSummary = ExerciseSetSummary(
+            exerciseType: exerciseType,
+            setIndex: 1,
+            target: mode == .plannedWorkout ? .reps(targetReps) : nil,
+            achievedReps: scores.count,
+            achievedHoldSeconds: 0,
+            averageFormScore: qualitySummary.averageFormScore,
+            cueEvents: [cue],
+            qualitySummary: qualitySummary,
+            repQualityEvents: repQualityEvents,
+            completionSource: mode == .plannedWorkout ? .targetMet : nil,
+            completedAt: endedAt,
+            durationSeconds: durationSeconds,
+            peakEffort: repQualityEvents.compactMap(\.effortAtRep).max(),
+            bestCue: cueSeverity == .info ? cueMessage : nil,
+            worstCue: cueSeverity >= .warning ? cueMessage : nil
+        )
+        let completionPercent = mode == .plannedWorkout
+            ? min(Double(scores.count) / Double(max(targetReps, 1)), 1)
+            : nil
+
+        return WorkoutSessionSummary(
+            id: id,
+            mode: mode,
+            planId: planId,
+            planTitle: mode == .plannedWorkout ? title : nil,
+            title: title,
+            goal: goal,
+            coach: coach,
+            startedAt: startedAt,
+            endedAt: endedAt,
+            durationSeconds: durationSeconds,
+            totalReps: scores.count,
+            totalHoldSeconds: 0,
+            averageFormScore: qualitySummary.averageFormScore,
+            completionPercent: completionPercent,
+            exerciseSummaries: [exerciseSummary],
+            topCue: cue,
+            effortSummary: "Sample session captured steady work and a clean form signal.",
+            workoutOutcome: mode == .freeAnalysis ? .freeAnalysisSaved : nil,
+            structuredEffortSummary: StructuredEffortSummary.build(
+                repQualityEvents: repQualityEvents,
+                peakEffort: repQualityEvents.compactMap(\.effortAtRep).max()
+            ),
+            createdAt: endedAt
+        )
+    }
+
+    private static func makeHoldSummary(
+        id: UUID,
+        planId: UUID?,
+        title: String,
+        exerciseType: ExerciseType,
+        dayOffset: Int,
+        hour: Int,
+        minute: Int,
+        targetHoldSeconds: Int,
+        achievedHoldSeconds: Int,
+        form: Double,
+        cueMessage: String,
+        cueSeverity: CoachCue.Severity,
+        goal: String,
+        coach: CoachPersonality,
+        now: Date
+    ) -> WorkoutSessionSummary {
+        let endedAt = sampleEndDate(dayOffset: dayOffset, hour: hour, minute: minute, now: now)
+        let durationSeconds = max(achievedHoldSeconds + 180, 360)
+        let startedAt = endedAt.addingTimeInterval(TimeInterval(-durationSeconds))
+        let cue = CueEvent(
+            timestamp: startedAt.addingTimeInterval(TimeInterval(durationSeconds / 2)),
+            exerciseType: exerciseType,
+            cueMessage: cueMessage,
+            severity: cueSeverity,
+            setIndex: 1,
+            secondsIntoSet: TimeInterval(achievedHoldSeconds / 2),
+            formScoreAtEvent: Int(form.rounded())
+        )
+        let exerciseSummary = ExerciseSetSummary(
+            exerciseType: exerciseType,
+            setIndex: 1,
+            target: .hold(seconds: targetHoldSeconds),
+            achievedReps: 0,
+            achievedHoldSeconds: achievedHoldSeconds,
+            averageFormScore: form,
+            cueEvents: [cue],
+            completedAt: endedAt,
+            durationSeconds: durationSeconds,
+            peakEffort: 0.64,
+            bestCue: cueMessage
+        )
+
+        return WorkoutSessionSummary(
+            id: id,
+            mode: .plannedWorkout,
+            planId: planId,
+            planTitle: title,
+            title: title,
+            goal: goal,
+            coach: coach,
+            startedAt: startedAt,
+            endedAt: endedAt,
+            durationSeconds: durationSeconds,
+            totalReps: 0,
+            totalHoldSeconds: achievedHoldSeconds,
+            averageFormScore: form,
+            completionPercent: min(Double(achievedHoldSeconds) / Double(max(targetHoldSeconds, 1)), 1),
+            exerciseSummaries: [exerciseSummary],
+            topCue: cue,
+            effortSummary: "Sample hold work stayed controlled with a steady brace.",
+            structuredEffortSummary: StructuredEffortSummary(
+                averageEffort: 0.48,
+                peakEffort: 0.64,
+                trend: .steady,
+                source: .faceBlendshapeProxy
+            ),
+            createdAt: endedAt
+        )
+    }
+
+    private static func sampleEndDate(
+        dayOffset: Int,
+        hour: Int,
+        minute: Int,
+        now: Date
+    ) -> Date {
+        guard dayOffset != 0 else {
+            return now.addingTimeInterval(-90 * 60)
+        }
+
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone.current
+        let baseDay = calendar.date(
+            byAdding: .day,
+            value: dayOffset,
+            to: calendar.startOfDay(for: now)
+        ) ?? now
+        return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: baseDay) ?? baseDay
+    }
+
+    private static func formGrade(for score: Int) -> String {
+        switch score {
+        case 90...:
+            return "A"
+        case 80..<90:
+            return "B"
+        case 70..<80:
+            return "C"
+        default:
+            return "D"
+        }
+    }
+
+    private static func fixedUUID(_ value: String) -> UUID {
+        UUID(uuidString: value) ?? UUID()
     }
 }
 

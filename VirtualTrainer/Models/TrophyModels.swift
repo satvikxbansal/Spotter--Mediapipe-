@@ -892,6 +892,7 @@ nonisolated struct TrophyEngine {
         definition: TrophyDefinition,
         now: Date
     ) -> TrophyProgress {
+        // TODO(C6): Move canonical unlocks, plus any admin/debug retraction, to append-only trophy events.
         guard !definition.isComingSoon,
               let previous,
               previous.earned
@@ -1272,6 +1273,57 @@ final class TrophyStore: ObservableObject {
         )
         apply(result)
         return result.newlyEarnedEvents
+    }
+
+    @discardableResult
+    func recalculateForDebug(
+        history: [WorkoutSessionSummary],
+        calibrationStatus: CalibrationStatus,
+        now: Date = Date()
+    ) -> Bool {
+        let previousSnapshot = snapshot
+        let previousUnlockEvents = latestUnlockEvents
+        let result = engine.updateAll(
+            history: history,
+            calibrationStatus: calibrationStatus,
+            previousSnapshot: nil,
+            now: now
+        )
+        let previousById = previousSnapshot.progressByTrophyId
+        let progress = result.snapshot.progress.map { computedProgress in
+            guard computedProgress.earned,
+                  let previous = previousById[computedProgress.trophyId],
+                  previous.earned
+            else { return computedProgress }
+
+            return TrophyProgress(
+                trophyId: computedProgress.trophyId,
+                currentValue: computedProgress.currentValue,
+                targetValue: computedProgress.targetValue,
+                earned: computedProgress.earned,
+                earnedAt: previous.earnedAt ?? computedProgress.earnedAt,
+                lastUpdatedAt: computedProgress.lastUpdatedAt,
+                confidence: computedProgress.confidence,
+                progressLabel: computedProgress.progressLabel
+            )
+        }
+        let newEvents = result.newlyEarnedEvents.filter {
+            previousById[$0.trophyId]?.earned != true
+        }
+        snapshot = TrophyProgressSnapshot(
+            catalogVersion: result.snapshot.catalogVersion,
+            generatedAt: result.snapshot.generatedAt,
+            progress: progress,
+            newlyEarnedEvents: newEvents
+        )
+        latestUnlockEvents = newEvents
+
+        guard persist() else {
+            snapshot = previousSnapshot
+            latestUnlockEvents = previousUnlockEvents
+            return false
+        }
+        return true
     }
 
     func clearLatestUnlockEvents() {

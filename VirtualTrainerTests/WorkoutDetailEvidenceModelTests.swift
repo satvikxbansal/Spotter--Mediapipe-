@@ -239,7 +239,15 @@ private extension WorkoutDetailEvidenceModelTests {
 
     func renderSnapshot(summary: WorkoutSessionSummary, name: String) throws -> UIImage {
         let size = CGSize(width: 390, height: 844)
-        let controller = UIHostingController(rootView: WorkoutDetailSheetView(summary: summary))
+        let historyStore = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
+        _ = historyStore.addSummary(summary)
+        let controller = UIHostingController(
+            rootView: WorkoutDetailSheetView(summary: summary)
+                .environmentObject(CalibrationStore(fileURL: temporaryCalibrationURL()))
+                .environmentObject(historyStore)
+                .environmentObject(TrophyStore(fileURL: temporaryTrophyURL()))
+                .environmentObject(InsightStore(fileURL: temporaryInsightURL()))
+        )
         let window = UIWindow(frame: CGRect(origin: .zero, size: size))
         window.rootViewController = controller
         window.makeKeyAndVisible()
@@ -261,5 +269,29 @@ private extension WorkoutDetailEvidenceModelTests {
 
         window.isHidden = true
         return image
+    }
+
+    func temporaryHistoryURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("WorkoutHistory.json")
+    }
+
+    func temporaryCalibrationURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("CalibrationRecord.json")
+    }
+
+    func temporaryTrophyURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("TrophyProgress.json")
+    }
+
+    func temporaryInsightURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("CoachInsights.json")
     }
 }

@@ -175,7 +175,7 @@ final class InsightStore: ObservableObject {
 
         let generatedDedupeKeys = Set(
             generatedInsights
-                .filter { !$0.isExpired(now: now) && !$0.evidence.isEmpty && $0.surfaces.contains(surface) }
+                .filter { !$0.isDeleted && !$0.isExpired(now: now) && !$0.evidence.isEmpty && $0.surfaces.contains(surface) }
                 .map(\.dedupeKey)
         )
         let candidates = fetchCandidates(for: surface, profile: profile, now: now)
@@ -193,7 +193,7 @@ final class InsightStore: ObservableObject {
     ) -> [AIInsight] {
         Array(
             recentInsights
-                .filter { !$0.isExpired(now: now) && $0.surfaces.contains(surface) }
+                .filter { !$0.isDeleted && !$0.isExpired(now: now) && $0.surfaces.contains(surface) }
                 .sorted {
                     let leftScore = ranker.score(
                         $0,
@@ -271,6 +271,90 @@ final class InsightStore: ObservableObject {
         persist()
     }
 
+    @discardableResult
+    func seedInsightsForDebug(
+        _ insights: [AIInsight],
+        replacingInsightsReferencing workoutIds: Set<UUID> = [],
+        now: Date = Date()
+    ) -> Bool {
+        let previousInsights = recentInsights
+        let previousDeliveryRecords = deliveryRecords
+        let previousEngagementRecords = engagementRecords
+        let sampleKeys = Set(insights.map(\.dedupeKey))
+
+        _ = removeInsightsForDebug(
+            dedupeKeys: sampleKeys,
+            referencingWorkoutIds: workoutIds,
+            shouldPersist: false
+        )
+        for key in sampleKeys.union(keysReferencingWorkoutIds(workoutIds)) {
+            deliveryRecords.removeValue(forKey: key)
+            engagementRecords.removeValue(forKey: key)
+        }
+        ingest(insights, now: now)
+        expireStale(now: now)
+        guard persist() else {
+            recentInsights = previousInsights
+            deliveryRecords = previousDeliveryRecords
+            engagementRecords = previousEngagementRecords
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func removeInsightsForDebug(
+        dedupeKeys: Set<String>,
+        referencingWorkoutIds workoutIds: Set<UUID> = []
+    ) -> Bool {
+        removeInsightsForDebug(
+            dedupeKeys: dedupeKeys,
+            referencingWorkoutIds: workoutIds,
+            shouldPersist: true
+        )
+    }
+
+    @discardableResult
+    func invalidateInsight(dedupeKey: String, deletedAt: Date = Date()) -> Bool {
+        let previousInsights = recentInsights
+        var didInvalidate = false
+        recentInsights = recentInsights.map { insight in
+            guard insight.dedupeKey == dedupeKey, !insight.isDeleted else {
+                return insight
+            }
+            didInvalidate = true
+            return insight.markedDeleted(at: deletedAt)
+        }
+
+        guard didInvalidate else { return false }
+        guard persist() else {
+            recentInsights = previousInsights
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func invalidateInsightsReferencingWorkout(id: UUID, deletedAt: Date = Date()) -> Int {
+        let previousInsights = recentInsights
+        var invalidatedCount = 0
+        recentInsights = recentInsights.map { insight in
+            guard !insight.isDeleted,
+                  insight.evidence.contains(where: { $0.workoutId == id })
+            else { return insight }
+
+            invalidatedCount += 1
+            return insight.markedDeleted(at: deletedAt)
+        }
+
+        guard invalidatedCount > 0 else { return 0 }
+        guard persist() else {
+            recentInsights = previousInsights
+            return 0
+        }
+        return invalidatedCount
+    }
+
     func clearForDebug() {
         recentInsights = []
         deliveryRecords = [:]
@@ -286,7 +370,7 @@ private extension InsightStore {
         now: Date
     ) -> [AIInsight] {
         recentInsights
-            .filter { !$0.isExpired(now: now) && $0.surfaces.contains(surface) }
+            .filter { !$0.isDeleted && !$0.isExpired(now: now) && $0.surfaces.contains(surface) }
             .filter { !wasRecentlyPresented($0, on: surface, now: now) }
             .reduce(into: [String: AIInsight]()) { result, insight in
                 if let existing = result[insight.dedupeKey] {
@@ -342,7 +426,12 @@ private extension InsightStore {
         var byKey = bestInsightsByDedupeKey(recentInsights)
         for insight in insights where !insight.isExpired(now: now) && !insight.evidence.isEmpty {
             if let existing = byKey[insight.dedupeKey] {
-                if insight.userValueScore >= existing.userValueScore || insight.createdAt > existing.createdAt {
+                if existing.isDeleted && !insight.isDeleted {
+                    continue
+                }
+                if shouldPrefer(insight, over: existing) ||
+                    insight.userValueScore >= existing.userValueScore ||
+                    insight.createdAt > existing.createdAt {
                     byKey[insight.dedupeKey] = insight
                 }
             } else {
@@ -350,21 +439,22 @@ private extension InsightStore {
             }
         }
 
-        recentInsights = byKey.values
+        let sortedInsights = byKey.values
             .sorted {
                 if $0.createdAt == $1.createdAt {
                     return $0.userValueScore > $1.userValueScore
                 }
                 return $0.createdAt > $1.createdAt
             }
-            .prefix(80)
-            .map { $0 }
+        let visibleInsights = sortedInsights.filter { !$0.isDeleted }.prefix(80)
+        let deletedInsights = sortedInsights.filter(\.isDeleted)
+        recentInsights = Array(visibleInsights) + deletedInsights
     }
 
     func expireStale(now: Date) {
         let retainedKeys = Set(
             recentInsights
-                .filter { !$0.isExpired(now: now) }
+                .filter { $0.isDeleted || !$0.isExpired(now: now) }
                 .map(\.dedupeKey)
         )
         recentInsights = recentInsights.filter { retainedKeys.contains($0.dedupeKey) }
@@ -498,14 +588,26 @@ private extension InsightStore {
                   insight.sourcePolicyVersion == AIInsight.currentSourcePolicyVersion
             else { return }
             if let existing = result[insight.dedupeKey] {
-                if insight.userValueScore > existing.userValueScore ||
-                    (insight.userValueScore == existing.userValueScore && insight.createdAt > existing.createdAt) {
+                if shouldPrefer(insight, over: existing) {
                     result[insight.dedupeKey] = insight
                 }
             } else {
                 result[insight.dedupeKey] = insight
             }
         }
+    }
+
+    func shouldPrefer(_ candidate: AIInsight, over existing: AIInsight) -> Bool {
+        if candidate.isDeleted != existing.isDeleted {
+            return candidate.isDeleted
+        }
+        if candidate.isDeleted {
+            return (candidate.deletedAt ?? candidate.createdAt) > (existing.deletedAt ?? existing.createdAt)
+        }
+        if candidate.userValueScore != existing.userValueScore {
+            return candidate.userValueScore > existing.userValueScore
+        }
+        return candidate.createdAt > existing.createdAt
     }
 
     func bestDeliveryRecordsByDedupeKey(
@@ -549,5 +651,46 @@ private extension InsightStore {
                 result[record.dedupeKey] = record
             }
         }
+    }
+
+    func removeInsightsForDebug(
+        dedupeKeys: Set<String>,
+        referencingWorkoutIds workoutIds: Set<UUID>,
+        shouldPersist: Bool
+    ) -> Bool {
+        let keysToRemove = dedupeKeys.union(keysReferencingWorkoutIds(workoutIds))
+        guard !keysToRemove.isEmpty else { return true }
+
+        let previousInsights = recentInsights
+        let previousDeliveryRecords = deliveryRecords
+        let previousEngagementRecords = engagementRecords
+        recentInsights.removeAll { keysToRemove.contains($0.dedupeKey) }
+        for key in keysToRemove {
+            deliveryRecords.removeValue(forKey: key)
+            engagementRecords.removeValue(forKey: key)
+        }
+
+        guard shouldPersist else { return true }
+        guard persist() else {
+            recentInsights = previousInsights
+            deliveryRecords = previousDeliveryRecords
+            engagementRecords = previousEngagementRecords
+            return false
+        }
+        return true
+    }
+
+    func keysReferencingWorkoutIds(_ workoutIds: Set<UUID>) -> Set<String> {
+        guard !workoutIds.isEmpty else { return [] }
+        return Set(
+            recentInsights
+                .filter { insight in
+                    insight.evidence.contains { evidence in
+                        guard let workoutId = evidence.workoutId else { return false }
+                        return workoutIds.contains(workoutId)
+                    }
+                }
+                .map(\.dedupeKey)
+        )
     }
 }

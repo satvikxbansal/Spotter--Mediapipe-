@@ -271,6 +271,7 @@ nonisolated struct UserProfile: Identifiable, Codable, Equatable {
     var onboardingCompletedAt: Date
     var createdAt: Date
     var updatedAt: Date
+    var deletedAt: Date?
 
     var ageBracket: AgeBracket {
         Self.ageBracket(for: age)
@@ -321,7 +322,8 @@ nonisolated struct UserProfile: Identifiable, Codable, Equatable {
         profileSchemaVersion: Int = UserProfile.currentProfileSchemaVersion,
         onboardingCompletedAt: Date,
         createdAt: Date,
-        updatedAt: Date
+        updatedAt: Date,
+        deletedAt: Date? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -347,6 +349,24 @@ nonisolated struct UserProfile: Identifiable, Codable, Equatable {
         self.onboardingCompletedAt = onboardingCompletedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.deletedAt = deletedAt
+    }
+
+    var isDeleted: Bool {
+        deletedAt != nil
+    }
+
+    func markedDeleted(at date: Date) -> UserProfile {
+        var copy = self
+        copy.deletedAt = date
+        copy.updatedAt = date
+        return copy
+    }
+
+    func restored() -> UserProfile {
+        var copy = self
+        copy.deletedAt = nil
+        return copy
     }
 }
 
@@ -376,6 +396,7 @@ nonisolated extension UserProfile {
         case onboardingCompletedAt
         case createdAt
         case updatedAt
+        case deletedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -405,7 +426,8 @@ nonisolated extension UserProfile {
             profileSchemaVersion: try container.decodeIfPresent(Int.self, forKey: .profileSchemaVersion) ?? Self.currentProfileSchemaVersion,
             onboardingCompletedAt: try container.decode(Date.self, forKey: .onboardingCompletedAt),
             createdAt: try container.decode(Date.self, forKey: .createdAt),
-            updatedAt: try container.decode(Date.self, forKey: .updatedAt)
+            updatedAt: try container.decode(Date.self, forKey: .updatedAt),
+            deletedAt: try container.decodeIfPresent(Date.self, forKey: .deletedAt)
         )
     }
 
@@ -435,6 +457,7 @@ nonisolated extension UserProfile {
         try container.encode(onboardingCompletedAt, forKey: .onboardingCompletedAt)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
     }
 }
 

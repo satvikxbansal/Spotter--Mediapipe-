@@ -44,6 +44,7 @@ final class OnboardingModelTests: XCTestCase {
         XCTAssertEqual(profile.avatarStyle, .default)
         XCTAssertEqual(profile.onboardingSchemaVersion, UserProfile.currentOnboardingSchemaVersion)
         XCTAssertEqual(profile.profileSchemaVersion, UserProfile.currentProfileSchemaVersion)
+        XCTAssertNil(profile.deletedAt)
     }
 
     func testStatsValidationExplainsImperialWeightBoundary() async {
