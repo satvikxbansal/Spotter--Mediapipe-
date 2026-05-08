@@ -756,3 +756,25 @@ Added backwards-compatible `deletedAt` fields and tombstone helpers to syncable 
 User-facing deletes for future syncable local records should write tombstones first, keep default UI queries on non-deleted projections, and preserve dependent behavior signals unless the product explicitly defines a separate deletion lifecycle.
 
 **Pattern Tags:** #persistence #soft-delete #sync-prep #insights #history
+
+---
+
+### [DL-035] Recover Simulator SpringBoard Crash Loop After Successful Build
+**Date:** 2026-05-08
+**Severity:** warning
+**Category:** xcode-simulator
+**File(s):** `DEBUG_LOG.md`
+
+**Error:**
+Xcode build succeeded, then Run failed with `Simulator device failed to launch satvik.VirtualTrainer`, `NSPOSIXErrorDomain Code=64`, `BSErrorCodeDescription = host down`, and `The system shell probably crashed`. The simulator also showed `SpringBoard quit unexpectedly`.
+
+**Root Cause:**
+The failing iPhone 17 Pro simulator device (`0442BD6F-881D-451A-B764-815DCAD3F78A`) had SpringBoard in a crash loop, not an app launch crash. Fresh crash reports were `SpringBoard-2026-05-08-1711xx.ips` / `SpringBoard-2026-05-08-1713xx.ips`; no matching fresh `VirtualTrainer` crash report existed. The SpringBoard stack crashed in Apple simulator/system-shell code: `FBSDisplayMonitor -> FBDisplayManager -> FBSystemShellInitialize -> SBSystemAppMain`, with `EXC_BREAKPOINT / SIGTRAP`. `launchctl print` reported `successive crashes = 15`, and `simctl launch` failed outside Xcode with the same system-shell message, confirming Xcode was talking to a broken simulator shell rather than hitting app code.
+
+**Fix Applied:**
+Verified the current built `VirtualTrainer.app` could install and launch on a freshly created iPhone 17 Pro simulator, returning a real process id. Then recovered the original simulator non-destructively with `xcrun simctl shutdown 0442BD6F-881D-451A-B764-815DCAD3F78A`, `xcrun simctl boot 0442BD6F-881D-451A-B764-815DCAD3F78A`, `xcrun simctl bootstatus ... -b`, and `xcrun simctl launch ... satvik.VirtualTrainer`, which launched successfully with pid `11985`. Cleaned up the temporary smoke-test simulator afterwards.
+
+**Prevention Rule:**
+When build succeeds but Run fails with `NSPOSIXErrorDomain Code=64` / `host down`, first inspect `~/Library/Logs/DiagnosticReports/SpringBoard-*.ips` and `~/Library/Logs/CoreSimulator/CoreSimulator.log` before rolling back app code. Use `simctl launch` and, if needed, a fresh simulator to distinguish app crashes from SpringBoard/runtime crashes. Recovery order: shutdown/boot the affected simulator, then erase/recreate only if SpringBoard continues crashing. If `simctl launch` works but Xcode Run still fails, temporarily disable View Debugging insertion for the scheme.
+
+**Pattern Tags:** #xcode-simulator #springboard #crash-loop #launch-failure #rca
