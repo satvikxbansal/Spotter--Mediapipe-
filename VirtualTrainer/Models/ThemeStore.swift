@@ -11,6 +11,7 @@ final class ThemeStore: ObservableObject {
     private let writeJournal: LocalWriteJournal
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private let legacyDecoder = JSONDecoder()
     private var currentAccountId: String?
     private var storedEnvelope: ThemeEnvelope?
 
@@ -29,6 +30,8 @@ final class ThemeStore: ObservableObject {
         )
         self.currentAccountId = AccountOwnership.normalizedAccountId(accountId)
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .iso8601
         loadTheme()
     }
 
@@ -137,7 +140,7 @@ final class ThemeStore: ObservableObject {
 
         do {
             let data = try Data(contentsOf: fileURL)
-            if let envelope = try? decoder.decode(ThemeEnvelope.self, from: data) {
+            if let envelope = decodeThemeEnvelope(from: data) {
                 storedEnvelope = envelope
             } else {
                 storedEnvelope = ThemeEnvelope(
@@ -151,6 +154,14 @@ final class ThemeStore: ObservableObject {
             selectedTheme = defaultTheme
             persistenceError = "Could not load theme: \(error.localizedDescription)"
         }
+    }
+
+    private func decodeThemeEnvelope(from data: Data) -> ThemeEnvelope? {
+        if let envelope = try? decoder.decode(ThemeEnvelope.self, from: data) {
+            return envelope
+        }
+
+        return try? legacyDecoder.decode(ThemeEnvelope.self, from: data)
     }
 
     @discardableResult

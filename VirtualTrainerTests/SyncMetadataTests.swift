@@ -246,6 +246,41 @@ final class SyncMetadataTests: XCTestCase {
         XCTAssertEqual(try themeSyncState(at: urls.theme), "localOnly")
     }
 
+    func testThemeStorePersistsSyncMetadataDatesAsISO8601() throws {
+        let urls = makeStoreURLs()
+        let themeStore = ThemeStore(fileURL: urls.theme, defaultTheme: .hyper, accountId: accountId)
+
+        XCTAssertTrue(themeStore.updateSelectedTheme(.warm))
+
+        let data = try Data(contentsOf: urls.theme)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let metadata = try XCTUnwrap(object["syncMetadata"] as? [String: Any])
+        let localUpdatedAt = try XCTUnwrap(metadata["localUpdatedAt"] as? String)
+        XCTAssertNotNil(ISO8601DateFormatter().date(from: localUpdatedAt))
+    }
+
+    func testThemeStoreLoadsLegacyNumericSyncMetadataDates() throws {
+        let url = temporaryURL(named: "LegacyNumericTheme.json")
+        try Data("""
+        {
+          "selectedTheme": "spicy",
+          "accountId": "\(accountId)",
+          "syncMetadata": {
+            "localUpdatedAt": 12345,
+            "lastSyncedAt": 12346,
+            "serverVersion": "legacy-theme-v1",
+            "syncState": "synced",
+            "pendingOperationId": null
+          }
+        }
+        """.utf8).write(to: url)
+
+        let themeStore = ThemeStore(fileURL: url, defaultTheme: .hyper, accountId: accountId)
+
+        XCTAssertEqual(themeStore.selectedTheme, .spicy)
+        XCTAssertNil(themeStore.persistenceError)
+    }
+
     func testConflictPolicyDocumentExists() throws {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
