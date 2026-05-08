@@ -10,7 +10,7 @@ Do not just count reps. Understand the session.
 
 That means Spotter should know what exercise you are doing, what the camera can see, whether the rep was clean, where form started to break, how hard the session felt, what you have done recently, and what workout makes sense next.
 
-This repo is the SwiftUI and MediaPipe version of Spotter. It has grown from a camera demo into a local-first training product with onboarding, calibration, live form analysis, generated plans, editable workout previews, planned workout sessions, rest flow, workout summaries, history, trophies, profile stats, training heatmaps, trends, workout recaps, weekly recaps, evidence drill-downs, and evidence-backed coach insights.
+This repo is the SwiftUI and MediaPipe version of Spotter. It has grown from a camera demo into a local-first training product with onboarding, calibration, live form analysis, generated plans, editable workout previews, planned workout sessions, rest flow, workout summaries, history, trophies, profile stats, training heatmaps, trends, workout recaps, weekly recaps, evidence drill-downs, evidence-backed coach insights, and a backend-ready local data foundation.
 
 ## The Short Version
 
@@ -37,10 +37,15 @@ Spotter can currently:
 - Track insight impressions and lightweight engagement separately, so cooldowns start when an insight is actually shown.
 - Let users open evidence sheets from insight cards and workout detail cards.
 - Show a 12-week profile heatmap with day drill-ins, workout detail links, and a local share poster.
+- Delete saved workouts safely by hiding them from normal history while keeping a tombstone for future sync.
+- Keep local records ready for future accounts through account ownership, sync metadata, server-time placeholders, and idempotent write operation IDs.
+- Preserve trophy unlocks as a canonical event log instead of only a recalculated progress snapshot.
+- Keep insight delivery, cooldown, and helpful/not-helpful records ready for cross-device merge.
+- Document the planned Firestore shape and sync conflict rules before adding Firebase.
 - Keep a no-network LLM rewrite seam behind a default-off feature flag for future coach-copy experiments.
 - Keep raw camera frames, raw video, raw face images, and raw pose streams out of persistent storage.
 
-The product is still not finished. The next big work is backend abstraction, optional Firebase sync, the final design-system revamp, beta hardening, and a careful Running Analysis research phase.
+The product is still not finished. The pre-backend local data foundation is now mostly in place, but the next big work is repository abstraction, optional Firebase sync, the final design-system revamp, beta hardening, and a careful Running Analysis research phase.
 
 ## Why Spotter Exists
 
@@ -357,6 +362,8 @@ Saved workout details expose more of the evidence Spotter already computes:
 - Rest extended and rest skipped indicators
 - Effort and top-cue evidence timelines
 
+Saved workouts can also be deleted from workout detail and profile history. The delete is sync-safe: Spotter hides the workout from normal product surfaces, keeps a tombstone for future backend sync, invalidates coach insights that depended on that workout, and recalculates trophy progress from the remaining visible history.
+
 ### Trophies
 
 The trophy system is deterministic and local.
@@ -366,6 +373,7 @@ It includes:
 - Trophy definitions
 - Trophy progress
 - Trophy unlock events
+- Canonical unlock event log
 - Trophy store
 - Trophy engine
 - Trophy collection screen
@@ -386,6 +394,8 @@ Trophy categories include:
 - Coming Soon
 
 The system is honest about unavailable metrics. For example, trophies that require real heart-rate data, external load, or unsupported exercises can be marked Coming Soon instead of faking progress from weak signals.
+
+Unlocks are now preserved as canonical events with future server-time support. Progress can still be recomputed from local history, but the earned moment itself has a durable record for future multi-device sync.
 
 ### Profile
 
@@ -553,6 +563,8 @@ Important delivery behavior:
 - The ranker can boost previously helpful insights and penalize recently dismissed or not-helpful ones.
 - Ranking is goal-aware, so strength, performance, and longevity users can receive different priorities from the same evidence.
 
+Delivery and engagement records are now account-scoped and sync-ready. They include tombstone and merge behavior so a future backend can keep cooldowns and helpful/not-helpful learning consistent across devices without storing raw workout, camera, pose, or face data inside those records.
+
 The app also has an LLM-ready seam:
 
 - `AIInsight.toLLMContext()` creates a derived, Codable context package.
@@ -582,6 +594,41 @@ Weekly recaps can appear on Dashboard and Profile once per week per surface. The
 - A stable dedupe key
 
 If the week had no saved sessions, the recap still returns an honest recovery-week story instead of pretending there was training data.
+
+## Pre-Backend Readiness
+
+Spotter is still local-first. There is no Firebase SDK, no auth flow, no remote repository, and no upload path in the app yet.
+
+The recent pre-backend work makes the local product safer to connect to a backend later. In product terms, the app now has the boring but important foundations that prevent painful sync bugs after launch.
+
+What has been prepared:
+
+- Account ownership: local records can now tell whether they belong to local-only mode or a future signed-in account. Stores can switch visible data by account and can claim existing local data for a future account without changing the user's workout IDs.
+- Sync status: profile, workouts, calibration, trophies, insights, insight delivery, insight engagement, and theme state now carry metadata for local-only, pending upload, synced, or conflict states.
+- Delete safety: deleting a workout writes a tombstone instead of simply removing the record. The workout disappears from normal history, stats, profile, and dashboard surfaces, dependent coach insights are invalidated, and future sync will not accidentally bring the workout back from another device.
+- Idempotent writes: save, update, delete, trophy, insight, calibration, theme, and profile writes can carry operation IDs. A local write journal remembers completed operations so a future retry does not double-save the same user action.
+- Server-time readiness: workouts, calibration, insights, and trophy unlocks have fields for future server-confirmed timestamps. Stats and trends use the server-confirmed timestamp when it exists and fall back to local time while the app is offline-only.
+- Trophy history: trophy unlocks are now preserved as canonical events, not only as a recalculated progress snapshot. This gives the future backend a stable "this was earned then" record and supports retraction/correction without rewriting history.
+- Insight continuity: insight impressions, cooldowns, helpful/not-helpful feedback, and engagement records are account-scoped and have merge rules. A future multi-device user should not lose feedback learning or keep seeing the same insight card on every device.
+- Conflict policy: `Documentation/SyncConflictResolution.md` defines how each major record should merge when local and remote copies disagree, and when the app should mark a record as conflicted instead of guessing.
+- Firestore shape: `Documentation/FirestoreShape.md` measures a synthetic worst-case workout and chooses a compact workout document plus per-set documents. This keeps history queries light while preserving detailed rep and cue evidence safely under Firestore document limits.
+- Privacy boundary: the future backend shape still allows only derived training evidence. Raw video, camera frames, face images, raw pose streams, raw biometric face data, raw pose timelines, and secrets stay out of the upload path.
+
+What this means:
+
+```text
+The app is not synced yet.
+The local data is now shaped so sync can be added without rewriting the product model.
+```
+
+Still remaining before a backend beta:
+
+- Repository protocols and local repository implementations.
+- Firebase/Auth wiring behind a feature flag.
+- Real account deletion and data export flows.
+- Firestore security rules, App Check, environment config, and secret scanning.
+- Background repository I/O for large histories.
+- Backend-mode QA for account switching, tombstones, conflicts, retries, and missing config.
 
 ## Exercise Library
 
@@ -682,19 +729,25 @@ WorkoutHistoryStore
   -> how local summaries and evidence are saved
 
 TrophyEngine and TrophyStore
-  -> how milestones are computed and persisted
+  -> how milestones, progress, and canonical unlock events are computed and persisted
 
 TrendEngine and SignalExtractor
   -> how history becomes structured training facts
 
 InsightEngine and InsightStore
-  -> how structured facts become useful coach insights
+  -> how structured facts become useful coach insights, impressions, and engagement signals
 
 WorkoutRecapBuilder and WeeklyRecapBuilder
   -> how saved sessions become deterministic recap surfaces
 
 CueNormalizer, CueClusterTaxonomy, and TrendWindowPolicy
   -> how repeated cue evidence stays canonical and recent
+
+AccountContext and AccountOwnership
+  -> how local data is scoped to local-only mode or a future signed-in account
+
+SyncMetadata, WriteOperation, and LocalWriteJournal
+  -> how local records become retry-safe and sync-ready without adding a backend SDK yet
 
 InsightRewriter and FeatureFlags
   -> how future rewrite experiments stay behind a default-off seam
@@ -710,6 +763,7 @@ Rules that should stay true:
 - Use deterministic local logic before adding external AI.
 - Keep recaps and insights evidence-backed even when the user has little history.
 - Record insight impressions separately from insight selection.
+- Keep account ownership, tombstones, sync metadata, and operation IDs intact on future-syncable records.
 - Do not store or upload raw camera data by default.
 - Do not ship real API keys or service-role secrets in the iOS client.
 
@@ -735,7 +789,9 @@ VirtualTrainer/
     Theme.swift
 
   Models/
+    AccountContext.swift
     AIInsightModels.swift
+    AppClock.swift
     CalibrationRecord.swift
     CalibrationStore.swift
     DashboardData.swift
@@ -744,10 +800,12 @@ VirtualTrainer/
     ExercisePlanMetadata.swift
     InsightStore.swift
     LiveSessionContext.swift
+    LocalWriteJournal.swift
     OnboardingStore.swift
     PlanGenerationInput.swift
     PlanGenerationRules.swift
     StatsEngine.swift
+    SyncMetadata.swift
     ThemeStore.swift
     TrainingTrendModels.swift
     TrendWindowPolicy.swift
@@ -761,6 +819,7 @@ VirtualTrainer/
     WorkoutSessionContext.swift
     WorkoutSessionSummary.swift
     WorkoutSummaryBuilder.swift
+    WriteOperation.swift
 
   RepCounting/
     RepCounterProtocol.swift
@@ -823,11 +882,12 @@ VirtualTrainer/
     PoseEstimator.swift
 
 VirtualTrainerTests/
-  Unit tests for onboarding, calibration, planning, dashboard content,
+  32 XCTest files with 307 test methods covering onboarding, calibration, planning, dashboard content,
   workout preview, target editing, planned coordination, history,
   evidence, trophies, stats, trends, insights, angle math, form feedback,
   visibility, exertion, cue normalization, cue clustering, insight ranking,
   insight store delivery, workout recaps, weekly recaps, evidence sheets,
+  account ownership, sync metadata, write journaling, Firestore size shape,
   and rep counting.
 
 NEW_DESIGN/
@@ -839,6 +899,18 @@ WorkoutClassifier.mlproj/
 Spotter_Phase1_2_Evaluation.md
   Founder-style evaluation and implementation prompt log for the recent
   trends, signals, insights, trophies, and workout-history hardening work.
+
+Spotter_Pre_Backend_Readiness.md
+  Founder-style audit of what needed to exist before repository and Firebase work.
+
+Documentation/BackendReadinessMap.md
+  Map of current persistence, syncable models, missing APIs, and backend field needs.
+
+Documentation/SyncConflictResolution.md
+  Product and engineering rules for resolving future local-vs-remote conflicts.
+
+Documentation/FirestoreShape.md
+  Measured Firestore document-shape decision for workout summaries and set evidence.
 ```
 
 ## Tech Stack
@@ -853,7 +925,7 @@ Spotter_Phase1_2_Evaluation.md
 - Haptics: CoreHaptics and UIKit haptic fallbacks
 - Local voice: `AVSpeechSynthesizer`
 - Optional remote TTS client: ElevenLabs service shell, configured through `ELEVENLABS_API_KEY` if used later
-- Persistence: local JSON files in app support storage
+- Persistence: local JSON files in app support storage, with sync-ready account ownership, tombstones, sync metadata, and a local write journal
 - Tests: XCTest
 
 The app uses CocoaPods for MediaPipe. Open the workspace, not just the project file.
@@ -925,6 +997,7 @@ Spotter is local-first right now.
 
 Good to store locally:
 
+- Account ownership IDs for future signed-in accounts
 - Profile and preferences
 - Calibration status
 - Generated plans
@@ -944,6 +1017,7 @@ Good to store locally:
 - Insight history, delivery records, and engagement counts
 - Derived, non-raw LLM rewrite context if a future feature-flagged rewrite layer needs it
 - Theme selection
+- Sync metadata, tombstones, server-time placeholders, and local write-operation journal entries
 
 Do not store or upload by default:
 
@@ -951,7 +1025,9 @@ Do not store or upload by default:
 - Camera frames
 - Face images
 - Raw pose streams
+- Raw pose timelines
 - Raw biometric face data
+- Raw face blendshape streams
 
 The heatmap and share poster use saved workout summaries and derived daily aggregates only. They should not store raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.
 
@@ -975,12 +1051,15 @@ Done or mostly done:
 - Phase 14: deterministic local coach insight engine
 - Phase 14 hardening: impression-based insight delivery, engagement tracking, goal-aware ranking, bootstrap signals, cue normalization, recent-window trend policy, workout recaps, weekly recaps, evidence drill-downs, and the default-off LLM rewrite seam
 - Profile heatmap hardening: 12-week intensity view, day drill-ins, collapsed month snapshot, and local share poster
+- Pre-backend readiness: account ownership, sync metadata, soft-delete tombstones, workout delete, insight invalidation, idempotent write journal, server-time fields, canonical trophy unlock event log, sync-ready insight records, conflict rules, and measured Firestore shape
 
 Next work:
 
 ### Phase 15: Backend Abstraction
 
-Add repository protocols and local implementations before integrating any backend SDK.
+Add repository protocols and local implementations before integrating any backend SDK. The model/store prerequisites are already prepared, so this phase should wrap the existing local behavior rather than invent a second product model.
+
+The repository layer should use the existing account IDs, sync metadata, tombstones, operation IDs, trophy event log, and insight delivery/engagement records.
 
 Planned repositories:
 
@@ -1006,6 +1085,8 @@ Start with:
 - Anonymous auth for internal testing
 - Firestore repositories
 - Graceful behavior when Firebase config is missing
+- Firestore shape from `Documentation/FirestoreShape.md`: compact workout documents plus per-set evidence documents
+- Conflict behavior from `Documentation/SyncConflictResolution.md`
 
 Store summaries and aggregates. Do not upload raw camera/video/pose/face data.
 
@@ -1066,6 +1147,8 @@ Use these rules when extending Spotter:
 - Use the shared cue normalizer and cluster taxonomy for cue-driven logic.
 - Keep trophies honest about unavailable data.
 - Keep local JSON backward compatible.
+- Keep account ownership, sync metadata, tombstones, server-time fields, and operation IDs backward compatible.
+- Update sync conflict and Firestore-shape docs when backend assumptions change.
 - Keep secrets out of source.
 - Add tests when behavior changes.
 - Update this README when the product phase changes.
