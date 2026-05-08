@@ -52,11 +52,13 @@ final class WorkoutHistoryStore: ObservableObject {
     private let calendar: Calendar
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private var currentAccountId: String?
     private var allSummaries: [WorkoutSessionSummary] = []
 
-    init(fileURL: URL? = nil, calendar: Calendar = .current) {
+    init(fileURL: URL? = nil, calendar: Calendar = .current, accountId: String? = nil) {
         self.fileURL = fileURL ?? Self.defaultHistoryURL()
         self.calendar = calendar
+        self.currentAccountId = AccountOwnership.normalizedAccountId(accountId)
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
@@ -64,6 +66,13 @@ final class WorkoutHistoryStore: ObservableObject {
     }
 
     nonisolated deinit {}
+
+    func setCurrentAccountId(_ accountId: String?) {
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
+        guard currentAccountId != normalizedAccountId else { return }
+        currentAccountId = normalizedAccountId
+        applyAllSummaries(allSummaries)
+    }
 
     @discardableResult
     func addSummary(_ summary: WorkoutSessionSummary) -> Bool {
@@ -77,7 +86,9 @@ final class WorkoutHistoryStore: ObservableObject {
 
     @discardableResult
     func deleteSummary(id: UUID, deletedAt: Date = Date()) -> Bool {
-        guard let existingIndex = allSummaries.firstIndex(where: { $0.id == id }) else {
+        guard let existingIndex = allSummaries.firstIndex(where: {
+            $0.id == id && isVisible($0)
+        }) else {
             return false
         }
 
@@ -95,7 +106,9 @@ final class WorkoutHistoryStore: ObservableObject {
 
     @discardableResult
     func restoreSummary(id: UUID) -> Bool {
-        guard let existingIndex = allSummaries.firstIndex(where: { $0.id == id }) else {
+        guard let existingIndex = allSummaries.firstIndex(where: {
+            $0.id == id && isVisible($0)
+        }) else {
             return false
         }
 
@@ -155,15 +168,15 @@ final class WorkoutHistoryStore: ObservableObject {
     }
 
     func fetchSummaryIncludingDeleted(id: UUID) -> WorkoutSessionSummary? {
-        allSummaries.first { $0.id == id }
+        allSummaries.first { $0.id == id && isVisible($0) }
     }
 
     func allSummariesIncludingTombstones() -> [WorkoutSessionSummary] {
-        sortedSummaries(allSummaries)
+        sortedSummaries(allSummaries.filter(isVisible))
     }
 
     func fetchDeletedSummaries() -> [WorkoutSessionSummary] {
-        sortedSummaries(allSummaries.filter(\.isDeleted))
+        sortedSummaries(allSummaries.filter { $0.isDeleted && isVisible($0) })
     }
 
     func fetchDirtyOrDeletedSummaries() -> [WorkoutSessionSummary] {
@@ -227,6 +240,27 @@ final class WorkoutHistoryStore: ObservableObject {
         loadSummaries()
     }
 
+    @discardableResult
+    func claimLocalDataForAccount(id accountId: String) -> Bool {
+        guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
+            persistenceError = "Account id is required before local workout history can be claimed."
+            return false
+        }
+        guard allSummaries.contains(where: { $0.accountId == nil }) else { return true }
+
+        let previousAllSummaries = allSummaries
+        let updatedSummaries = allSummaries.map { summary in
+            summary.accountId == nil ? summary.withAccountId(normalizedAccountId) : summary
+        }
+        applyAllSummaries(updatedSummaries)
+
+        guard persist() else {
+            applyAllSummaries(previousAllSummaries)
+            return false
+        }
+        return true
+    }
+
     private func loadSummaries() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             allSummaries = []
@@ -250,10 +284,11 @@ final class WorkoutHistoryStore: ObservableObject {
     private func upsert(_ summary: WorkoutSessionSummary) -> Bool {
         let previousAllSummaries = allSummaries
         var updatedSummaries = allSummaries
-        if let existingIndex = updatedSummaries.firstIndex(where: { $0.id == summary.id }) {
-            updatedSummaries[existingIndex] = summary
+        let accountStampedSummary = summary.withAccountId(currentAccountId)
+        if let existingIndex = updatedSummaries.firstIndex(where: { $0.id == accountStampedSummary.id }) {
+            updatedSummaries[existingIndex] = accountStampedSummary
         } else {
-            updatedSummaries.append(summary)
+            updatedSummaries.append(accountStampedSummary)
         }
         applyAllSummaries(updatedSummaries)
 
@@ -283,7 +318,7 @@ final class WorkoutHistoryStore: ObservableObject {
 
     private func applyAllSummaries(_ updatedSummaries: [WorkoutSessionSummary]) {
         allSummaries = sortedSummaries(updatedSummaries)
-        summaries = sortedSummaries(allSummaries.filter { !$0.isDeleted })
+        summaries = sortedSummaries(allSummaries.filter { !$0.isDeleted && isVisible($0) })
     }
 
     private func sortedSummaries(
@@ -295,6 +330,13 @@ final class WorkoutHistoryStore: ObservableObject {
             }
             return $0.endedAt > $1.endedAt
         }
+    }
+
+    private func isVisible(_ summary: WorkoutSessionSummary) -> Bool {
+        AccountOwnership.isVisible(
+            recordAccountId: summary.accountId,
+            currentAccountId: currentAccountId
+        )
     }
 
     private func average(_ values: [Double]) -> Double? {

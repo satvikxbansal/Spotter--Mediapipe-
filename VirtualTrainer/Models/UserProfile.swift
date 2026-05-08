@@ -248,6 +248,7 @@ nonisolated struct UserProfile: Identifiable, Codable, Equatable {
     static let defaultWorkoutDaysPerWeek = 3
 
     let id: UUID
+    var accountId: String?
     var displayName: String?
     var genderIdentity: GenderIdentity
     var age: Int
@@ -300,6 +301,7 @@ nonisolated struct UserProfile: Identifiable, Codable, Equatable {
 
     init(
         id: UUID,
+        accountId: String? = nil,
         displayName: String?,
         genderIdentity: GenderIdentity,
         age: Int,
@@ -326,6 +328,7 @@ nonisolated struct UserProfile: Identifiable, Codable, Equatable {
         deletedAt: Date? = nil
     ) {
         self.id = id
+        self.accountId = AccountOwnership.normalizedAccountId(accountId)
         self.displayName = displayName
         self.genderIdentity = genderIdentity
         self.age = age
@@ -373,6 +376,7 @@ nonisolated struct UserProfile: Identifiable, Codable, Equatable {
 nonisolated extension UserProfile {
     private enum CodingKeys: String, CodingKey {
         case id
+        case accountId
         case displayName
         case genderIdentity
         case age
@@ -404,6 +408,7 @@ nonisolated extension UserProfile {
 
         self.init(
             id: try container.decode(UUID.self, forKey: .id),
+            accountId: try container.decodeIfPresent(String.self, forKey: .accountId),
             displayName: try container.decodeIfPresent(String.self, forKey: .displayName),
             genderIdentity: try container.decode(GenderIdentity.self, forKey: .genderIdentity),
             age: try container.decode(Int.self, forKey: .age),
@@ -434,6 +439,7 @@ nonisolated extension UserProfile {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(accountId, forKey: .accountId)
         try container.encodeIfPresent(displayName, forKey: .displayName)
         try container.encode(genderIdentity, forKey: .genderIdentity)
         try container.encode(age, forKey: .age)

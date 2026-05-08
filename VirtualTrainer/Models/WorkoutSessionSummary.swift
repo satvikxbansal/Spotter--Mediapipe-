@@ -218,6 +218,7 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
     static let currentSchemaVersion = 2
 
     let id: UUID
+    let accountId: String?
     let summarySchemaVersion: Int
     let appBuildVersion: String?
     let mode: WorkoutSessionSummaryMode
@@ -246,6 +247,7 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
 
     init(
         id: UUID = UUID(),
+        accountId: String? = nil,
         summarySchemaVersion: Int = WorkoutSessionSummary.currentSchemaVersion,
         appBuildVersion: String? = WorkoutSessionSummary.defaultAppBuildVersion,
         mode: WorkoutSessionSummaryMode,
@@ -273,6 +275,7 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
         deletedAt: Date? = nil
     ) {
         self.id = id
+        self.accountId = AccountOwnership.normalizedAccountId(accountId)
         self.summarySchemaVersion = summarySchemaVersion
         self.appBuildVersion = appBuildVersion
         self.mode = mode
@@ -312,17 +315,22 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
     }
 
     func markedDeleted(at date: Date) -> WorkoutSessionSummary {
-        copy(deletedAt: date)
+        copy(accountId: accountId, deletedAt: date)
     }
 
     func restored() -> WorkoutSessionSummary {
-        copy(deletedAt: nil)
+        copy(accountId: accountId, deletedAt: nil)
+    }
+
+    func withAccountId(_ accountId: String?) -> WorkoutSessionSummary {
+        copy(accountId: accountId, deletedAt: deletedAt)
     }
 }
 
 nonisolated extension WorkoutSessionSummary {
     private enum CodingKeys: String, CodingKey {
         case id
+        case accountId
         case summarySchemaVersion
         case appBuildVersion
         case mode
@@ -357,6 +365,7 @@ nonisolated extension WorkoutSessionSummary {
         let decodedExerciseSummaries = try container.decode([ExerciseSetSummary].self, forKey: .exerciseSummaries)
 
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        accountId = try container.decodeIfPresent(String.self, forKey: .accountId)
         summarySchemaVersion = try container.decodeIfPresent(Int.self, forKey: .summarySchemaVersion) ?? 1
         appBuildVersion = try container.decodeIfPresent(String.self, forKey: .appBuildVersion)
         mode = decodedMode
@@ -390,9 +399,10 @@ nonisolated extension WorkoutSessionSummary {
 }
 
 nonisolated private extension WorkoutSessionSummary {
-    func copy(deletedAt: Date?) -> WorkoutSessionSummary {
+    func copy(accountId: String?, deletedAt: Date?) -> WorkoutSessionSummary {
         WorkoutSessionSummary(
             id: id,
+            accountId: accountId,
             summarySchemaVersion: summarySchemaVersion,
             appBuildVersion: appBuildVersion,
             mode: mode,

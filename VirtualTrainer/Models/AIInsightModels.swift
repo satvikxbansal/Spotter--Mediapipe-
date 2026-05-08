@@ -133,6 +133,7 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
     static let currentSourcePolicyVersion = "phase14.local.deterministic.v1"
 
     let id: String
+    let accountId: String?
     let type: InsightType
     let headline: String
     let message: String
@@ -154,6 +155,7 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
 
     init(
         id: String? = nil,
+        accountId: String? = nil,
         type: InsightType,
         headline: String,
         message: String,
@@ -173,6 +175,7 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
         dedupeKey: String,
         deletedAt: Date? = nil
     ) {
+        self.accountId = AccountOwnership.normalizedAccountId(accountId)
         self.type = type
         self.headline = headline
         self.message = message
@@ -203,11 +206,15 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
     }
 
     func markedDeleted(at date: Date) -> AIInsight {
-        copy(deletedAt: date)
+        copy(accountId: accountId, deletedAt: date)
     }
 
     func restored() -> AIInsight {
-        copy(deletedAt: nil)
+        copy(accountId: accountId, deletedAt: nil)
+    }
+
+    func withAccountId(_ accountId: String?) -> AIInsight {
+        copy(accountId: accountId, deletedAt: deletedAt)
     }
 
     func isExpired(now: Date = Date()) -> Bool {
@@ -229,9 +236,10 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
 }
 
 nonisolated private extension AIInsight {
-    func copy(deletedAt: Date?) -> AIInsight {
+    func copy(accountId: String?, deletedAt: Date?) -> AIInsight {
         AIInsight(
             id: id,
+            accountId: accountId,
             type: type,
             headline: headline,
             message: message,

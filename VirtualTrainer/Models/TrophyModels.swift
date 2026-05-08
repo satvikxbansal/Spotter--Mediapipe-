@@ -188,15 +188,53 @@ nonisolated struct TrophyProgress: Identifiable, Codable, Equatable {
     let lastUpdatedAt: Date
     let confidence: TrophyProgressConfidence
     let progressLabel: String
+    let accountId: String?
+
+    init(
+        trophyId: String,
+        currentValue: Double,
+        targetValue: Double,
+        earned: Bool,
+        earnedAt: Date?,
+        lastUpdatedAt: Date,
+        confidence: TrophyProgressConfidence,
+        progressLabel: String,
+        accountId: String? = nil
+    ) {
+        self.trophyId = trophyId
+        self.currentValue = currentValue
+        self.targetValue = targetValue
+        self.earned = earned
+        self.earnedAt = earnedAt
+        self.lastUpdatedAt = lastUpdatedAt
+        self.confidence = confidence
+        self.progressLabel = progressLabel
+        self.accountId = AccountOwnership.normalizedAccountId(accountId)
+    }
 
     var progressFraction: Double {
         guard targetValue > 0 else { return earned ? 1 : 0 }
         return min(max(currentValue / targetValue, 0), 1)
     }
+
+    func withAccountId(_ accountId: String?) -> TrophyProgress {
+        TrophyProgress(
+            trophyId: trophyId,
+            currentValue: currentValue,
+            targetValue: targetValue,
+            earned: earned,
+            earnedAt: earnedAt,
+            lastUpdatedAt: lastUpdatedAt,
+            confidence: confidence,
+            progressLabel: progressLabel,
+            accountId: accountId
+        )
+    }
 }
 
 nonisolated struct TrophyUnlockEvent: Identifiable, Codable, Equatable {
     let id: UUID
+    let accountId: String?
     let trophyId: String
     let title: String
     let subtitle: String
@@ -206,6 +244,7 @@ nonisolated struct TrophyUnlockEvent: Identifiable, Codable, Equatable {
 
     init(
         id: UUID = UUID(),
+        accountId: String? = nil,
         trophyId: String,
         title: String,
         subtitle: String,
@@ -214,6 +253,7 @@ nonisolated struct TrophyUnlockEvent: Identifiable, Codable, Equatable {
         celebrationStyle: TrophyCelebrationStyle
     ) {
         self.id = id
+        self.accountId = AccountOwnership.normalizedAccountId(accountId)
         self.trophyId = trophyId
         self.title = title
         self.subtitle = subtitle
@@ -221,13 +261,41 @@ nonisolated struct TrophyUnlockEvent: Identifiable, Codable, Equatable {
         self.reason = reason
         self.celebrationStyle = celebrationStyle
     }
+
+    func withAccountId(_ accountId: String?) -> TrophyUnlockEvent {
+        TrophyUnlockEvent(
+            id: id,
+            accountId: accountId,
+            trophyId: trophyId,
+            title: title,
+            subtitle: subtitle,
+            earnedAt: earnedAt,
+            reason: reason,
+            celebrationStyle: celebrationStyle
+        )
+    }
 }
 
 nonisolated struct TrophyProgressSnapshot: Codable, Equatable {
+    let accountId: String?
     let catalogVersion: Int
     let generatedAt: Date
     let progress: [TrophyProgress]
     let newlyEarnedEvents: [TrophyUnlockEvent]
+
+    init(
+        accountId: String? = nil,
+        catalogVersion: Int,
+        generatedAt: Date,
+        progress: [TrophyProgress],
+        newlyEarnedEvents: [TrophyUnlockEvent]
+    ) {
+        self.accountId = AccountOwnership.normalizedAccountId(accountId)
+        self.catalogVersion = catalogVersion
+        self.generatedAt = generatedAt
+        self.progress = progress
+        self.newlyEarnedEvents = newlyEarnedEvents
+    }
 
     var progressByTrophyId: [String: TrophyProgress] {
         progress.reduce(into: [String: TrophyProgress]()) { result, progress in
@@ -1224,10 +1292,13 @@ final class TrophyStore: ObservableObject {
     private let engine: TrophyEngine
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private var currentAccountId: String?
+    private var allProgress: [TrophyProgress] = []
 
-    init(fileURL: URL? = nil, calendar: Calendar = .current) {
+    init(fileURL: URL? = nil, calendar: Calendar = .current, accountId: String? = nil) {
         self.fileURL = fileURL ?? Self.defaultTrophyURL()
         self.engine = TrophyEngine(calendar: calendar)
+        self.currentAccountId = AccountOwnership.normalizedAccountId(accountId)
         self.snapshot = engine.updateAll(
             history: [],
             calibrationStatus: .notStarted,
@@ -1240,6 +1311,13 @@ final class TrophyStore: ObservableObject {
     }
 
     nonisolated deinit {}
+
+    func setCurrentAccountId(_ accountId: String?) {
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
+        guard currentAccountId != normalizedAccountId else { return }
+        currentAccountId = normalizedAccountId
+        applyVisibleSnapshot()
+    }
 
     @discardableResult
     func update(
@@ -1256,7 +1334,7 @@ final class TrophyStore: ObservableObject {
             now: now
         )
         apply(result)
-        return result.newlyEarnedEvents
+        return latestUnlockEvents
     }
 
     @discardableResult
@@ -1272,7 +1350,7 @@ final class TrophyStore: ObservableObject {
             now: now
         )
         apply(result)
-        return result.newlyEarnedEvents
+        return latestUnlockEvents
     }
 
     @discardableResult
@@ -1283,6 +1361,7 @@ final class TrophyStore: ObservableObject {
     ) -> Bool {
         let previousSnapshot = snapshot
         let previousUnlockEvents = latestUnlockEvents
+        let previousAllProgress = allProgress
         let result = engine.updateAll(
             history: history,
             calibrationStatus: calibrationStatus,
@@ -1304,21 +1383,25 @@ final class TrophyStore: ObservableObject {
                 earnedAt: previous.earnedAt ?? computedProgress.earnedAt,
                 lastUpdatedAt: computedProgress.lastUpdatedAt,
                 confidence: computedProgress.confidence,
-                progressLabel: computedProgress.progressLabel
+                progressLabel: computedProgress.progressLabel,
+                accountId: currentAccountId
             )
         }
         let newEvents = result.newlyEarnedEvents.filter {
             previousById[$0.trophyId]?.earned != true
-        }
+        }.map { $0.withAccountId(currentAccountId) }
         snapshot = TrophyProgressSnapshot(
+            accountId: currentAccountId,
             catalogVersion: result.snapshot.catalogVersion,
             generatedAt: result.snapshot.generatedAt,
-            progress: progress,
+            progress: progress.map { $0.withAccountId(currentAccountId) },
             newlyEarnedEvents: newEvents
         )
+        mergeCurrentProgressIntoAll(snapshot.progress)
         latestUnlockEvents = newEvents
 
         guard persist() else {
+            allProgress = previousAllProgress
             snapshot = previousSnapshot
             latestUnlockEvents = previousUnlockEvents
             return false
@@ -1329,6 +1412,7 @@ final class TrophyStore: ObservableObject {
     func clearLatestUnlockEvents() {
         latestUnlockEvents = []
         snapshot = TrophyProgressSnapshot(
+            accountId: currentAccountId,
             catalogVersion: snapshot.catalogVersion,
             generatedAt: snapshot.generatedAt,
             progress: snapshot.progress,
@@ -1340,21 +1424,58 @@ final class TrophyStore: ObservableObject {
         loadSnapshot()
     }
 
+    @discardableResult
+    func claimLocalDataForAccount(id accountId: String) -> Bool {
+        guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
+            persistenceError = "Account id is required before local trophy data can be claimed."
+            return false
+        }
+        guard allProgress.contains(where: { $0.accountId == nil }) else { return true }
+
+        let previousAllProgress = allProgress
+        allProgress = dedupedProgressByStorageKey(
+            allProgress.map { progress in
+                progress.accountId == nil ? progress.withAccountId(normalizedAccountId) : progress
+            }
+        )
+        applyVisibleSnapshot()
+
+        guard persist() else {
+            allProgress = previousAllProgress
+            applyVisibleSnapshot()
+            return false
+        }
+        return true
+    }
+
     private func apply(_ result: TrophyEngineResult) {
-        snapshot = result.snapshot
-        latestUnlockEvents = result.newlyEarnedEvents
+        let stampedProgress = result.snapshot.progress.map { $0.withAccountId(currentAccountId) }
+        let stampedEvents = result.newlyEarnedEvents.map { $0.withAccountId(currentAccountId) }
+        mergeCurrentProgressIntoAll(stampedProgress)
+        snapshot = TrophyProgressSnapshot(
+            accountId: currentAccountId,
+            catalogVersion: result.snapshot.catalogVersion,
+            generatedAt: result.snapshot.generatedAt,
+            progress: visibleProgress(fallbackGeneratedAt: result.snapshot.generatedAt),
+            newlyEarnedEvents: stampedEvents
+        )
+        latestUnlockEvents = stampedEvents
         persist()
     }
 
     private func loadSnapshot() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            allProgress = []
+            applyVisibleSnapshot(events: [])
             persistenceError = nil
             return
         }
 
         do {
             let data = try Data(contentsOf: fileURL)
-            snapshot = try decoder.decode(TrophyProgressSnapshot.self, from: data)
+            let persistedSnapshot = try decoder.decode(TrophyProgressSnapshot.self, from: data)
+            allProgress = dedupedProgressByStorageKey(persistedSnapshot.progress)
+            applyVisibleSnapshot(generatedAt: persistedSnapshot.generatedAt)
             latestUnlockEvents = []
             persistenceError = nil
         } catch {
@@ -1370,9 +1491,10 @@ final class TrophyStore: ObservableObject {
                 withIntermediateDirectories: true
             )
             let persistedSnapshot = TrophyProgressSnapshot(
+                accountId: nil,
                 catalogVersion: snapshot.catalogVersion,
                 generatedAt: snapshot.generatedAt,
-                progress: snapshot.progress,
+                progress: dedupedProgressByStorageKey(allProgress),
                 newlyEarnedEvents: []
             )
             let data = try encoder.encode(persistedSnapshot)
@@ -1383,6 +1505,87 @@ final class TrophyStore: ObservableObject {
             persistenceError = "Could not save trophies: \(error.localizedDescription)"
             return false
         }
+    }
+
+    private func mergeCurrentProgressIntoAll(_ progress: [TrophyProgress]) {
+        let accountId = currentAccountId
+        allProgress.removeAll {
+            AccountOwnership.normalizedAccountId($0.accountId) == accountId
+        }
+        allProgress.append(contentsOf: progress)
+        allProgress = dedupedProgressByStorageKey(allProgress)
+    }
+
+    private func applyVisibleSnapshot(
+        generatedAt: Date? = nil,
+        events: [TrophyUnlockEvent]? = nil
+    ) {
+        snapshot = TrophyProgressSnapshot(
+            accountId: currentAccountId,
+            catalogVersion: TrophyDefinitionCatalog.version,
+            generatedAt: generatedAt ?? snapshot.generatedAt,
+            progress: visibleProgress(fallbackGeneratedAt: generatedAt ?? snapshot.generatedAt),
+            newlyEarnedEvents: events ?? latestUnlockEvents.filter(isVisible)
+        )
+        latestUnlockEvents = snapshot.newlyEarnedEvents
+    }
+
+    private func visibleProgress(fallbackGeneratedAt: Date) -> [TrophyProgress] {
+        let visibleProgress = allProgress.filter(isVisible)
+        guard !visibleProgress.isEmpty else {
+            return engine.updateAll(
+                history: [],
+                calibrationStatus: .notStarted,
+                previousSnapshot: nil,
+                now: fallbackGeneratedAt
+            ).snapshot.progress.map { $0.withAccountId(currentAccountId) }
+        }
+
+        let progressById = TrophyProgressSnapshot(
+            accountId: currentAccountId,
+            catalogVersion: TrophyDefinitionCatalog.version,
+            generatedAt: fallbackGeneratedAt,
+            progress: visibleProgress,
+            newlyEarnedEvents: []
+        ).progressByTrophyId
+
+        return TrophyDefinitionCatalog.all.compactMap { progressById[$0.id] }
+    }
+
+    private func dedupedProgressByStorageKey(_ progress: [TrophyProgress]) -> [TrophyProgress] {
+        let groupedProgress = Dictionary(grouping: progress) {
+            AccountOwnership.storageKey(accountId: $0.accountId, recordId: $0.trophyId)
+        }
+        return groupedProgress.values.flatMap { entries in
+            TrophyProgressSnapshot(
+                catalogVersion: TrophyDefinitionCatalog.version,
+                generatedAt: entries.map(\.lastUpdatedAt).max() ?? Date(),
+                progress: entries,
+                newlyEarnedEvents: []
+            ).progressByTrophyId.values
+        }
+        .sorted {
+            let leftSortOrder = TrophyDefinitionCatalog.definition(for: $0.trophyId)?.sortOrder ?? 0
+            let rightSortOrder = TrophyDefinitionCatalog.definition(for: $1.trophyId)?.sortOrder ?? 0
+            if leftSortOrder == rightSortOrder {
+                return ($0.accountId ?? "") < ($1.accountId ?? "")
+            }
+            return leftSortOrder < rightSortOrder
+        }
+    }
+
+    private func isVisible(_ progress: TrophyProgress) -> Bool {
+        AccountOwnership.isVisible(
+            recordAccountId: progress.accountId,
+            currentAccountId: currentAccountId
+        )
+    }
+
+    private func isVisible(_ event: TrophyUnlockEvent) -> Bool {
+        AccountOwnership.isVisible(
+            recordAccountId: event.accountId,
+            currentAccountId: currentAccountId
+        )
     }
 
     private static func defaultTrophyURL() -> URL {

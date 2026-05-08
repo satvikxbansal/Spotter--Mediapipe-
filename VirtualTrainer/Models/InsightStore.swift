@@ -2,6 +2,7 @@ import Foundation
 import Combine
 
 nonisolated struct InsightDeliveryRecord: Codable, Equatable {
+    let accountId: String?
     let dedupeKey: String
     var firstPresentedAt: Date
     var lastPresentedAt: Date
@@ -9,10 +10,12 @@ nonisolated struct InsightDeliveryRecord: Codable, Equatable {
     var surfaceLastPresentedAt: [String: Date]
 
     init(
+        accountId: String? = nil,
         dedupeKey: String,
         presentedAt: Date,
         surface: InsightSurface
     ) {
+        self.accountId = AccountOwnership.normalizedAccountId(accountId)
         self.dedupeKey = dedupeKey
         self.firstPresentedAt = presentedAt
         self.lastPresentedAt = presentedAt
@@ -28,6 +31,21 @@ nonisolated struct InsightDeliveryRecord: Codable, Equatable {
         presentationCount += 1
         surfaceLastPresentedAt[surface.rawValue] = date
     }
+
+    func withAccountId(_ accountId: String?) -> InsightDeliveryRecord {
+        var copy = self
+        copy = InsightDeliveryRecord(
+            accountId: accountId,
+            dedupeKey: dedupeKey,
+            presentedAt: firstPresentedAt,
+            surface: .dashboard
+        )
+        copy.firstPresentedAt = firstPresentedAt
+        copy.lastPresentedAt = lastPresentedAt
+        copy.presentationCount = presentationCount
+        copy.surfaceLastPresentedAt = surfaceLastPresentedAt
+        return copy
+    }
 }
 
 nonisolated enum InsightEngagementKind: String, Codable, CaseIterable, Hashable {
@@ -38,15 +56,18 @@ nonisolated enum InsightEngagementKind: String, Codable, CaseIterable, Hashable 
 }
 
 nonisolated struct InsightEngagementRecord: Codable, Equatable {
+    let accountId: String?
     let dedupeKey: String
     private var engagementCounts: [String: Int]
     private var lastEngagementDates: [String: Date]
 
     init(
+        accountId: String? = nil,
         dedupeKey: String,
         engagementCounts: [String: Int] = [:],
         lastEngagementDates: [String: Date] = [:]
     ) {
+        self.accountId = AccountOwnership.normalizedAccountId(accountId)
         self.dedupeKey = dedupeKey
         self.engagementCounts = engagementCounts
         self.lastEngagementDates = lastEngagementDates
@@ -81,6 +102,15 @@ nonisolated struct InsightEngagementRecord: Codable, Equatable {
             }
         }
         return merged
+    }
+
+    func withAccountId(_ accountId: String?) -> InsightEngagementRecord {
+        InsightEngagementRecord(
+            accountId: accountId,
+            dedupeKey: dedupeKey,
+            engagementCounts: engagementCounts,
+            lastEngagementDates: lastEngagementDates
+        )
     }
 }
 
@@ -129,14 +159,19 @@ final class InsightStore: ObservableObject {
     @Published var persistenceError: String?
 
     private let fileURL: URL
+    private var currentAccountId: String?
+    private var allInsights: [AIInsight] = []
+    private var allDeliveryRecords: [String: InsightDeliveryRecord] = [:]
+    private var allEngagementRecords: [String: InsightEngagementRecord] = [:]
     private var deliveryRecords: [String: InsightDeliveryRecord] = [:]
     private var engagementRecords: [String: InsightEngagementRecord] = [:]
     private let ranker = InsightRanker()
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    init(fileURL: URL? = nil) {
+    init(fileURL: URL? = nil, accountId: String? = nil) {
         self.fileURL = fileURL ?? Self.defaultInsightURL()
+        self.currentAccountId = AccountOwnership.normalizedAccountId(accountId)
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
@@ -144,6 +179,13 @@ final class InsightStore: ObservableObject {
     }
 
     nonisolated deinit {}
+
+    func setCurrentAccountId(_ accountId: String?) {
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
+        guard currentAccountId != normalizedAccountId else { return }
+        currentAccountId = normalizedAccountId
+        applyVisibleState()
+    }
 
     @discardableResult
     func selectInsights(
@@ -260,14 +302,19 @@ final class InsightStore: ObservableObject {
         kind: InsightEngagementKind,
         now: Date = Date()
     ) {
-        if var record = engagementRecords[insight.dedupeKey] {
+        let key = storageKey(accountId: currentAccountId, dedupeKey: insight.dedupeKey)
+        if var record = allEngagementRecords[key] {
             record.record(kind, at: now)
-            engagementRecords[insight.dedupeKey] = record
+            allEngagementRecords[key] = record.withAccountId(currentAccountId)
         } else {
-            var record = InsightEngagementRecord(dedupeKey: insight.dedupeKey)
+            var record = InsightEngagementRecord(
+                accountId: currentAccountId,
+                dedupeKey: insight.dedupeKey
+            )
             record.record(kind, at: now)
-            engagementRecords[insight.dedupeKey] = record
+            allEngagementRecords[key] = record
         }
+        applyVisibleState()
         persist()
     }
 
@@ -277,9 +324,9 @@ final class InsightStore: ObservableObject {
         replacingInsightsReferencing workoutIds: Set<UUID> = [],
         now: Date = Date()
     ) -> Bool {
-        let previousInsights = recentInsights
-        let previousDeliveryRecords = deliveryRecords
-        let previousEngagementRecords = engagementRecords
+        let previousAllInsights = allInsights
+        let previousAllDeliveryRecords = allDeliveryRecords
+        let previousAllEngagementRecords = allEngagementRecords
         let sampleKeys = Set(insights.map(\.dedupeKey))
 
         _ = removeInsightsForDebug(
@@ -288,15 +335,16 @@ final class InsightStore: ObservableObject {
             shouldPersist: false
         )
         for key in sampleKeys.union(keysReferencingWorkoutIds(workoutIds)) {
-            deliveryRecords.removeValue(forKey: key)
-            engagementRecords.removeValue(forKey: key)
+            removeVisibleDeliveryRecords(dedupeKey: key)
+            removeVisibleEngagementRecords(dedupeKey: key)
         }
         ingest(insights, now: now)
         expireStale(now: now)
         guard persist() else {
-            recentInsights = previousInsights
-            deliveryRecords = previousDeliveryRecords
-            engagementRecords = previousEngagementRecords
+            allInsights = previousAllInsights
+            allDeliveryRecords = previousAllDeliveryRecords
+            allEngagementRecords = previousAllEngagementRecords
+            applyVisibleState()
             return false
         }
         return true
@@ -316,10 +364,13 @@ final class InsightStore: ObservableObject {
 
     @discardableResult
     func invalidateInsight(dedupeKey: String, deletedAt: Date = Date()) -> Bool {
-        let previousInsights = recentInsights
+        let previousAllInsights = allInsights
         var didInvalidate = false
-        recentInsights = recentInsights.map { insight in
-            guard insight.dedupeKey == dedupeKey, !insight.isDeleted else {
+        allInsights = allInsights.map { insight in
+            guard insight.dedupeKey == dedupeKey,
+                  isVisible(insight),
+                  !insight.isDeleted
+            else {
                 return insight
             }
             didInvalidate = true
@@ -327,8 +378,10 @@ final class InsightStore: ObservableObject {
         }
 
         guard didInvalidate else { return false }
+        applyVisibleState()
         guard persist() else {
-            recentInsights = previousInsights
+            allInsights = previousAllInsights
+            applyVisibleState()
             return false
         }
         return true
@@ -336,10 +389,11 @@ final class InsightStore: ObservableObject {
 
     @discardableResult
     func invalidateInsightsReferencingWorkout(id: UUID, deletedAt: Date = Date()) -> Int {
-        let previousInsights = recentInsights
+        let previousAllInsights = allInsights
         var invalidatedCount = 0
-        recentInsights = recentInsights.map { insight in
+        allInsights = allInsights.map { insight in
             guard !insight.isDeleted,
+                  isVisible(insight),
                   insight.evidence.contains(where: { $0.workoutId == id })
             else { return insight }
 
@@ -348,18 +402,63 @@ final class InsightStore: ObservableObject {
         }
 
         guard invalidatedCount > 0 else { return 0 }
+        applyVisibleState()
         guard persist() else {
-            recentInsights = previousInsights
+            allInsights = previousAllInsights
+            applyVisibleState()
             return 0
         }
         return invalidatedCount
     }
 
     func clearForDebug() {
-        recentInsights = []
-        deliveryRecords = [:]
-        engagementRecords = [:]
+        allInsights.removeAll { isVisible($0) }
+        allDeliveryRecords = allDeliveryRecords.filter { !isVisible($0.value) }
+        allEngagementRecords = allEngagementRecords.filter { !isVisible($0.value) }
+        applyVisibleState()
         persist()
+    }
+
+    @discardableResult
+    func claimLocalDataForAccount(id accountId: String) -> Bool {
+        guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
+            persistenceError = "Account id is required before local insight data can be claimed."
+            return false
+        }
+        let hasClaimableData = allInsights.contains { $0.accountId == nil } ||
+            allDeliveryRecords.values.contains { $0.accountId == nil } ||
+            allEngagementRecords.values.contains { $0.accountId == nil }
+        guard hasClaimableData else { return true }
+
+        let previousAllInsights = allInsights
+        let previousAllDeliveryRecords = allDeliveryRecords
+        let previousAllEngagementRecords = allEngagementRecords
+
+        allInsights = dedupedInsightsByStorageKey(
+            allInsights.map { insight in
+                insight.accountId == nil ? insight.withAccountId(normalizedAccountId) : insight
+            }
+        )
+        allDeliveryRecords = bestDeliveryRecordsByStorageKey(
+            allDeliveryRecords.values.map { record in
+                record.accountId == nil ? record.withAccountId(normalizedAccountId) : record
+            }
+        )
+        allEngagementRecords = bestEngagementRecordsByStorageKey(
+            allEngagementRecords.values.map { record in
+                record.accountId == nil ? record.withAccountId(normalizedAccountId) : record
+            }
+        )
+        applyVisibleState()
+
+        guard persist() else {
+            allInsights = previousAllInsights
+            allDeliveryRecords = previousAllDeliveryRecords
+            allEngagementRecords = previousAllEngagementRecords
+            applyVisibleState()
+            return false
+        }
+        return true
     }
 }
 
@@ -423,19 +522,20 @@ private extension InsightStore {
         _ insights: [AIInsight],
         now: Date
     ) {
-        var byKey = bestInsightsByDedupeKey(recentInsights)
+        var byKey = bestInsightsByDedupeKey(allInsights.filter { belongsToCurrentAccount($0) })
         for insight in insights where !insight.isExpired(now: now) && !insight.evidence.isEmpty {
-            if let existing = byKey[insight.dedupeKey] {
-                if existing.isDeleted && !insight.isDeleted {
+            let accountStampedInsight = insight.withAccountId(currentAccountId)
+            if let existing = byKey[accountStampedInsight.dedupeKey] {
+                if existing.isDeleted && !accountStampedInsight.isDeleted {
                     continue
                 }
-                if shouldPrefer(insight, over: existing) ||
-                    insight.userValueScore >= existing.userValueScore ||
-                    insight.createdAt > existing.createdAt {
-                    byKey[insight.dedupeKey] = insight
+                if shouldPrefer(accountStampedInsight, over: existing) ||
+                    accountStampedInsight.userValueScore >= existing.userValueScore ||
+                    accountStampedInsight.createdAt > existing.createdAt {
+                    byKey[accountStampedInsight.dedupeKey] = accountStampedInsight
                 }
             } else {
-                byKey[insight.dedupeKey] = insight
+                byKey[accountStampedInsight.dedupeKey] = accountStampedInsight
             }
         }
 
@@ -448,17 +548,20 @@ private extension InsightStore {
             }
         let visibleInsights = sortedInsights.filter { !$0.isDeleted }.prefix(80)
         let deletedInsights = sortedInsights.filter(\.isDeleted)
-        recentInsights = Array(visibleInsights) + deletedInsights
+        replaceCurrentAccountInsights(with: Array(visibleInsights) + deletedInsights)
+        applyVisibleState()
     }
 
     func expireStale(now: Date) {
-        let retainedKeys = Set(
-            recentInsights
-                .filter { $0.isDeleted || !$0.isExpired(now: now) }
-                .map(\.dedupeKey)
-        )
-        recentInsights = recentInsights.filter { retainedKeys.contains($0.dedupeKey) }
-        deliveryRecords = deliveryRecords.filter { retainedKeys.contains($0.key) || $0.value.lastPresentedAt > staleDeliveryCutoff(now: now) }
+        allInsights = allInsights.filter { $0.isDeleted || !$0.isExpired(now: now) }
+        let retainedInsightKeys = Set(allInsights.map {
+            storageKey(accountId: $0.accountId, dedupeKey: $0.dedupeKey)
+        })
+        allDeliveryRecords = allDeliveryRecords.filter { element in
+            retainedInsightKeys.contains(element.key) ||
+                element.value.lastPresentedAt > staleDeliveryCutoff(now: now)
+        }
+        applyVisibleState()
     }
 
     func recordPresented(
@@ -466,16 +569,19 @@ private extension InsightStore {
         on surface: InsightSurface,
         now: Date
     ) {
-        if var record = deliveryRecords[insight.dedupeKey] {
+        let key = storageKey(accountId: currentAccountId, dedupeKey: insight.dedupeKey)
+        if var record = allDeliveryRecords[key] {
             record.recordPresentation(at: now, surface: surface)
-            deliveryRecords[insight.dedupeKey] = record
+            allDeliveryRecords[key] = record.withAccountId(currentAccountId)
         } else {
-            deliveryRecords[insight.dedupeKey] = InsightDeliveryRecord(
+            allDeliveryRecords[key] = InsightDeliveryRecord(
+                accountId: currentAccountId,
                 dedupeKey: insight.dedupeKey,
                 presentedAt: now,
                 surface: surface
             )
         }
+        applyVisibleState()
     }
 
     func recordPresented(
@@ -483,16 +589,19 @@ private extension InsightStore {
         on surface: InsightSurface,
         now: Date
     ) {
-        if var record = deliveryRecords[dedupeKey] {
+        let key = storageKey(accountId: currentAccountId, dedupeKey: dedupeKey)
+        if var record = allDeliveryRecords[key] {
             record.recordPresentation(at: now, surface: surface)
-            deliveryRecords[dedupeKey] = record
+            allDeliveryRecords[key] = record.withAccountId(currentAccountId)
         } else {
-            deliveryRecords[dedupeKey] = InsightDeliveryRecord(
+            allDeliveryRecords[key] = InsightDeliveryRecord(
+                accountId: currentAccountId,
                 dedupeKey: dedupeKey,
                 presentedAt: now,
                 surface: surface
             )
         }
+        applyVisibleState()
     }
 
     func wasRecentlyPresented(
@@ -536,13 +645,15 @@ private extension InsightStore {
         do {
             let data = try Data(contentsOf: fileURL)
             let snapshot = try decoder.decode(PersistedInsightStoreSnapshot.self, from: data)
-            recentInsights = bestInsightsByDedupeKey(snapshot.recentInsights)
-                .values
-                .sorted { $0.createdAt > $1.createdAt }
-            deliveryRecords = bestDeliveryRecordsByDedupeKey(snapshot.deliveryRecords)
-            engagementRecords = bestEngagementRecordsByDedupeKey(snapshot.engagementRecords)
+            allInsights = dedupedInsightsByStorageKey(snapshot.recentInsights)
+            allDeliveryRecords = bestDeliveryRecordsByStorageKey(snapshot.deliveryRecords)
+            allEngagementRecords = bestEngagementRecordsByStorageKey(snapshot.engagementRecords)
+            applyVisibleState()
             persistenceError = nil
         } catch {
+            allInsights = []
+            allDeliveryRecords = [:]
+            allEngagementRecords = [:]
             recentInsights = []
             deliveryRecords = [:]
             engagementRecords = [:]
@@ -560,9 +671,9 @@ private extension InsightStore {
             let snapshot = PersistedInsightStoreSnapshot(
                 sourcePolicyVersion: AIInsight.currentSourcePolicyVersion,
                 savedAt: Date(),
-                recentInsights: recentInsights,
-                deliveryRecords: Array(deliveryRecords.values),
-                engagementRecords: Array(engagementRecords.values)
+                recentInsights: allInsights,
+                deliveryRecords: Array(allDeliveryRecords.values),
+                engagementRecords: Array(allEngagementRecords.values)
             )
             let data = try encoder.encode(snapshot)
             try data.write(to: fileURL, options: [.atomic])
@@ -580,6 +691,108 @@ private extension InsightStore {
         return base
             .appendingPathComponent("Spotter", isDirectory: true)
             .appendingPathComponent("CoachInsights.json")
+    }
+
+    func applyVisibleState() {
+        recentInsights = bestInsightsByDedupeKey(allInsights.filter { isVisible($0) })
+            .values
+            .sorted { $0.createdAt > $1.createdAt }
+        deliveryRecords = bestDeliveryRecordsByDedupeKey(
+            allDeliveryRecords.values.filter { isVisible($0) }
+        )
+        engagementRecords = bestEngagementRecordsByDedupeKey(
+            allEngagementRecords.values.filter { isVisible($0) }
+        )
+    }
+
+    func replaceCurrentAccountInsights(with insights: [AIInsight]) {
+        allInsights.removeAll(where: belongsToCurrentAccount)
+        allInsights.append(contentsOf: insights.map { $0.withAccountId(currentAccountId) })
+        allInsights = dedupedInsightsByStorageKey(allInsights)
+    }
+
+    func belongsToCurrentAccount(_ insight: AIInsight) -> Bool {
+        AccountOwnership.normalizedAccountId(insight.accountId) == currentAccountId
+    }
+
+    func isVisible(_ insight: AIInsight) -> Bool {
+        AccountOwnership.isVisible(
+            recordAccountId: insight.accountId,
+            currentAccountId: currentAccountId
+        )
+    }
+
+    func isVisible(_ record: InsightDeliveryRecord) -> Bool {
+        AccountOwnership.isVisible(
+            recordAccountId: record.accountId,
+            currentAccountId: currentAccountId
+        )
+    }
+
+    func isVisible(_ record: InsightEngagementRecord) -> Bool {
+        AccountOwnership.isVisible(
+            recordAccountId: record.accountId,
+            currentAccountId: currentAccountId
+        )
+    }
+
+    func storageKey(accountId: String?, dedupeKey: String) -> String {
+        AccountOwnership.storageKey(accountId: accountId, recordId: dedupeKey)
+    }
+
+    func dedupedInsightsByStorageKey(_ insights: [AIInsight]) -> [AIInsight] {
+        let groupedInsights = Dictionary(grouping: insights) {
+            storageKey(accountId: $0.accountId, dedupeKey: $0.dedupeKey)
+        }
+        return groupedInsights.values.compactMap { entries in
+            bestInsightsByDedupeKey(entries).values.first
+        }
+        .sorted { lhs, rhs in
+            if lhs.createdAt == rhs.createdAt {
+                return lhs.userValueScore > rhs.userValueScore
+            }
+            return lhs.createdAt > rhs.createdAt
+        }
+    }
+
+    func bestDeliveryRecordsByStorageKey(
+        _ records: [InsightDeliveryRecord]
+    ) -> [String: InsightDeliveryRecord] {
+        records.reduce(into: [String: InsightDeliveryRecord]()) { result, record in
+            let key = storageKey(accountId: record.accountId, dedupeKey: record.dedupeKey)
+            if let existing = result[key] {
+                result[key] = mergedDeliveryRecord(existing, record)
+            } else {
+                result[key] = record
+            }
+        }
+    }
+
+    func bestEngagementRecordsByStorageKey(
+        _ records: [InsightEngagementRecord]
+    ) -> [String: InsightEngagementRecord] {
+        records.reduce(into: [String: InsightEngagementRecord]()) { result, record in
+            let key = storageKey(accountId: record.accountId, dedupeKey: record.dedupeKey)
+            if let existing = result[key] {
+                result[key] = existing.merged(with: record)
+            } else {
+                result[key] = record
+            }
+        }
+    }
+
+    func removeVisibleDeliveryRecords(dedupeKey: String) {
+        allDeliveryRecords = allDeliveryRecords.filter { element in
+            element.value.dedupeKey != dedupeKey || !isVisible(element.value)
+        }
+        applyVisibleState()
+    }
+
+    func removeVisibleEngagementRecords(dedupeKey: String) {
+        allEngagementRecords = allEngagementRecords.filter { element in
+            element.value.dedupeKey != dedupeKey || !isVisible(element.value)
+        }
+        applyVisibleState()
     }
 
     func bestInsightsByDedupeKey(_ insights: [AIInsight]) -> [String: AIInsight] {
@@ -661,20 +874,24 @@ private extension InsightStore {
         let keysToRemove = dedupeKeys.union(keysReferencingWorkoutIds(workoutIds))
         guard !keysToRemove.isEmpty else { return true }
 
-        let previousInsights = recentInsights
-        let previousDeliveryRecords = deliveryRecords
-        let previousEngagementRecords = engagementRecords
-        recentInsights.removeAll { keysToRemove.contains($0.dedupeKey) }
-        for key in keysToRemove {
-            deliveryRecords.removeValue(forKey: key)
-            engagementRecords.removeValue(forKey: key)
+        let previousAllInsights = allInsights
+        let previousAllDeliveryRecords = allDeliveryRecords
+        let previousAllEngagementRecords = allEngagementRecords
+        allInsights.removeAll {
+            keysToRemove.contains($0.dedupeKey) && isVisible($0)
         }
+        for key in keysToRemove {
+            removeVisibleDeliveryRecords(dedupeKey: key)
+            removeVisibleEngagementRecords(dedupeKey: key)
+        }
+        applyVisibleState()
 
         guard shouldPersist else { return true }
         guard persist() else {
-            recentInsights = previousInsights
-            deliveryRecords = previousDeliveryRecords
-            engagementRecords = previousEngagementRecords
+            allInsights = previousAllInsights
+            allDeliveryRecords = previousAllDeliveryRecords
+            allEngagementRecords = previousAllEngagementRecords
+            applyVisibleState()
             return false
         }
         return true

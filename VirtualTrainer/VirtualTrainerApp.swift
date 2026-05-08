@@ -8,6 +8,7 @@ import SwiftUI
 
 @main
 struct VirtualTrainerApp: App {
+    @StateObject private var accountContext = AccountContext()
     @StateObject private var onboardingStore = OnboardingStore()
     @StateObject private var calibrationStore = CalibrationStore()
     @StateObject private var workoutHistoryStore = WorkoutHistoryStore()
@@ -26,6 +27,7 @@ struct VirtualTrainerApp: App {
                     MainTabView()
                 }
             }
+            .environmentObject(accountContext)
             .environmentObject(onboardingStore)
             .environmentObject(calibrationStore)
             .environmentObject(workoutHistoryStore)
@@ -33,11 +35,26 @@ struct VirtualTrainerApp: App {
             .environmentObject(themeStore)
             .environmentObject(insightStore)
             .onAppear {
+                syncStoresWithAccount()
+                themeStore.sync(with: onboardingStore.profile)
+            }
+            .onChange(of: accountContext.currentAccountId) {
+                syncStoresWithAccount()
                 themeStore.sync(with: onboardingStore.profile)
             }
             .onChange(of: onboardingStore.profile) {
                 themeStore.sync(with: onboardingStore.profile)
             }
         }
+    }
+
+    private func syncStoresWithAccount() {
+        let accountId = accountContext.currentAccountId
+        onboardingStore.setCurrentAccountId(accountId)
+        calibrationStore.setCurrentAccountId(accountId)
+        workoutHistoryStore.setCurrentAccountId(accountId)
+        trophyStore.setCurrentAccountId(accountId)
+        themeStore.setCurrentAccountId(accountId)
+        insightStore.setCurrentAccountId(accountId)
     }
 }

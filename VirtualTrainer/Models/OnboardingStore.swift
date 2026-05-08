@@ -19,17 +19,29 @@ final class OnboardingStore: ObservableObject {
     private let fileURL: URL
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private var currentAccountId: String?
+    private var storedProfile: UserProfile?
 
     var hasCompletedOnboarding: Bool {
         profile != nil
     }
 
-    init(fileURL: URL? = nil) {
+    init(fileURL: URL? = nil, accountId: String? = nil) {
         self.fileURL = fileURL ?? Self.defaultProfileURL()
+        self.currentAccountId = AccountOwnership.normalizedAccountId(accountId)
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
         loadProfile()
+    }
+
+    nonisolated deinit {}
+
+    func setCurrentAccountId(_ accountId: String?) {
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
+        guard currentAccountId != normalizedAccountId else { return }
+        currentAccountId = normalizedAccountId
+        applyStoredProfile()
     }
 
     func canContinue(from step: Step) -> Bool {
@@ -206,6 +218,7 @@ final class OnboardingStore: ObservableObject {
 
     func resetOnboarding() {
         profile = nil
+        storedProfile = nil
         draft = OnboardingDraft()
         persistenceError = nil
         do {
@@ -215,6 +228,20 @@ final class OnboardingStore: ObservableObject {
         } catch {
             persistenceError = "Could not reset onboarding: \(error.localizedDescription)"
         }
+    }
+
+    @discardableResult
+    func claimLocalDataForAccount(id accountId: String) -> Bool {
+        guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
+            persistenceError = "Account id is required before local profile data can be claimed."
+            return false
+        }
+        guard var storedProfile else { return true }
+        guard storedProfile.accountId == nil else { return true }
+
+        storedProfile.accountId = normalizedAccountId
+        storedProfile.updatedAt = Date()
+        return persist(storedProfile)
     }
 
     @discardableResult
@@ -310,18 +337,35 @@ final class OnboardingStore: ObservableObject {
     }
 
     private func loadProfile() {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            storedProfile = nil
+            profile = nil
+            return
+        }
         do {
             let data = try Data(contentsOf: fileURL)
-            profile = try decoder.decode(UserProfile.self, from: data)
+            storedProfile = try decoder.decode(UserProfile.self, from: data)
+            applyStoredProfile()
         } catch {
             persistenceError = "Could not load profile: \(error.localizedDescription)"
+            storedProfile = nil
             profile = nil
         }
     }
 
     @discardableResult
     private func save(_ profile: UserProfile) -> Bool {
+        var accountStampedProfile = profile
+        if let currentAccountId {
+            accountStampedProfile.accountId = currentAccountId
+        }
+        return persist(accountStampedProfile)
+    }
+
+    @discardableResult
+    private func persist(_ profile: UserProfile) -> Bool {
+        let previousStoredProfile = storedProfile
+        let previousVisibleProfile = self.profile
         do {
             try FileManager.default.createDirectory(
                 at: fileURL.deletingLastPathComponent(),
@@ -329,13 +373,30 @@ final class OnboardingStore: ObservableObject {
             )
             let data = try encoder.encode(profile)
             try data.write(to: fileURL, options: [.atomic])
-            self.profile = profile
+            storedProfile = profile
+            applyStoredProfile()
             persistenceError = nil
             return true
         } catch {
+            storedProfile = previousStoredProfile
+            self.profile = previousVisibleProfile
             persistenceError = "Could not save profile: \(error.localizedDescription)"
             return false
         }
+    }
+
+    private func applyStoredProfile() {
+        guard let storedProfile,
+              AccountOwnership.isVisible(
+                recordAccountId: storedProfile.accountId,
+                currentAccountId: currentAccountId
+              )
+        else {
+            profile = nil
+            return
+        }
+
+        profile = storedProfile
     }
 
     private static func defaultProfileURL() -> URL {

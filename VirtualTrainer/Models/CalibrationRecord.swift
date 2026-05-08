@@ -27,6 +27,7 @@ nonisolated enum CalibrationDefaults {
 
 nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
     let id: UUID
+    let accountId: String?
     let status: CalibrationStatus
     let exerciseType: ExerciseType
     let targetReps: Int
@@ -40,6 +41,7 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
 
     init(
         id: UUID = UUID(),
+        accountId: String? = nil,
         status: CalibrationStatus,
         exerciseType: ExerciseType,
         targetReps: Int,
@@ -52,6 +54,7 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
         deletedAt: Date? = nil
     ) {
         self.id = id
+        self.accountId = AccountOwnership.normalizedAccountId(accountId)
         self.status = status
         self.exerciseType = exerciseType
         self.targetReps = max(targetReps, 0)
@@ -77,15 +80,20 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
     }
 
     func markedDeleted(at date: Date) -> CalibrationRecord {
-        copy(deletedAt: date)
+        copy(accountId: accountId, deletedAt: date)
     }
 
     func restored() -> CalibrationRecord {
-        copy(deletedAt: nil)
+        copy(accountId: accountId, deletedAt: nil)
+    }
+
+    func withAccountId(_ accountId: String?) -> CalibrationRecord {
+        copy(accountId: accountId, deletedAt: deletedAt)
     }
 
     static func completed(
         id: UUID = UUID(),
+        accountId: String? = nil,
         exerciseType: ExerciseType = CalibrationDefaults.exerciseType,
         targetReps: Int = CalibrationDefaults.targetReps,
         completedReps: Int,
@@ -97,6 +105,7 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
     ) -> CalibrationRecord {
         CalibrationRecord(
             id: id,
+            accountId: accountId,
             status: .completed,
             exerciseType: exerciseType,
             targetReps: targetReps,
@@ -111,11 +120,13 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
 
     static func skipped(
         at date: Date = Date(),
+        accountId: String? = nil,
         exerciseType: ExerciseType = CalibrationDefaults.exerciseType,
         targetReps: Int = CalibrationDefaults.targetReps,
         notes: String? = "Skipped during setup."
     ) -> CalibrationRecord {
         CalibrationRecord(
+            accountId: accountId,
             status: .skipped,
             exerciseType: exerciseType,
             targetReps: targetReps,
@@ -130,6 +141,7 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
 
     static func failed(
         exerciseType: ExerciseType = CalibrationDefaults.exerciseType,
+        accountId: String? = nil,
         targetReps: Int = CalibrationDefaults.targetReps,
         completedReps: Int = 0,
         startedAt: Date = Date(),
@@ -139,6 +151,7 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
         notes: String
     ) -> CalibrationRecord {
         CalibrationRecord(
+            accountId: accountId,
             status: .failed,
             exerciseType: exerciseType,
             targetReps: targetReps,
@@ -153,9 +166,10 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
 }
 
 nonisolated private extension CalibrationRecord {
-    func copy(deletedAt: Date?) -> CalibrationRecord {
+    func copy(accountId: String?, deletedAt: Date?) -> CalibrationRecord {
         CalibrationRecord(
             id: id,
+            accountId: accountId,
             status: status,
             exerciseType: exerciseType,
             targetReps: targetReps,
