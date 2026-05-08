@@ -180,8 +180,14 @@ final class WorkoutHistoryStore: ObservableObject {
     }
 
     func fetchDirtyOrDeletedSummaries() -> [WorkoutSessionSummary] {
-        // TODO(C2): Include locally dirty records once SyncMetadata exists.
-        fetchDeletedSummaries()
+        sortedSummaries(
+            allSummaries.filter {
+                isVisible($0) &&
+                    ($0.isDeleted ||
+                     $0.syncMetadata.syncState == .pendingUpload ||
+                     $0.syncMetadata.syncState == .conflict)
+            }
+        )
     }
 
     func aggregateStats(now: Date = Date()) -> WorkoutHistoryStats {

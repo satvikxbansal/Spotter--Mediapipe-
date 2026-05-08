@@ -239,8 +239,10 @@ final class OnboardingStore: ObservableObject {
         guard var storedProfile else { return true }
         guard storedProfile.accountId == nil else { return true }
 
+        let now = Date()
         storedProfile.accountId = normalizedAccountId
-        storedProfile.updatedAt = Date()
+        storedProfile.updatedAt = now
+        storedProfile.syncMetadata.markLocalMutation(accountId: normalizedAccountId, now: now)
         return persist(storedProfile)
     }
 
@@ -359,6 +361,10 @@ final class OnboardingStore: ObservableObject {
         if let currentAccountId {
             accountStampedProfile.accountId = currentAccountId
         }
+        accountStampedProfile.syncMetadata.markLocalMutation(
+            accountId: accountStampedProfile.accountId,
+            now: accountStampedProfile.updatedAt
+        )
         return persist(accountStampedProfile)
     }
 

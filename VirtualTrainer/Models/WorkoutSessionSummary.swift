@@ -244,6 +244,7 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
     let totalHighSeverityCues: Int
     let createdAt: Date
     let deletedAt: Date?
+    var syncMetadata: SyncMetadata
 
     init(
         id: UUID = UUID(),
@@ -272,10 +273,12 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
         totalExcellentFormReps: Int? = nil,
         totalHighSeverityCues: Int? = nil,
         createdAt: Date = Date(),
-        deletedAt: Date? = nil
+        deletedAt: Date? = nil,
+        syncMetadata: SyncMetadata? = nil
     ) {
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         self.id = id
-        self.accountId = AccountOwnership.normalizedAccountId(accountId)
+        self.accountId = normalizedAccountId
         self.summarySchemaVersion = summarySchemaVersion
         self.appBuildVersion = appBuildVersion
         self.mode = mode
@@ -304,6 +307,11 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
         self.totalHighSeverityCues = totalHighSeverityCues ?? Self.totalHighSeverityCues(in: exerciseSummaries)
         self.createdAt = createdAt
         self.deletedAt = deletedAt
+        self.syncMetadata = syncMetadata ?? (
+            normalizedAccountId == nil
+                ? .initialLocalOnly(now: createdAt)
+                : .initialPendingUpload(operationId: nil, now: createdAt)
+        )
     }
 
     var primaryExerciseType: ExerciseType? {
@@ -315,15 +323,28 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
     }
 
     func markedDeleted(at date: Date) -> WorkoutSessionSummary {
-        copy(accountId: accountId, deletedAt: date)
+        copy(
+            accountId: accountId,
+            deletedAt: date,
+            syncMetadata: syncMetadata.markedForLocalMutation(accountId: accountId, now: date)
+        )
     }
 
     func restored() -> WorkoutSessionSummary {
-        copy(accountId: accountId, deletedAt: nil)
+        let now = Date()
+        return copy(
+            accountId: accountId,
+            deletedAt: nil,
+            syncMetadata: syncMetadata.markedForLocalMutation(accountId: accountId, now: now)
+        )
     }
 
     func withAccountId(_ accountId: String?) -> WorkoutSessionSummary {
-        copy(accountId: accountId, deletedAt: deletedAt)
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
+        let metadata = normalizedAccountId == nil
+            ? syncMetadata.markedForLocalMutation(accountId: nil)
+            : syncMetadata.markedForLocalMutation(accountId: normalizedAccountId)
+        return copy(accountId: normalizedAccountId, deletedAt: deletedAt, syncMetadata: metadata)
     }
 }
 
@@ -356,6 +377,7 @@ nonisolated extension WorkoutSessionSummary {
         case totalHighSeverityCues
         case createdAt
         case deletedAt
+        case syncMetadata
     }
 
     init(from decoder: Decoder) throws {
@@ -395,11 +417,17 @@ nonisolated extension WorkoutSessionSummary {
             ?? Self.totalHighSeverityCues(in: decodedExerciseSummaries)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? endedAt
         deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+        syncMetadata = try container.decodeIfPresent(SyncMetadata.self, forKey: .syncMetadata)
+            ?? .initialLocalOnly(now: createdAt)
     }
 }
 
 nonisolated private extension WorkoutSessionSummary {
-    func copy(accountId: String?, deletedAt: Date?) -> WorkoutSessionSummary {
+    func copy(
+        accountId: String?,
+        deletedAt: Date?,
+        syncMetadata: SyncMetadata
+    ) -> WorkoutSessionSummary {
         WorkoutSessionSummary(
             id: id,
             accountId: accountId,
@@ -427,7 +455,8 @@ nonisolated private extension WorkoutSessionSummary {
             totalExcellentFormReps: totalExcellentFormReps,
             totalHighSeverityCues: totalHighSeverityCues,
             createdAt: createdAt,
-            deletedAt: deletedAt
+            deletedAt: deletedAt,
+            syncMetadata: syncMetadata
         )
     }
 }

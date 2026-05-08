@@ -273,6 +273,7 @@ nonisolated struct UserProfile: Identifiable, Codable, Equatable {
     var createdAt: Date
     var updatedAt: Date
     var deletedAt: Date?
+    var syncMetadata: SyncMetadata
 
     var ageBracket: AgeBracket {
         Self.ageBracket(for: age)
@@ -325,10 +326,12 @@ nonisolated struct UserProfile: Identifiable, Codable, Equatable {
         onboardingCompletedAt: Date,
         createdAt: Date,
         updatedAt: Date,
-        deletedAt: Date? = nil
+        deletedAt: Date? = nil,
+        syncMetadata: SyncMetadata? = nil
     ) {
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         self.id = id
-        self.accountId = AccountOwnership.normalizedAccountId(accountId)
+        self.accountId = normalizedAccountId
         self.displayName = displayName
         self.genderIdentity = genderIdentity
         self.age = age
@@ -353,6 +356,11 @@ nonisolated struct UserProfile: Identifiable, Codable, Equatable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.deletedAt = deletedAt
+        self.syncMetadata = syncMetadata ?? (
+            normalizedAccountId == nil
+                ? .initialLocalOnly(now: updatedAt)
+                : .initialPendingUpload(operationId: nil, now: updatedAt)
+        )
     }
 
     var isDeleted: Bool {
@@ -363,12 +371,16 @@ nonisolated struct UserProfile: Identifiable, Codable, Equatable {
         var copy = self
         copy.deletedAt = date
         copy.updatedAt = date
+        copy.syncMetadata.markLocalMutation(accountId: copy.accountId, now: date)
         return copy
     }
 
     func restored() -> UserProfile {
         var copy = self
+        let now = Date()
         copy.deletedAt = nil
+        copy.updatedAt = now
+        copy.syncMetadata.markLocalMutation(accountId: copy.accountId, now: now)
         return copy
     }
 }
@@ -401,10 +413,12 @@ nonisolated extension UserProfile {
         case createdAt
         case updatedAt
         case deletedAt
+        case syncMetadata
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let updatedAt = try container.decode(Date.self, forKey: .updatedAt)
 
         self.init(
             id: try container.decode(UUID.self, forKey: .id),
@@ -431,8 +445,10 @@ nonisolated extension UserProfile {
             profileSchemaVersion: try container.decodeIfPresent(Int.self, forKey: .profileSchemaVersion) ?? Self.currentProfileSchemaVersion,
             onboardingCompletedAt: try container.decode(Date.self, forKey: .onboardingCompletedAt),
             createdAt: try container.decode(Date.self, forKey: .createdAt),
-            updatedAt: try container.decode(Date.self, forKey: .updatedAt),
-            deletedAt: try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+            updatedAt: updatedAt,
+            deletedAt: try container.decodeIfPresent(Date.self, forKey: .deletedAt),
+            syncMetadata: try container.decodeIfPresent(SyncMetadata.self, forKey: .syncMetadata)
+                ?? .initialLocalOnly(now: updatedAt)
         )
     }
 
@@ -464,6 +480,7 @@ nonisolated extension UserProfile {
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
+        try container.encode(syncMetadata, forKey: .syncMetadata)
     }
 }
 

@@ -73,7 +73,8 @@ final class ThemeStore: ObservableObject {
         let previousTheme = selectedTheme
         self.storedEnvelope = ThemeEnvelope(
             selectedTheme: storedEnvelope.selectedTheme,
-            accountId: normalizedAccountId
+            accountId: normalizedAccountId,
+            syncMetadata: storedEnvelope.syncMetadata.markedForLocalMutation(accountId: normalizedAccountId)
         )
         applyStoredEnvelope()
         guard persist() else {
@@ -157,9 +158,36 @@ final class ThemeStore: ObservableObject {
 private struct ThemeEnvelope: Codable {
     let selectedTheme: SpotterThemeOption
     let accountId: String?
+    var syncMetadata: SyncMetadata
 
-    init(selectedTheme: SpotterThemeOption, accountId: String? = nil) {
+    init(
+        selectedTheme: SpotterThemeOption,
+        accountId: String? = nil,
+        syncMetadata: SyncMetadata? = nil
+    ) {
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         self.selectedTheme = selectedTheme
-        self.accountId = AccountOwnership.normalizedAccountId(accountId)
+        self.accountId = normalizedAccountId
+        self.syncMetadata = syncMetadata ?? (
+            normalizedAccountId == nil
+                ? .initialLocalOnly()
+                : .initialPendingUpload(operationId: nil)
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case selectedTheme
+        case accountId
+        case syncMetadata
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            selectedTheme: try container.decode(SpotterThemeOption.self, forKey: .selectedTheme),
+            accountId: try container.decodeIfPresent(String.self, forKey: .accountId),
+            syncMetadata: try container.decodeIfPresent(SyncMetadata.self, forKey: .syncMetadata)
+                ?? .initialLocalOnly()
+        )
     }
 }

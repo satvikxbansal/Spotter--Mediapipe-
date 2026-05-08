@@ -38,6 +38,7 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
     let averageFormScore: Double?
     let notes: String?
     let deletedAt: Date?
+    var syncMetadata: SyncMetadata
 
     init(
         id: UUID = UUID(),
@@ -51,10 +52,12 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
         visibilityPassed: Bool,
         averageFormScore: Double?,
         notes: String? = nil,
-        deletedAt: Date? = nil
+        deletedAt: Date? = nil,
+        syncMetadata: SyncMetadata? = nil
     ) {
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         self.id = id
-        self.accountId = AccountOwnership.normalizedAccountId(accountId)
+        self.accountId = normalizedAccountId
         self.status = status
         self.exerciseType = exerciseType
         self.targetReps = max(targetReps, 0)
@@ -65,6 +68,11 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
         self.averageFormScore = averageFormScore.map { max(0, min($0, 100)) }
         self.notes = notes
         self.deletedAt = deletedAt
+        self.syncMetadata = syncMetadata ?? (
+            normalizedAccountId == nil
+                ? .initialLocalOnly(now: completedAt)
+                : .initialPendingUpload(operationId: nil, now: completedAt)
+        )
     }
 
     var isSuccessfulCalibration: Bool {
@@ -80,15 +88,28 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
     }
 
     func markedDeleted(at date: Date) -> CalibrationRecord {
-        copy(accountId: accountId, deletedAt: date)
+        copy(
+            accountId: accountId,
+            deletedAt: date,
+            syncMetadata: syncMetadata.markedForLocalMutation(accountId: accountId, now: date)
+        )
     }
 
     func restored() -> CalibrationRecord {
-        copy(accountId: accountId, deletedAt: nil)
+        copy(
+            accountId: accountId,
+            deletedAt: nil,
+            syncMetadata: syncMetadata.markedForLocalMutation(accountId: accountId)
+        )
     }
 
     func withAccountId(_ accountId: String?) -> CalibrationRecord {
-        copy(accountId: accountId, deletedAt: deletedAt)
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
+        return copy(
+            accountId: normalizedAccountId,
+            deletedAt: deletedAt,
+            syncMetadata: syncMetadata.markedForLocalMutation(accountId: normalizedAccountId)
+        )
     }
 
     static func completed(
@@ -166,7 +187,11 @@ nonisolated struct CalibrationRecord: Identifiable, Codable, Equatable {
 }
 
 nonisolated private extension CalibrationRecord {
-    func copy(accountId: String?, deletedAt: Date?) -> CalibrationRecord {
+    func copy(
+        accountId: String?,
+        deletedAt: Date?,
+        syncMetadata: SyncMetadata
+    ) -> CalibrationRecord {
         CalibrationRecord(
             id: id,
             accountId: accountId,
@@ -179,7 +204,48 @@ nonisolated private extension CalibrationRecord {
             visibilityPassed: visibilityPassed,
             averageFormScore: averageFormScore,
             notes: notes,
-            deletedAt: deletedAt
+            deletedAt: deletedAt,
+            syncMetadata: syncMetadata
+        )
+    }
+}
+
+nonisolated extension CalibrationRecord {
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case accountId
+        case status
+        case exerciseType
+        case targetReps
+        case completedReps
+        case startedAt
+        case completedAt
+        case visibilityPassed
+        case averageFormScore
+        case notes
+        case deletedAt
+        case syncMetadata
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let completedAt = try container.decode(Date.self, forKey: .completedAt)
+
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            accountId: try container.decodeIfPresent(String.self, forKey: .accountId),
+            status: try container.decode(CalibrationStatus.self, forKey: .status),
+            exerciseType: try container.decode(ExerciseType.self, forKey: .exerciseType),
+            targetReps: try container.decode(Int.self, forKey: .targetReps),
+            completedReps: try container.decode(Int.self, forKey: .completedReps),
+            startedAt: try container.decode(Date.self, forKey: .startedAt),
+            completedAt: completedAt,
+            visibilityPassed: try container.decode(Bool.self, forKey: .visibilityPassed),
+            averageFormScore: try container.decodeIfPresent(Double.self, forKey: .averageFormScore),
+            notes: try container.decodeIfPresent(String.self, forKey: .notes),
+            deletedAt: try container.decodeIfPresent(Date.self, forKey: .deletedAt),
+            syncMetadata: try container.decodeIfPresent(SyncMetadata.self, forKey: .syncMetadata)
+                ?? .initialLocalOnly(now: completedAt)
         )
     }
 }

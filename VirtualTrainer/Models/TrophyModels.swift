@@ -189,6 +189,7 @@ nonisolated struct TrophyProgress: Identifiable, Codable, Equatable {
     let confidence: TrophyProgressConfidence
     let progressLabel: String
     let accountId: String?
+    var syncMetadata: SyncMetadata
 
     init(
         trophyId: String,
@@ -199,8 +200,10 @@ nonisolated struct TrophyProgress: Identifiable, Codable, Equatable {
         lastUpdatedAt: Date,
         confidence: TrophyProgressConfidence,
         progressLabel: String,
-        accountId: String? = nil
+        accountId: String? = nil,
+        syncMetadata: SyncMetadata? = nil
     ) {
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         self.trophyId = trophyId
         self.currentValue = currentValue
         self.targetValue = targetValue
@@ -209,7 +212,12 @@ nonisolated struct TrophyProgress: Identifiable, Codable, Equatable {
         self.lastUpdatedAt = lastUpdatedAt
         self.confidence = confidence
         self.progressLabel = progressLabel
-        self.accountId = AccountOwnership.normalizedAccountId(accountId)
+        self.accountId = normalizedAccountId
+        self.syncMetadata = syncMetadata ?? (
+            normalizedAccountId == nil
+                ? .initialLocalOnly(now: lastUpdatedAt)
+                : .initialPendingUpload(operationId: nil, now: lastUpdatedAt)
+        )
     }
 
     var progressFraction: Double {
@@ -218,7 +226,8 @@ nonisolated struct TrophyProgress: Identifiable, Codable, Equatable {
     }
 
     func withAccountId(_ accountId: String?) -> TrophyProgress {
-        TrophyProgress(
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
+        return TrophyProgress(
             trophyId: trophyId,
             currentValue: currentValue,
             targetValue: targetValue,
@@ -227,7 +236,42 @@ nonisolated struct TrophyProgress: Identifiable, Codable, Equatable {
             lastUpdatedAt: lastUpdatedAt,
             confidence: confidence,
             progressLabel: progressLabel,
-            accountId: accountId
+            accountId: normalizedAccountId,
+            syncMetadata: syncMetadata.markedForLocalMutation(accountId: normalizedAccountId)
+        )
+    }
+}
+
+nonisolated extension TrophyProgress {
+    private enum CodingKeys: String, CodingKey {
+        case trophyId
+        case currentValue
+        case targetValue
+        case earned
+        case earnedAt
+        case lastUpdatedAt
+        case confidence
+        case progressLabel
+        case accountId
+        case syncMetadata
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let lastUpdatedAt = try container.decode(Date.self, forKey: .lastUpdatedAt)
+
+        self.init(
+            trophyId: try container.decode(String.self, forKey: .trophyId),
+            currentValue: try container.decode(Double.self, forKey: .currentValue),
+            targetValue: try container.decode(Double.self, forKey: .targetValue),
+            earned: try container.decode(Bool.self, forKey: .earned),
+            earnedAt: try container.decodeIfPresent(Date.self, forKey: .earnedAt),
+            lastUpdatedAt: lastUpdatedAt,
+            confidence: try container.decode(TrophyProgressConfidence.self, forKey: .confidence),
+            progressLabel: try container.decode(String.self, forKey: .progressLabel),
+            accountId: try container.decodeIfPresent(String.self, forKey: .accountId),
+            syncMetadata: try container.decodeIfPresent(SyncMetadata.self, forKey: .syncMetadata)
+                ?? .initialLocalOnly(now: lastUpdatedAt)
         )
     }
 }
@@ -241,6 +285,7 @@ nonisolated struct TrophyUnlockEvent: Identifiable, Codable, Equatable {
     let earnedAt: Date
     let reason: String
     let celebrationStyle: TrophyCelebrationStyle
+    var syncMetadata: SyncMetadata
 
     init(
         id: UUID = UUID(),
@@ -250,28 +295,69 @@ nonisolated struct TrophyUnlockEvent: Identifiable, Codable, Equatable {
         subtitle: String,
         earnedAt: Date,
         reason: String,
-        celebrationStyle: TrophyCelebrationStyle
+        celebrationStyle: TrophyCelebrationStyle,
+        syncMetadata: SyncMetadata? = nil
     ) {
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         self.id = id
-        self.accountId = AccountOwnership.normalizedAccountId(accountId)
+        self.accountId = normalizedAccountId
         self.trophyId = trophyId
         self.title = title
         self.subtitle = subtitle
         self.earnedAt = earnedAt
         self.reason = reason
         self.celebrationStyle = celebrationStyle
+        self.syncMetadata = syncMetadata ?? (
+            normalizedAccountId == nil
+                ? .initialLocalOnly(now: earnedAt)
+                : .initialPendingUpload(operationId: nil, now: earnedAt)
+        )
     }
 
     func withAccountId(_ accountId: String?) -> TrophyUnlockEvent {
-        TrophyUnlockEvent(
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
+        return TrophyUnlockEvent(
             id: id,
-            accountId: accountId,
+            accountId: normalizedAccountId,
             trophyId: trophyId,
             title: title,
             subtitle: subtitle,
             earnedAt: earnedAt,
             reason: reason,
-            celebrationStyle: celebrationStyle
+            celebrationStyle: celebrationStyle,
+            syncMetadata: syncMetadata.markedForLocalMutation(accountId: normalizedAccountId)
+        )
+    }
+}
+
+nonisolated extension TrophyUnlockEvent {
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case accountId
+        case trophyId
+        case title
+        case subtitle
+        case earnedAt
+        case reason
+        case celebrationStyle
+        case syncMetadata
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let earnedAt = try container.decode(Date.self, forKey: .earnedAt)
+
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            accountId: try container.decodeIfPresent(String.self, forKey: .accountId),
+            trophyId: try container.decode(String.self, forKey: .trophyId),
+            title: try container.decode(String.self, forKey: .title),
+            subtitle: try container.decode(String.self, forKey: .subtitle),
+            earnedAt: earnedAt,
+            reason: try container.decode(String.self, forKey: .reason),
+            celebrationStyle: try container.decode(TrophyCelebrationStyle.self, forKey: .celebrationStyle),
+            syncMetadata: try container.decodeIfPresent(SyncMetadata.self, forKey: .syncMetadata)
+                ?? .initialLocalOnly(now: earnedAt)
         )
     }
 }

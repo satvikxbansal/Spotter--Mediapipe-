@@ -152,6 +152,7 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
     let expiresAt: Date?
     let dedupeKey: String
     let deletedAt: Date?
+    var syncMetadata: SyncMetadata
 
     init(
         id: String? = nil,
@@ -173,9 +174,11 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
         sourcePolicyVersion: String = AIInsight.currentSourcePolicyVersion,
         expiresAt: Date? = nil,
         dedupeKey: String,
-        deletedAt: Date? = nil
+        deletedAt: Date? = nil,
+        syncMetadata: SyncMetadata? = nil
     ) {
-        self.accountId = AccountOwnership.normalizedAccountId(accountId)
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
+        self.accountId = normalizedAccountId
         self.type = type
         self.headline = headline
         self.message = message
@@ -194,6 +197,11 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
         self.expiresAt = expiresAt
         self.dedupeKey = dedupeKey
         self.deletedAt = deletedAt
+        self.syncMetadata = syncMetadata ?? (
+            normalizedAccountId == nil
+                ? .initialLocalOnly(now: createdAt)
+                : .initialPendingUpload(operationId: nil, now: createdAt)
+        )
         self.id = id ?? Self.makeID(
             dedupeKey: dedupeKey,
             createdAt: createdAt,
@@ -206,15 +214,28 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
     }
 
     func markedDeleted(at date: Date) -> AIInsight {
-        copy(accountId: accountId, deletedAt: date)
+        copy(
+            accountId: accountId,
+            deletedAt: date,
+            syncMetadata: syncMetadata.markedForLocalMutation(accountId: accountId, now: date)
+        )
     }
 
     func restored() -> AIInsight {
-        copy(accountId: accountId, deletedAt: nil)
+        copy(
+            accountId: accountId,
+            deletedAt: nil,
+            syncMetadata: syncMetadata.markedForLocalMutation(accountId: accountId)
+        )
     }
 
     func withAccountId(_ accountId: String?) -> AIInsight {
-        copy(accountId: accountId, deletedAt: deletedAt)
+        let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
+        return copy(
+            accountId: normalizedAccountId,
+            deletedAt: deletedAt,
+            syncMetadata: syncMetadata.markedForLocalMutation(accountId: normalizedAccountId)
+        )
     }
 
     func isExpired(now: Date = Date()) -> Bool {
@@ -236,7 +257,11 @@ nonisolated struct AIInsight: Identifiable, Codable, Equatable {
 }
 
 nonisolated private extension AIInsight {
-    func copy(accountId: String?, deletedAt: Date?) -> AIInsight {
+    func copy(
+        accountId: String?,
+        deletedAt: Date?,
+        syncMetadata: SyncMetadata
+    ) -> AIInsight {
         AIInsight(
             id: id,
             accountId: accountId,
@@ -257,7 +282,64 @@ nonisolated private extension AIInsight {
             sourcePolicyVersion: sourcePolicyVersion,
             expiresAt: expiresAt,
             dedupeKey: dedupeKey,
-            deletedAt: deletedAt
+            deletedAt: deletedAt,
+            syncMetadata: syncMetadata
+        )
+    }
+}
+
+nonisolated extension AIInsight {
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case accountId
+        case type
+        case headline
+        case message
+        case shortMessage
+        case evidence
+        case recommendedAction
+        case severity
+        case emotionalIntent
+        case userValueScore
+        case confidence
+        case surfaces
+        case relatedExerciseType
+        case relatedGoal
+        case createdAt
+        case sourcePolicyVersion
+        case expiresAt
+        case dedupeKey
+        case deletedAt
+        case syncMetadata
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let createdAt = try container.decode(Date.self, forKey: .createdAt)
+
+        self.init(
+            id: try container.decodeIfPresent(String.self, forKey: .id),
+            accountId: try container.decodeIfPresent(String.self, forKey: .accountId),
+            type: try container.decode(InsightType.self, forKey: .type),
+            headline: try container.decode(String.self, forKey: .headline),
+            message: try container.decode(String.self, forKey: .message),
+            shortMessage: try container.decode(String.self, forKey: .shortMessage),
+            evidence: try container.decode([InsightEvidence].self, forKey: .evidence),
+            recommendedAction: try container.decode(InsightAction.self, forKey: .recommendedAction),
+            severity: try container.decode(InsightSeverity.self, forKey: .severity),
+            emotionalIntent: try container.decode(InsightEmotionalIntent.self, forKey: .emotionalIntent),
+            userValueScore: try container.decode(Double.self, forKey: .userValueScore),
+            confidence: try container.decode(Double.self, forKey: .confidence),
+            surfaces: try container.decode([InsightSurface].self, forKey: .surfaces),
+            relatedExerciseType: try container.decodeIfPresent(ExerciseType.self, forKey: .relatedExerciseType),
+            relatedGoal: try container.decodeIfPresent(FitnessGoal.self, forKey: .relatedGoal),
+            createdAt: createdAt,
+            sourcePolicyVersion: try container.decode(String.self, forKey: .sourcePolicyVersion),
+            expiresAt: try container.decodeIfPresent(Date.self, forKey: .expiresAt),
+            dedupeKey: try container.decode(String.self, forKey: .dedupeKey),
+            deletedAt: try container.decodeIfPresent(Date.self, forKey: .deletedAt),
+            syncMetadata: try container.decodeIfPresent(SyncMetadata.self, forKey: .syncMetadata)
+                ?? .initialLocalOnly(now: createdAt)
         )
     }
 }
