@@ -18,8 +18,8 @@ final class OnboardingStore: ObservableObject {
 
     private let fileURL: URL
     private let writeJournal: LocalWriteJournal
-    private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private let persistenceActor: PersistenceActor
     private var currentAccountId: String?
     private var storedProfile: UserProfile?
 
@@ -27,15 +27,20 @@ final class OnboardingStore: ObservableObject {
         profile != nil
     }
 
-    init(fileURL: URL? = nil, accountId: String? = nil, writeJournal: LocalWriteJournal? = nil) {
+    init(
+        fileURL: URL? = nil,
+        accountId: String? = nil,
+        writeJournal: LocalWriteJournal? = nil,
+        persistenceActor: PersistenceActor = .shared
+    ) {
         let resolvedFileURL = fileURL ?? Self.defaultProfileURL()
         self.fileURL = resolvedFileURL
         self.writeJournal = writeJournal ?? LocalWriteJournal(
-            fileURL: LocalWriteJournal.defaultJournalURL(alongside: resolvedFileURL)
+            fileURL: LocalWriteJournal.defaultJournalURL(alongside: resolvedFileURL),
+            persistenceActor: persistenceActor
         )
+        self.persistenceActor = persistenceActor
         self.currentAccountId = AccountOwnership.normalizedAccountId(accountId)
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
         loadProfile()
     }
@@ -154,7 +159,8 @@ final class OnboardingStore: ObservableObject {
         }
     }
 
-    func completeOnboarding(operationId: UUID? = nil) {
+    @discardableResult
+    func completeOnboarding(operationId: UUID? = nil) async -> Bool {
         guard canCompleteProfile,
               let genderIdentity = draft.genderIdentity,
               let age = draft.ageValue,
@@ -164,7 +170,7 @@ final class OnboardingStore: ObservableObject {
               let fitnessLevel = draft.fitnessLevel
         else {
             persistenceError = "Finish the required onboarding fields first."
-            return
+            return false
         }
 
         let now = Date()
@@ -194,7 +200,7 @@ final class OnboardingStore: ObservableObject {
             updatedAt: now
         )
 
-        save(profile, operationId: operationId)
+        return await save(profile, operationId: operationId)
     }
 
     func updateTrainingPreferences(
@@ -205,10 +211,10 @@ final class OnboardingStore: ObservableObject {
         timezoneIdentifier: String,
         avatarStyle: AvatarStyle?,
         operationId: UUID? = nil
-    ) {
+    ) async -> Bool {
         guard var profile else {
             persistenceError = "No profile exists yet."
-            return
+            return false
         }
 
         profile.limitations = limitations
@@ -219,27 +225,27 @@ final class OnboardingStore: ObservableObject {
         profile.avatarStyle = avatarStyle
         profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
         profile.updatedAt = Date()
-        save(profile, operationId: operationId)
+        return await save(profile, operationId: operationId)
     }
 
-    func resetOnboarding() {
-        profile = nil
-        storedProfile = nil
-        draft = OnboardingDraft()
-        persistenceError = nil
+    func resetOnboarding() async {
         do {
             if FileManager.default.fileExists(atPath: fileURL.path) {
-                try FileManager.default.removeItem(at: fileURL)
+                try await persistenceActor.remove(fileURL)
             }
+            profile = nil
+            storedProfile = nil
+            draft = OnboardingDraft()
+            persistenceError = nil
         } catch {
             persistenceError = "Could not reset onboarding: \(error.localizedDescription)"
         }
     }
 
     @discardableResult
-    func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) -> Bool {
+    func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
         guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
             persistenceError = "Account id is required before local profile data can be claimed."
             return false
@@ -255,13 +261,13 @@ final class OnboardingStore: ObservableObject {
             operationId: writeOperationId,
             now: now
         )
-        guard persist(storedProfile) else { return false }
-        recordWriteOperation(writeOperationId, createdAt: now)
+        guard await persist(storedProfile) == .written else { return false }
+        await recordWriteOperation(writeOperationId, createdAt: now)
         return true
     }
 
     @discardableResult
-    func updatePrimaryGoal(_ goal: FitnessGoal, operationId: UUID? = nil) -> Bool {
+    func updatePrimaryGoal(_ goal: FitnessGoal, operationId: UUID? = nil) async -> Bool {
         guard var profile else {
             persistenceError = "No profile exists yet."
             return false
@@ -272,11 +278,11 @@ final class OnboardingStore: ObservableObject {
         profile.primaryGoal = goal
         profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
         profile.updatedAt = Date()
-        return save(profile, operationId: operationId)
+        return await save(profile, operationId: operationId)
     }
 
     @discardableResult
-    func updatePreferredCoach(_ coach: CoachPreference, operationId: UUID? = nil) -> Bool {
+    func updatePreferredCoach(_ coach: CoachPreference, operationId: UUID? = nil) async -> Bool {
         guard var profile else {
             persistenceError = "No profile exists yet."
             return false
@@ -287,11 +293,11 @@ final class OnboardingStore: ObservableObject {
         profile.preferredCoach = coach
         profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
         profile.updatedAt = Date()
-        return save(profile, operationId: operationId)
+        return await save(profile, operationId: operationId)
     }
 
     @discardableResult
-    func updateSelectedTheme(_ theme: SpotterThemeOption, operationId: UUID? = nil) -> Bool {
+    func updateSelectedTheme(_ theme: SpotterThemeOption, operationId: UUID? = nil) async -> Bool {
         guard var profile else {
             persistenceError = "No profile exists yet."
             return false
@@ -302,11 +308,11 @@ final class OnboardingStore: ObservableObject {
         profile.selectedTheme = theme
         profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
         profile.updatedAt = Date()
-        return save(profile, operationId: operationId)
+        return await save(profile, operationId: operationId)
     }
 
     @discardableResult
-    func updatePreferredSessionLength(_ sessionLength: PlanSessionLength, operationId: UUID? = nil) -> Bool {
+    func updatePreferredSessionLength(_ sessionLength: PlanSessionLength, operationId: UUID? = nil) async -> Bool {
         guard var profile else {
             persistenceError = "No profile exists yet."
             return false
@@ -317,7 +323,7 @@ final class OnboardingStore: ObservableObject {
         profile.preferredSessionLength = sessionLength
         profile.profileSchemaVersion = UserProfile.currentProfileSchemaVersion
         profile.updatedAt = Date()
-        return save(profile, operationId: operationId)
+        return await save(profile, operationId: operationId)
     }
 
     private var canCompleteProfile: Bool {
@@ -370,9 +376,9 @@ final class OnboardingStore: ObservableObject {
     }
 
     @discardableResult
-    private func save(_ profile: UserProfile, operationId: UUID? = nil) -> Bool {
+    private func save(_ profile: UserProfile, operationId: UUID? = nil) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         var accountStampedProfile = profile
         if let currentAccountId {
@@ -383,13 +389,15 @@ final class OnboardingStore: ObservableObject {
             operationId: writeOperationId,
             now: accountStampedProfile.updatedAt
         )
-        guard persist(accountStampedProfile) else { return false }
-        recordWriteOperation(writeOperationId, createdAt: accountStampedProfile.updatedAt)
+        guard let outcome = await persist(accountStampedProfile) else { return false }
+        if outcome == .written {
+            await recordWriteOperation(writeOperationId, createdAt: accountStampedProfile.updatedAt)
+        }
         return true
     }
 
-    private func recordWriteOperation(_ operationId: UUID, createdAt: Date) {
-        _ = writeJournal.record(
+    private func recordWriteOperation(_ operationId: UUID, createdAt: Date) async {
+        _ = await writeJournal.record(
             operationId: operationId,
             entityKind: .profile,
             createdAt: createdAt
@@ -397,25 +405,22 @@ final class OnboardingStore: ObservableObject {
     }
 
     @discardableResult
-    private func persist(_ profile: UserProfile) -> Bool {
-        let previousStoredProfile = storedProfile
-        let previousVisibleProfile = self.profile
+    private func persist(_ profile: UserProfile) async -> PersistenceWriteOutcome? {
         do {
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
+            let data = try await persistenceActor.encode(
+                profile,
+                outputFormatting: [.prettyPrinted, .sortedKeys]
             )
-            let data = try encoder.encode(profile)
-            try data.write(to: fileURL, options: [.atomic])
-            storedProfile = profile
-            applyStoredProfile()
+            let outcome = try await persistenceActor.writeLatest(data, to: fileURL, options: [.atomic])
+            if outcome == .written {
+                storedProfile = profile
+                applyStoredProfile()
+            }
             persistenceError = nil
-            return true
+            return outcome
         } catch {
-            storedProfile = previousStoredProfile
-            self.profile = previousVisibleProfile
             persistenceError = "Could not save profile: \(error.localizedDescription)"
-            return false
+            return nil
         }
     }
 

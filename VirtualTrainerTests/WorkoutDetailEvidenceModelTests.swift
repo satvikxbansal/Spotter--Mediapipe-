@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class WorkoutDetailEvidenceModelTests: XCTestCase {
-    func testFadedSetEvidenceSurfacesSparklineBreakdownCueAndRestRationale() throws {
+    func testFadedSetEvidenceSurfacesSparklineBreakdownCueAndRestRationale() async throws {
         let summary = makeFadedSummary()
         let model = WorkoutDetailEvidenceModel(summary: summary)
 
@@ -22,7 +22,7 @@ final class WorkoutDetailEvidenceModelTests: XCTestCase {
         XCTAssertEqual(setEvidence.restIndicators.map(\.rationale), ["Rest extended after this set."])
     }
 
-    func testMissingFormScoresAreDroppedFromSparklineButRemainInTimeline() throws {
+    func testMissingFormScoresAreDroppedFromSparklineButRemainInTimeline() async throws {
         let now = Self.now
         let repEvents = [
             makeRep(score: 91, repIndex: 1, timestamp: now.addingTimeInterval(1)),
@@ -42,7 +42,7 @@ final class WorkoutDetailEvidenceModelTests: XCTestCase {
         }.count, 3)
     }
 
-    func testNoRepEventsBuildsCleanSetEvidenceWithoutSparkline() throws {
+    func testNoRepEventsBuildsCleanSetEvidenceWithoutSparkline() async throws {
         let set = makeSet(repEvents: [], qualitySummary: nil)
         let summary = makeSummary(sets: [set])
 
@@ -56,7 +56,7 @@ final class WorkoutDetailEvidenceModelTests: XCTestCase {
         XCTAssertTrue(model.timelineEvents.isEmpty)
     }
 
-    func testTimelineOrdersCueAndRepQualityEventsChronologically() {
+    func testTimelineOrdersCueAndRepQualityEventsChronologically() async {
         let now = Self.now
         let cue = CueEvent(
             timestamp: now.addingTimeInterval(2),
@@ -77,14 +77,14 @@ final class WorkoutDetailEvidenceModelTests: XCTestCase {
         XCTAssertEqual(model.timelineEvents.map(\.title), ["Rep 1 completed", "Brace your ribs"])
     }
 
-    func testCleanDetailSheetPreviewSnapshotRenders() throws {
-        let image = try renderSnapshot(summary: makeCleanSummary(), name: "WorkoutDetail-Clean-Preview")
+    func testCleanDetailSheetPreviewSnapshotRenders() async throws {
+        let image = try await renderSnapshot(summary: makeCleanSummary(), name: "WorkoutDetail-Clean-Preview")
 
         XCTAssertGreaterThan(image.pngData()?.count ?? 0, 10_000)
     }
 
-    func testFadedDetailSheetPreviewSnapshotRenders() throws {
-        let image = try renderSnapshot(summary: makeFadedSummary(), name: "WorkoutDetail-Faded-Preview")
+    func testFadedDetailSheetPreviewSnapshotRenders() async throws {
+        let image = try await renderSnapshot(summary: makeFadedSummary(), name: "WorkoutDetail-Faded-Preview")
 
         XCTAssertGreaterThan(image.pngData()?.count ?? 0, 10_000)
     }
@@ -237,10 +237,10 @@ private extension WorkoutDetailEvidenceModelTests {
         )
     }
 
-    func renderSnapshot(summary: WorkoutSessionSummary, name: String) throws -> UIImage {
+    func renderSnapshot(summary: WorkoutSessionSummary, name: String) async throws -> UIImage {
         let size = CGSize(width: 390, height: 844)
         let historyStore = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
-        _ = historyStore.addSummary(summary)
+        _ = await historyStore.addSummary(summary)
         let controller = UIHostingController(
             rootView: WorkoutDetailSheetView(summary: summary)
                 .environmentObject(CalibrationStore(fileURL: temporaryCalibrationURL()))

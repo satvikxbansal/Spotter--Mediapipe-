@@ -3,14 +3,14 @@ import XCTest
 
 @MainActor
 final class CalibrationStoreTests: XCTestCase {
-    func testCompletedStatusPersists() throws {
+    func testCompletedStatusPersists() async throws {
         let url = temporaryCalibrationURL()
         let store = CalibrationStore(fileURL: url)
         let startedAt = Date(timeIntervalSince1970: 1_776_400_000)
         let completedAt = Date(timeIntervalSince1970: 1_776_400_030)
 
-        XCTAssertTrue(
-            store.saveCompleted(
+        assertTrue(
+            await store.saveCompleted(
                 completedReps: 3,
                 startedAt: startedAt,
                 completedAt: completedAt,
@@ -29,12 +29,12 @@ final class CalibrationStoreTests: XCTestCase {
         XCTAssertEqual(record.averageFormScore, 88)
     }
 
-    func testSkippedStatusPersists() throws {
+    func testSkippedStatusPersists() async throws {
         let url = temporaryCalibrationURL()
         let store = CalibrationStore(fileURL: url)
 
-        XCTAssertTrue(
-            store.saveSkipped(
+        assertTrue(
+            await store.saveSkipped(
                 at: Date(timeIntervalSince1970: 1_776_400_100),
                 notes: "Skipped in setup."
             )
@@ -48,7 +48,7 @@ final class CalibrationStoreTests: XCTestCase {
         XCTAssertEqual(record.notes, "Skipped in setup.")
     }
 
-    func testSuccessfulThreeRepCalibrationCreatesCompletedRecord() {
+    func testSuccessfulThreeRepCalibrationCreatesCompletedRecord() async {
         let startedAt = Date(timeIntervalSince1970: 1_776_400_200)
         let completedAt = Date(timeIntervalSince1970: 1_776_400_240)
 
@@ -69,7 +69,7 @@ final class CalibrationStoreTests: XCTestCase {
         XCTAssertEqual(record.averageFormScore, 91.5)
     }
 
-    func testLegacyCalibrationRecordJSONWithoutDeletedAtDecodes() throws {
+    func testLegacyCalibrationRecordJSONWithoutDeletedAtDecodes() async throws {
         let record = CalibrationRecord.completed(
             completedReps: 3,
             startedAt: Date(timeIntervalSince1970: 1_776_400_200),
@@ -94,7 +94,7 @@ final class CalibrationStoreTests: XCTestCase {
         XCTAssertTrue(decoded.isSuccessfulCalibration)
     }
 
-    func testServerCompletedAtSurvivesBackendReadinessCopies() throws {
+    func testServerCompletedAtSurvivesBackendReadinessCopies() async throws {
         let startedAt = Date(timeIntervalSince1970: 1_776_400_210)
         let completedAt = Date(timeIntervalSince1970: 1_776_400_240)
         let serverCompletedAt = Date(timeIntervalSince1970: 1_776_400_260)
@@ -117,7 +117,7 @@ final class CalibrationStoreTests: XCTestCase {
         XCTAssertEqual(restored.serverCompletedAt, serverCompletedAt)
     }
 
-    func testTombstonedCalibrationRecordIsNotCompleted() throws {
+    func testTombstonedCalibrationRecordIsNotCompleted() async throws {
         let url = temporaryCalibrationURL()
         let completed = CalibrationRecord.completed(
             completedReps: 3,
@@ -142,7 +142,7 @@ final class CalibrationStoreTests: XCTestCase {
         XCTAssertTrue(store.record?.isDeleted ?? false)
     }
 
-    func testCalibrationDoesNotBreakFreeAnalysisMode() {
+    func testCalibrationDoesNotBreakFreeAnalysisMode() async {
         let freeContext = LiveSessionContext.freeAnalysis(
             exerciseType: .pushup,
             coach: .good,
@@ -167,12 +167,12 @@ final class CalibrationStoreTests: XCTestCase {
         XCTAssertEqual(calibrationContext.coach, .drill)
     }
 
-    func testCalibrationPersistenceDoesNotPolluteWorkoutHistory() {
+    func testCalibrationPersistenceDoesNotPolluteWorkoutHistory() async {
         let calibrationStore = CalibrationStore(fileURL: temporaryCalibrationURL())
         let historyStore = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
 
-        XCTAssertTrue(
-            calibrationStore.saveCompleted(
+        assertTrue(
+            await calibrationStore.saveCompleted(
                 completedReps: 3,
                 startedAt: Date(timeIntervalSince1970: 1_776_400_300),
                 completedAt: Date(timeIntervalSince1970: 1_776_400_330),
@@ -185,12 +185,12 @@ final class CalibrationStoreTests: XCTestCase {
         XCTAssertTrue(historyStore.fetchRecentSummaries().isEmpty)
     }
 
-    func testMissingCameraPermissionCanPersistFailedCalibration() throws {
+    func testMissingCameraPermissionCanPersistFailedCalibration() async throws {
         let url = temporaryCalibrationURL()
         let store = CalibrationStore(fileURL: url)
 
-        XCTAssertTrue(
-            store.saveFailed(
+        assertTrue(
+            await store.saveFailed(
                 startedAt: Date(timeIntervalSince1970: 1_776_400_400),
                 completedAt: Date(timeIntervalSince1970: 1_776_400_400),
                 notes: "Camera permission was unavailable during calibration."
@@ -205,11 +205,11 @@ final class CalibrationStoreTests: XCTestCase {
         XCTAssertEqual(record.notes, "Camera permission was unavailable during calibration.")
     }
 
-    func testIncompleteCompletedRecordIsRejected() {
+    func testIncompleteCompletedRecordIsRejected() async {
         let store = CalibrationStore(fileURL: temporaryCalibrationURL())
 
-        XCTAssertFalse(
-            store.saveCompleted(
+        assertFalse(
+            await store.saveCompleted(
                 completedReps: 2,
                 startedAt: Date(timeIntervalSince1970: 1_776_400_500),
                 completedAt: Date(timeIntervalSince1970: 1_776_400_530),

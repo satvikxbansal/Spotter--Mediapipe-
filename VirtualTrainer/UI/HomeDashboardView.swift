@@ -30,7 +30,9 @@ struct HomeDashboardView: View {
                     dashboard(for: profile)
                 } else {
                     MissingProfileDashboard {
-                        onboardingStore.resetOnboarding()
+                        Task {
+                            await onboardingStore.resetOnboarding()
+                        }
                     }
                 }
             }
@@ -63,19 +65,29 @@ struct HomeDashboardView: View {
                     insight: insight,
                     summaries: historyStore.summaries
                 ) { kind in
-                    insightStore.recordEngagement(insight, kind: kind)
+                    Task {
+                        await insightStore.recordEngagement(insight, kind: kind)
+                    }
                 }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
             .preferredColorScheme(.dark)
         }
-        .onAppear(perform: refreshDashboard)
+        .onAppear {
+            Task {
+                await refreshDashboard()
+            }
+        }
             .onChange(of: onboardingStore.profile) {
-                refreshDashboard()
+                Task {
+                    await refreshDashboard()
+                }
             }
             .onChange(of: historyStore.summaries) {
-                refreshDashboard()
+                Task {
+                    await refreshDashboard()
+                }
             }
     }
 
@@ -102,10 +114,12 @@ struct HomeDashboardView: View {
                         DashboardWeeklyRecapCard(
                             recap: weeklyRecap,
                             onAppear: {
-                                insightStore.recordPresentation(
-                                    dedupeKey: weeklyRecap.dedupeKey,
-                                    on: .dashboard
-                                )
+                                Task {
+                                    await insightStore.recordPresentation(
+                                        dedupeKey: weeklyRecap.dedupeKey,
+                                        on: .dashboard
+                                    )
+                                }
                             }
                         )
                     }
@@ -114,10 +128,14 @@ struct HomeDashboardView: View {
                         DashboardCoachInsightCard(
                             insight: dashboardInsight,
                             onAppear: {
-                                insightStore.recordImpression(dashboardInsight, on: .dashboard)
+                                Task {
+                                    await insightStore.recordImpression(dashboardInsight, on: .dashboard)
+                                }
                             },
                             onOpen: {
-                                insightStore.recordEngagement(dashboardInsight, kind: .opened)
+                                Task {
+                                    await insightStore.recordEngagement(dashboardInsight, kind: .opened)
+                                }
                                 selectedInsightEvidence = dashboardInsight
                             }
                         )
@@ -145,11 +163,11 @@ struct HomeDashboardView: View {
             .padding(.bottom, Theme.Spacing.xxxl)
         }
         .refreshable {
-            refreshDashboard()
+            await refreshDashboard()
         }
     }
 
-    private func refreshDashboard() {
+    private func refreshDashboard() async {
         guard let profile = onboardingStore.profile else {
             dashboardContent = nil
             dashboardInsight = nil
@@ -158,7 +176,7 @@ struct HomeDashboardView: View {
         }
 
         let now = Date()
-        trophyStore.updateAll(
+        await trophyStore.updateAll(
             history: historyStore.summaries,
             calibrationStatus: calibrationStore.status,
             now: now
@@ -172,13 +190,13 @@ struct HomeDashboardView: View {
             trophySnapshot: trophyStore.snapshot
         )
         weeklyRecap = makeWeeklyRecap(profile: profile, now: now)
-        dashboardInsight = makeDashboardInsight(profile: profile, now: now)
+        dashboardInsight = await makeDashboardInsight(profile: profile, now: now)
     }
 
     private func makeDashboardInsight(
         profile: UserProfile,
         now: Date
-    ) -> AIInsight? {
+    ) async -> AIInsight? {
         let trendEngine = TrendEngine()
         let trendSnapshot = trendEngine.buildSnapshot(
             history: historyStore.summaries,
@@ -193,7 +211,7 @@ struct HomeDashboardView: View {
             trophies: trophyStore.snapshot,
             context: SignalGenerationContext(historySessionCount: historyStore.summaries.count)
         )
-        let generated = InsightEngine().generateDashboardInsights(
+        let generated = await InsightEngine().generateDashboardInsights(
             profile: profile,
             trendSnapshot: trendSnapshot,
             signals: signals,
@@ -201,7 +219,7 @@ struct HomeDashboardView: View {
             engagementRecords: insightStore.engagementRecordsSnapshot(),
             now: now
         )
-        return insightStore.selectInsights(
+        return await insightStore.selectInsights(
             generated,
             for: .dashboard,
             profile: profile,

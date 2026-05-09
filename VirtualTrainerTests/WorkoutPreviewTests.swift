@@ -1,6 +1,7 @@
 import XCTest
 @testable import VirtualTrainer
 
+@MainActor
 final class WorkoutPreviewTests: XCTestCase {
     func testPreviewStateRendersGeneratedPlan() {
         let profile = makeProfile(equipment: [.bodyweight, .wall, .mat])
@@ -27,15 +28,13 @@ final class WorkoutPreviewTests: XCTestCase {
     }
 
     func testSavingDefaultCoachUpdatesProfileWhenRequested() async {
-        await MainActor.run {
-            let store = OnboardingStore(fileURL: temporaryProfileURL())
-            store.draft = validDraft(preferredCoach: .bennett)
-            store.completeOnboarding()
+        let store = OnboardingStore(fileURL: temporaryProfileURL())
+        store.draft = validDraft(preferredCoach: .bennett)
+        await store.completeOnboarding()
 
-            store.updatePreferredCoach(.fletcher)
+        await store.updatePreferredCoach(.fletcher)
 
-            XCTAssertEqual(store.profile?.preferredCoach, .fletcher)
-        }
+        XCTAssertEqual(store.profile?.preferredCoach, .fletcher)
     }
 
     func testSwappingExerciseKeepsEquipmentConstraints() {

@@ -6,7 +6,7 @@ final class SyncMetadataTests: XCTestCase {
     private let accountId = "sync-account"
     private let now = Date(timeIntervalSince1970: 1_778_067_200)
 
-    func testSyncMetadataCodableRoundTrip() throws {
+    func testSyncMetadataCodableRoundTrip() async throws {
         let operationId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-00000000C0DE"))
         let metadata = SyncMetadata(
             localUpdatedAt: now,
@@ -26,7 +26,7 @@ final class SyncMetadataTests: XCTestCase {
         XCTAssertEqual(decoded, metadata)
     }
 
-    func testMissingSyncMetadataDecodesAsLocalOnly() throws {
+    func testMissingSyncMetadataDecodesAsLocalOnly() async throws {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
@@ -99,35 +99,35 @@ final class SyncMetadataTests: XCTestCase {
         )
     }
 
-    func testAccountOwnedMutationsMarkPendingUpload() throws {
+    func testAccountOwnedMutationsMarkPendingUpload() async throws {
         let urls = makeStoreURLs()
 
         let profileStore = OnboardingStore(fileURL: urls.profile, accountId: accountId)
         profileStore.draft = validDraft()
-        profileStore.completeOnboarding()
+        await profileStore.completeOnboarding()
         XCTAssertEqual(profileStore.profile?.syncMetadata.syncState, .pendingUpload)
 
         let historyStore = WorkoutHistoryStore(fileURL: urls.history, accountId: accountId)
         let summary = makeSummary()
-        XCTAssertTrue(historyStore.addSummary(summary))
+        assertTrue(await historyStore.addSummary(summary))
         XCTAssertEqual(historyStore.fetchSummary(id: summary.id)?.syncMetadata.syncState, .pendingUpload)
         XCTAssertEqual(historyStore.fetchDirtyOrDeletedSummaries().map(\.id), [summary.id])
 
         let calibrationStore = CalibrationStore(fileURL: urls.calibration, accountId: accountId)
-        XCTAssertTrue(calibrationStore.saveSkipped(at: now))
+        assertTrue(await calibrationStore.saveSkipped(at: now))
         XCTAssertEqual(calibrationStore.record?.syncMetadata.syncState, .pendingUpload)
 
         let insightStore = InsightStore(fileURL: urls.insights, accountId: accountId)
         let insight = makeInsight()
-        _ = insightStore.selectInsights([insight], for: .dashboard, profile: makeProfile(), limit: 1, now: now)
-        insightStore.recordImpression(insight, on: .dashboard, now: now)
-        insightStore.recordEngagement(insight, kind: .opened, now: now)
+        _ = await insightStore.selectInsights([insight], for: .dashboard, profile: makeProfile(), limit: 1, now: now)
+        await insightStore.recordImpression(insight, on: .dashboard, now: now)
+        await insightStore.recordEngagement(insight, kind: .opened, now: now)
         XCTAssertEqual(insightStore.recentInsights.first?.syncMetadata.syncState, .pendingUpload)
         XCTAssertEqual(insightStore.deliveryRecord(for: insight.dedupeKey)?.syncMetadata.syncState, .pendingUpload)
         XCTAssertEqual(insightStore.engagementRecord(for: insight.dedupeKey)?.syncMetadata.syncState, .pendingUpload)
 
         let trophyStore = TrophyStore(fileURL: urls.trophies, accountId: accountId)
-        let events = trophyStore.updateAll(
+        let events = await trophyStore.updateAll(
             history: [makeSummary(accountId: accountId)],
             calibrationStatus: .notStarted,
             now: now
@@ -136,11 +136,11 @@ final class SyncMetadataTests: XCTestCase {
         XCTAssertTrue(events.allSatisfy { $0.syncMetadata.syncState == .pendingUpload })
 
         let themeStore = ThemeStore(fileURL: urls.theme, defaultTheme: .hyper, accountId: accountId)
-        XCTAssertTrue(themeStore.updateSelectedTheme(.spicy))
+        assertTrue(await themeStore.updateSelectedTheme(.spicy))
         XCTAssertEqual(try themeSyncState(at: urls.theme), "pendingUpload")
     }
 
-    func testAccountOwnedMutationsPersistPendingOperationIds() throws {
+    func testAccountOwnedMutationsPersistPendingOperationIds() async throws {
         let urls = makeStoreURLs()
         let profileOperationId = UUID(uuidString: "00000000-0000-0000-0000-00000000D001") ?? UUID()
         let workoutOperationId = UUID(uuidString: "00000000-0000-0000-0000-00000000D002") ?? UUID()
@@ -153,21 +153,21 @@ final class SyncMetadataTests: XCTestCase {
 
         let profileStore = OnboardingStore(fileURL: urls.profile, accountId: accountId)
         profileStore.draft = validDraft()
-        profileStore.completeOnboarding(operationId: profileOperationId)
+        await profileStore.completeOnboarding(operationId: profileOperationId)
         XCTAssertEqual(profileStore.profile?.syncMetadata.pendingOperationId, profileOperationId)
 
         let historyStore = WorkoutHistoryStore(fileURL: urls.history, accountId: accountId)
         let summary = makeSummary()
-        XCTAssertTrue(historyStore.addSummary(summary, operationId: workoutOperationId))
+        assertTrue(await historyStore.addSummary(summary, operationId: workoutOperationId))
         XCTAssertEqual(historyStore.fetchSummary(id: summary.id)?.syncMetadata.pendingOperationId, workoutOperationId)
 
         let calibrationStore = CalibrationStore(fileURL: urls.calibration, accountId: accountId)
-        XCTAssertTrue(calibrationStore.saveSkipped(at: now, operationId: calibrationOperationId))
+        assertTrue(await calibrationStore.saveSkipped(at: now, operationId: calibrationOperationId))
         XCTAssertEqual(calibrationStore.record?.syncMetadata.pendingOperationId, calibrationOperationId)
 
         let insightStore = InsightStore(fileURL: urls.insights, accountId: accountId)
         let insight = makeInsight()
-        _ = insightStore.selectInsights(
+        _ = await insightStore.selectInsights(
             [insight],
             for: .dashboard,
             profile: makeProfile(),
@@ -175,13 +175,13 @@ final class SyncMetadataTests: XCTestCase {
             now: now,
             operationId: insightOperationId
         )
-        insightStore.recordImpression(
+        await insightStore.recordImpression(
             insight,
             on: .dashboard,
             now: now,
             operationId: deliveryOperationId
         )
-        insightStore.recordEngagement(
+        await insightStore.recordEngagement(
             insight,
             kind: .opened,
             now: now,
@@ -192,7 +192,7 @@ final class SyncMetadataTests: XCTestCase {
         XCTAssertEqual(insightStore.engagementRecord(for: insight.dedupeKey)?.syncMetadata.pendingOperationId, engagementOperationId)
 
         let trophyStore = TrophyStore(fileURL: urls.trophies, accountId: accountId)
-        let events = trophyStore.updateAll(
+        let events = await trophyStore.updateAll(
             history: [makeSummary(accountId: accountId)],
             calibrationStatus: .notStarted,
             now: now,
@@ -202,39 +202,39 @@ final class SyncMetadataTests: XCTestCase {
         XCTAssertTrue(events.allSatisfy { $0.syncMetadata.pendingOperationId == trophyOperationId })
 
         let themeStore = ThemeStore(fileURL: urls.theme, defaultTheme: .hyper, accountId: accountId)
-        XCTAssertTrue(themeStore.updateSelectedTheme(.spicy, operationId: themeOperationId))
+        assertTrue(await themeStore.updateSelectedTheme(.spicy, operationId: themeOperationId))
         XCTAssertEqual(try themePendingOperationId(at: urls.theme), themeOperationId)
     }
 
-    func testLocalOnlyMutationsRemainLocalOnlyWithoutAccount() throws {
+    func testLocalOnlyMutationsRemainLocalOnlyWithoutAccount() async throws {
         let urls = makeStoreURLs()
 
         let profileStore = OnboardingStore(fileURL: urls.profile)
         profileStore.draft = validDraft()
-        profileStore.completeOnboarding()
+        await profileStore.completeOnboarding()
         XCTAssertEqual(profileStore.profile?.syncMetadata.syncState, .localOnly)
 
         let historyStore = WorkoutHistoryStore(fileURL: urls.history)
         let summary = makeSummary()
-        XCTAssertTrue(historyStore.addSummary(summary))
+        assertTrue(await historyStore.addSummary(summary))
         XCTAssertEqual(historyStore.fetchSummary(id: summary.id)?.syncMetadata.syncState, .localOnly)
         XCTAssertTrue(historyStore.fetchDirtyOrDeletedSummaries().isEmpty)
 
         let calibrationStore = CalibrationStore(fileURL: urls.calibration)
-        XCTAssertTrue(calibrationStore.saveSkipped(at: now))
+        assertTrue(await calibrationStore.saveSkipped(at: now))
         XCTAssertEqual(calibrationStore.record?.syncMetadata.syncState, .localOnly)
 
         let insightStore = InsightStore(fileURL: urls.insights)
         let insight = makeInsight()
-        _ = insightStore.selectInsights([insight], for: .dashboard, profile: makeProfile(), limit: 1, now: now)
-        insightStore.recordImpression(insight, on: .dashboard, now: now)
-        insightStore.recordEngagement(insight, kind: .opened, now: now)
+        _ = await insightStore.selectInsights([insight], for: .dashboard, profile: makeProfile(), limit: 1, now: now)
+        await insightStore.recordImpression(insight, on: .dashboard, now: now)
+        await insightStore.recordEngagement(insight, kind: .opened, now: now)
         XCTAssertEqual(insightStore.recentInsights.first?.syncMetadata.syncState, .localOnly)
         XCTAssertEqual(insightStore.deliveryRecord(for: insight.dedupeKey)?.syncMetadata.syncState, .localOnly)
         XCTAssertEqual(insightStore.engagementRecord(for: insight.dedupeKey)?.syncMetadata.syncState, .localOnly)
 
         let trophyStore = TrophyStore(fileURL: urls.trophies)
-        _ = trophyStore.updateAll(
+        _ = await trophyStore.updateAll(
             history: [makeSummary()],
             calibrationStatus: .notStarted,
             now: now
@@ -242,15 +242,15 @@ final class SyncMetadataTests: XCTestCase {
         XCTAssertTrue(trophyStore.snapshot.progress.allSatisfy { $0.syncMetadata.syncState == .localOnly })
 
         let themeStore = ThemeStore(fileURL: urls.theme, defaultTheme: .hyper)
-        XCTAssertTrue(themeStore.updateSelectedTheme(.warm))
+        assertTrue(await themeStore.updateSelectedTheme(.warm))
         XCTAssertEqual(try themeSyncState(at: urls.theme), "localOnly")
     }
 
-    func testThemeStorePersistsSyncMetadataDatesAsISO8601() throws {
+    func testThemeStorePersistsSyncMetadataDatesAsISO8601() async throws {
         let urls = makeStoreURLs()
         let themeStore = ThemeStore(fileURL: urls.theme, defaultTheme: .hyper, accountId: accountId)
 
-        XCTAssertTrue(themeStore.updateSelectedTheme(.warm))
+        assertTrue(await themeStore.updateSelectedTheme(.warm))
 
         let data = try Data(contentsOf: urls.theme)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -259,7 +259,7 @@ final class SyncMetadataTests: XCTestCase {
         XCTAssertNotNil(ISO8601DateFormatter().date(from: localUpdatedAt))
     }
 
-    func testThemeStoreLoadsLegacyNumericSyncMetadataDates() throws {
+    func testThemeStoreLoadsLegacyNumericSyncMetadataDates() async throws {
         let url = temporaryURL(named: "LegacyNumericTheme.json")
         try Data("""
         {
@@ -281,7 +281,7 @@ final class SyncMetadataTests: XCTestCase {
         XCTAssertNil(themeStore.persistenceError)
     }
 
-    func testConflictPolicyDocumentExists() throws {
+    func testConflictPolicyDocumentExists() async throws {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()

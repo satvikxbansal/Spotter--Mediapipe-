@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class InsightStoreTests: XCTestCase {
-    func testSelectInsightsDoesNotAdvanceCooldownUntilImpression() {
+    func testSelectInsightsDoesNotAdvanceCooldownUntilImpression() async {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let store = InsightStore(fileURL: temporaryInsightURL())
         let profile = makeProfile()
@@ -14,21 +14,25 @@ final class InsightStoreTests: XCTestCase {
             now: now
         )
 
-        let selections = (0..<5).compactMap { index in
-            store.selectInsights(
+        var selections: [String] = []
+        for index in 0..<5 {
+            let selection = await store.selectInsights(
                 [insight],
                 for: .dashboard,
                 profile: profile,
                 limit: 1,
                 now: now.addingTimeInterval(Double(index * 60))
             ).first?.dedupeKey
+            if let selection {
+                selections.append(selection)
+            }
         }
 
         XCTAssertEqual(selections, Array(repeating: insight.dedupeKey, count: 5))
         XCTAssertNil(store.deliveryRecord(for: insight.dedupeKey))
     }
 
-    func testImpressionAdvancesCooldownForDashboard() throws {
+    func testImpressionAdvancesCooldownForDashboard() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let store = InsightStore(fileURL: temporaryInsightURL())
         let profile = makeProfile()
@@ -45,11 +49,10 @@ final class InsightStoreTests: XCTestCase {
             now: now
         )
 
-        let first = try XCTUnwrap(
-            store.selectInsights([primary, fallback], for: .dashboard, profile: profile, limit: 1, now: now).first
-        )
-        store.recordImpression(first, on: .dashboard, now: now)
-        let second = store.selectInsights(
+        let firstSelection = await store.selectInsights([primary, fallback], for: .dashboard, profile: profile, limit: 1, now: now).first
+        let first = try XCTUnwrap(firstSelection)
+        await store.recordImpression(first, on: .dashboard, now: now)
+        let second = await store.selectInsights(
             [primary, fallback],
             for: .dashboard,
             profile: profile,
@@ -61,7 +64,7 @@ final class InsightStoreTests: XCTestCase {
         XCTAssertEqual(second?.dedupeKey, fallback.dedupeKey)
     }
 
-    func testImportantInsightBypassesCooldownAfterImpression() throws {
+    func testImportantInsightBypassesCooldownAfterImpression() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let store = InsightStore(fileURL: temporaryInsightURL())
         let profile = makeProfile()
@@ -73,11 +76,10 @@ final class InsightStoreTests: XCTestCase {
             now: now
         )
 
-        let first = try XCTUnwrap(
-            store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now).first
-        )
-        store.recordImpression(first, on: .dashboard, now: now)
-        let second = store.selectInsights(
+        let firstSelection = await store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now).first
+        let first = try XCTUnwrap(firstSelection)
+        await store.recordImpression(first, on: .dashboard, now: now)
+        let second = await store.selectInsights(
             [insight],
             for: .dashboard,
             profile: profile,
@@ -88,7 +90,7 @@ final class InsightStoreTests: XCTestCase {
         XCTAssertEqual(second?.dedupeKey, insight.dedupeKey)
     }
 
-    func testSelectGeneratedInsightsIgnoresOlderStoredInsights() throws {
+    func testSelectGeneratedInsightsIgnoresOlderStoredInsights() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let store = InsightStore(fileURL: temporaryInsightURL())
         let profile = makeProfile()
@@ -109,28 +111,27 @@ final class InsightStoreTests: XCTestCase {
             workoutId: currentWorkoutId
         )
 
-        _ = store.selectInsights(
+        _ = await store.selectInsights(
             [olderHighScore],
             for: .workoutSummary,
             profile: profile,
             limit: 1,
             now: now.addingTimeInterval(-600)
         )
-        let selected = try XCTUnwrap(
-            store.selectGeneratedInsights(
-                [currentLowerScore],
-                for: .workoutSummary,
-                profile: profile,
-                limit: 1,
-                now: now
-            ).first
-        )
+        let selectedCandidate = await store.selectGeneratedInsights(
+            [currentLowerScore],
+            for: .workoutSummary,
+            profile: profile,
+            limit: 1,
+            now: now
+        ).first
+        let selected = try XCTUnwrap(selectedCandidate)
 
         XCTAssertEqual(selected.dedupeKey, currentLowerScore.dedupeKey)
         XCTAssertEqual(selected.evidence.first?.workoutId, currentWorkoutId)
     }
 
-    func testEngagementRecordsPersistAcrossStoreReload() throws {
+    func testEngagementRecordsPersistAcrossStoreReload() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let url = temporaryInsightURL()
         let profile = makeProfile()
@@ -142,9 +143,9 @@ final class InsightStoreTests: XCTestCase {
         )
         let store = InsightStore(fileURL: url)
 
-        _ = store.selectInsights([insight], for: .profile, profile: profile, limit: 1, now: now)
-        store.recordEngagement(insight, kind: .helpful, now: now)
-        store.recordEngagement(insight, kind: .notHelpful, now: now.addingTimeInterval(1))
+        _ = await store.selectInsights([insight], for: .profile, profile: profile, limit: 1, now: now)
+        await store.recordEngagement(insight, kind: .helpful, now: now)
+        await store.recordEngagement(insight, kind: .notHelpful, now: now.addingTimeInterval(1))
 
         let reloaded = InsightStore(fileURL: url)
         let record = try XCTUnwrap(reloaded.engagementRecord(for: insight.dedupeKey))
@@ -154,7 +155,7 @@ final class InsightStoreTests: XCTestCase {
         XCTAssertEqual(record.lastEngagedAt(for: .helpful), now)
     }
 
-    func testDeliveryRecordMergeWithOverlappingSurfacesUsesDateBoundsAndMaxCount() {
+    func testDeliveryRecordMergeWithOverlappingSurfacesUsesDateBoundsAndMaxCount() async {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let local = InsightDeliveryRecord(
             accountId: "account-a",
@@ -189,7 +190,7 @@ final class InsightStoreTests: XCTestCase {
         XCTAssertEqual(merged.surfaceLastPresentedAt[InsightSurface.workoutSummary.rawValue], now.addingTimeInterval(40))
     }
 
-    func testEngagementMergeSumsHelpfulAndNotHelpfulCounts() {
+    func testEngagementMergeSumsHelpfulAndNotHelpfulCounts() async {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         var local = InsightEngagementRecord(accountId: "account-a", dedupeKey: "merge-engagement")
         local.record(.helpful, at: now)
@@ -208,7 +209,7 @@ final class InsightStoreTests: XCTestCase {
         XCTAssertEqual(merged.lastEngagedAt(for: .notHelpful), now.addingTimeInterval(40))
     }
 
-    func testRemoteDeliveryTombstoneExportsButNoLongerSuppressesSelection() throws {
+    func testRemoteDeliveryTombstoneExportsButNoLongerSuppressesSelection() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let accountId = "account-a"
         let store = InsightStore(fileURL: temporaryInsightURL(), accountId: accountId)
@@ -220,24 +221,23 @@ final class InsightStoreTests: XCTestCase {
             now: now
         )
 
-        let first = try XCTUnwrap(
-            store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now).first
-        )
-        store.recordImpression(first, on: .dashboard, now: now)
+        let firstSelection = await store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now).first
+        let first = try XCTUnwrap(firstSelection)
+        await store.recordImpression(first, on: .dashboard, now: now)
         let tombstone = try XCTUnwrap(store.deliveryRecord(for: insight.dedupeKey))
             .markedDeleted(at: now.addingTimeInterval(60))
 
-        XCTAssertTrue(store.applyRemoteDeliveryRecords([tombstone]))
+        assertTrue(await store.applyRemoteDeliveryRecords([tombstone]))
 
         XCTAssertNil(store.deliveryRecord(for: insight.dedupeKey))
         XCTAssertEqual(store.allDeliveryRecordsIncludingTombstones().first?.deletedAt, now.addingTimeInterval(60))
-        XCTAssertEqual(
-            store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now.addingTimeInterval(120)).first?.dedupeKey,
+        assertEqual(
+            await store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now.addingTimeInterval(120)).first?.dedupeKey,
             insight.dedupeKey
         )
     }
 
-    func testRemoteEngagementRecordsMergeAndPersistIncludingTombstones() throws {
+    func testRemoteEngagementRecordsMergeAndPersistIncludingTombstones() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let accountId = "account-a"
         let url = temporaryInsightURL()
@@ -248,12 +248,12 @@ final class InsightStoreTests: XCTestCase {
             surface: .profile,
             now: now
         )
-        store.recordEngagement(insight, kind: .helpful, now: now)
+        await store.recordEngagement(insight, kind: .helpful, now: now)
         var remote = InsightEngagementRecord(accountId: accountId, dedupeKey: insight.dedupeKey)
         remote.record(.helpful, at: now.addingTimeInterval(10))
         remote.record(.notHelpful, at: now.addingTimeInterval(20))
 
-        XCTAssertTrue(store.applyRemoteEngagementRecords([remote]))
+        assertTrue(await store.applyRemoteEngagementRecords([remote]))
 
         let merged = try XCTUnwrap(store.engagementRecord(for: insight.dedupeKey))
         XCTAssertEqual(merged.count(for: .helpful), 2)
@@ -268,7 +268,7 @@ final class InsightStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.engagementRecord(for: insight.dedupeKey)?.count(for: .notHelpful), 1)
     }
 
-    func testLegacySnapshotWithoutEngagementRecordsStillDecodes() throws {
+    func testLegacySnapshotWithoutEngagementRecordsStillDecodes() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let url = temporaryInsightURL()
         let insight = makeInsight(
@@ -299,7 +299,7 @@ final class InsightStoreTests: XCTestCase {
         XCTAssertNil(reloaded.engagementRecord(for: insight.dedupeKey))
     }
 
-    func testFailedSelectDoesNotExposeUnsavedInsights() throws {
+    func testFailedSelectDoesNotExposeUnsavedInsights() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let store = InsightStore(fileURL: try unwritableInsightURL())
         let profile = makeProfile()
@@ -310,7 +310,7 @@ final class InsightStoreTests: XCTestCase {
             now: now
         )
 
-        let selected = store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now)
+        let selected = await store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now)
 
         XCTAssertTrue(selected.isEmpty)
         XCTAssertTrue(store.recentInsights.isEmpty)
@@ -318,7 +318,7 @@ final class InsightStoreTests: XCTestCase {
         XCTAssertNotNil(store.persistenceError)
     }
 
-    func testFailedImpressionDoesNotExposeUnsavedDeliveryRecord() throws {
+    func testFailedImpressionDoesNotExposeUnsavedDeliveryRecord() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let store = InsightStore(fileURL: try unwritableInsightURL())
         let insight = makeInsight(
@@ -328,13 +328,13 @@ final class InsightStoreTests: XCTestCase {
             now: now
         )
 
-        store.recordImpression(insight, on: .dashboard, now: now)
+        await store.recordImpression(insight, on: .dashboard, now: now)
 
         XCTAssertNil(store.deliveryRecord(for: insight.dedupeKey))
         XCTAssertNotNil(store.persistenceError)
     }
 
-    func testFailedEngagementDoesNotExposeUnsavedEngagementRecord() throws {
+    func testFailedEngagementDoesNotExposeUnsavedEngagementRecord() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let store = InsightStore(fileURL: try unwritableInsightURL())
         let insight = makeInsight(
@@ -344,13 +344,13 @@ final class InsightStoreTests: XCTestCase {
             now: now
         )
 
-        store.recordEngagement(insight, kind: .helpful, now: now)
+        await store.recordEngagement(insight, kind: .helpful, now: now)
 
         XCTAssertNil(store.engagementRecord(for: insight.dedupeKey))
         XCTAssertNotNil(store.persistenceError)
     }
 
-    func testLegacyAIInsightJSONWithoutDeletedAtDecodes() throws {
+    func testLegacyAIInsightJSONWithoutDeletedAtDecodes() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let insight = makeInsight(
             dedupeKey: "legacy-ai-insight",
@@ -375,7 +375,7 @@ final class InsightStoreTests: XCTestCase {
         XCTAssertFalse(decoded.isDeleted)
     }
 
-    func testInvalidateInsightHidesItFromSelectionAndPreservesBehaviorRecords() throws {
+    func testInvalidateInsightHidesItFromSelectionAndPreservesBehaviorRecords() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let deletedAt = now.addingTimeInterval(60)
         let store = InsightStore(fileURL: temporaryInsightURL())
@@ -387,23 +387,22 @@ final class InsightStoreTests: XCTestCase {
             now: now
         )
 
-        let selected = try XCTUnwrap(
-            store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now).first
-        )
-        store.recordImpression(selected, on: .dashboard, now: now)
-        store.recordEngagement(selected, kind: .helpful, now: now)
+        let selectedCandidate = await store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now).first
+        let selected = try XCTUnwrap(selectedCandidate)
+        await store.recordImpression(selected, on: .dashboard, now: now)
+        await store.recordEngagement(selected, kind: .helpful, now: now)
 
-        XCTAssertTrue(store.invalidateInsight(dedupeKey: insight.dedupeKey, deletedAt: deletedAt))
+        assertTrue(await store.invalidateInsight(dedupeKey: insight.dedupeKey, deletedAt: deletedAt))
 
-        XCTAssertTrue(
-            store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now.addingTimeInterval(120)).isEmpty
+        assertTrue(
+            await store.selectInsights([insight], for: .dashboard, profile: profile, limit: 1, now: now.addingTimeInterval(120)).isEmpty
         )
         XCTAssertEqual(store.recentInsights.first?.deletedAt, deletedAt)
         XCTAssertNotNil(store.deliveryRecord(for: insight.dedupeKey))
         XCTAssertEqual(store.engagementRecord(for: insight.dedupeKey)?.count(for: .helpful), 1)
     }
 
-    func testInvalidateInsightsReferencingWorkoutHidesOnlyDependentInsights() throws {
+    func testInvalidateInsightsReferencingWorkoutHidesOnlyDependentInsights() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let store = InsightStore(fileURL: temporaryInsightURL())
         let profile = makeProfile()
@@ -424,10 +423,10 @@ final class InsightStoreTests: XCTestCase {
             workoutId: keptWorkoutId
         )
 
-        _ = store.selectInsights([dependent, independent], for: .profile, profile: profile, limit: 2, now: now)
+        _ = await store.selectInsights([dependent, independent], for: .profile, profile: profile, limit: 2, now: now)
 
-        XCTAssertEqual(
-            store.invalidateInsightsReferencingWorkout(id: deletedWorkoutId, deletedAt: now.addingTimeInterval(1)),
+        assertEqual(
+            await store.invalidateInsightsReferencingWorkout(id: deletedWorkoutId, deletedAt: now.addingTimeInterval(1)),
             1
         )
 
@@ -437,7 +436,7 @@ final class InsightStoreTests: XCTestCase {
         XCTAssertFalse(store.recentInsights.first { $0.dedupeKey == independent.dedupeKey }?.isDeleted ?? true)
     }
 
-    func testDeletedInsightsAreNotReturnedBySelectionMethods() throws {
+    func testDeletedInsightsAreNotReturnedBySelectionMethods() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let store = InsightStore(fileURL: temporaryInsightURL())
         let profile = makeProfile()
@@ -448,21 +447,21 @@ final class InsightStoreTests: XCTestCase {
             now: now
         )
 
-        _ = store.selectInsights([insight], for: .workoutSummary, profile: profile, limit: 1, now: now)
-        XCTAssertTrue(store.invalidateInsight(dedupeKey: insight.dedupeKey, deletedAt: now.addingTimeInterval(1)))
+        _ = await store.selectInsights([insight], for: .workoutSummary, profile: profile, limit: 1, now: now)
+        assertTrue(await store.invalidateInsight(dedupeKey: insight.dedupeKey, deletedAt: now.addingTimeInterval(1)))
 
-        XCTAssertTrue(
-            store.selectInsights([insight], for: .workoutSummary, profile: profile, limit: 1, now: now.addingTimeInterval(2)).isEmpty
+        assertTrue(
+            await store.selectInsights([insight], for: .workoutSummary, profile: profile, limit: 1, now: now.addingTimeInterval(2)).isEmpty
         )
-        XCTAssertTrue(
-            store.selectGeneratedInsights([insight], for: .workoutSummary, profile: profile, limit: 1, now: now.addingTimeInterval(3)).isEmpty
+        assertTrue(
+            await store.selectGeneratedInsights([insight], for: .workoutSummary, profile: profile, limit: 1, now: now.addingTimeInterval(3)).isEmpty
         )
         XCTAssertTrue(
             store.insights(for: .workoutSummary, profile: profile, limit: 1, now: now.addingTimeInterval(4)).isEmpty
         )
     }
 
-    func testRemoveInsightsForDebugPhysicallyRemovesOnlyDebugAndSampleReferencedInsights() throws {
+    func testRemoveInsightsForDebugPhysicallyRemovesOnlyDebugAndSampleReferencedInsights() async throws {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let store = InsightStore(fileURL: temporaryInsightURL())
         let profile = makeProfile()
@@ -489,18 +488,18 @@ final class InsightStoreTests: XCTestCase {
             workoutId: keptWorkoutId
         )
 
-        _ = store.selectInsights(
+        _ = await store.selectInsights(
             [explicitDebug, generatedFromSampleWorkout, independent],
             for: .profile,
             profile: profile,
             limit: 3,
             now: now
         )
-        store.recordImpression(explicitDebug, on: .profile, now: now)
-        store.recordEngagement(generatedFromSampleWorkout, kind: .helpful, now: now)
+        await store.recordImpression(explicitDebug, on: .profile, now: now)
+        await store.recordEngagement(generatedFromSampleWorkout, kind: .helpful, now: now)
 
-        XCTAssertTrue(
-            store.removeInsightsForDebug(
+        assertTrue(
+            await store.removeInsightsForDebug(
                 dedupeKeys: [explicitDebug.dedupeKey],
                 referencingWorkoutIds: [sampleWorkoutId]
             )
@@ -510,19 +509,18 @@ final class InsightStoreTests: XCTestCase {
         XCTAssertNil(store.deliveryRecord(for: explicitDebug.dedupeKey))
         XCTAssertNil(store.engagementRecord(for: generatedFromSampleWorkout.dedupeKey))
 
-        let selectedAgain = try XCTUnwrap(
-            store.selectInsights(
-                [generatedFromSampleWorkout],
-                for: .profile,
-                profile: profile,
-                limit: 1,
-                now: now.addingTimeInterval(60)
-            ).first
-        )
+        let selectedAgainCandidate = await store.selectInsights(
+            [generatedFromSampleWorkout],
+            for: .profile,
+            profile: profile,
+            limit: 1,
+            now: now.addingTimeInterval(60)
+        ).first
+        let selectedAgain = try XCTUnwrap(selectedAgainCandidate)
         XCTAssertEqual(selectedAgain.dedupeKey, generatedFromSampleWorkout.dedupeKey)
     }
 
-    func testApplyingRewritePreservesDeletedTombstone() {
+    func testApplyingRewritePreservesDeletedTombstone() async {
         let now = Date(timeIntervalSince1970: 1_778_067_200)
         let deletedAt = now.addingTimeInterval(60)
         let insight = makeInsight(

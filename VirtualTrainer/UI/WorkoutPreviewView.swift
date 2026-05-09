@@ -60,18 +60,28 @@ struct WorkoutPreviewView: View {
                 insight: insight,
                 summaries: historyStore.summaries
             ) { kind in
-                insightStore.recordEngagement(insight, kind: kind)
+                Task {
+                    await insightStore.recordEngagement(insight, kind: kind)
+                }
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
         .preferredColorScheme(.dark)
-        .onAppear(perform: refreshPlanInsight)
+        .onAppear {
+            Task {
+                await refreshPlanInsight()
+            }
+        }
         .onChange(of: historyStore.summaries) {
-            refreshPlanInsight()
+            Task {
+                await refreshPlanInsight()
+            }
         }
         .onChange(of: trophyStore.snapshot) {
-            refreshPlanInsight()
+            Task {
+                await refreshPlanInsight()
+            }
         }
     }
 
@@ -175,11 +185,15 @@ struct WorkoutPreviewView: View {
 
             if let planInsight {
                 InsightEvidenceButton {
-                    insightStore.recordEngagement(planInsight, kind: .opened)
+                    Task {
+                        await insightStore.recordEngagement(planInsight, kind: .opened)
+                    }
                     selectedInsightEvidence = planInsight
                 }
                 InsightEngagementPrompt { kind in
-                    insightStore.recordEngagement(planInsight, kind: kind)
+                    Task {
+                        await insightStore.recordEngagement(planInsight, kind: kind)
+                    }
                 }
             }
         }
@@ -187,7 +201,9 @@ struct WorkoutPreviewView: View {
         .id(planInsight?.id ?? "plan-reason")
         .onAppear {
             if let planInsight {
-                insightStore.recordImpression(planInsight, on: .workoutPreview)
+                Task {
+                    await insightStore.recordImpression(planInsight, on: .workoutPreview)
+                }
             }
         }
     }
@@ -272,9 +288,11 @@ struct WorkoutPreviewView: View {
 
     private func saveCoachAsDefault() {
         HapticsEngine.shared.buttonTap()
-        onboardingStore.updatePreferredCoach(
-            CoachPreference(coachPersonality: previewState.selectedCoach)
-        )
+        Task {
+            await onboardingStore.updatePreferredCoach(
+                CoachPreference(coachPersonality: previewState.selectedCoach)
+            )
+        }
         statusMessage = "\(previewState.selectedCoach.coachName) saved as default."
     }
 
@@ -316,7 +334,7 @@ struct WorkoutPreviewView: View {
         activePlan = previewState.displayPlan
     }
 
-    private func refreshPlanInsight() {
+    private func refreshPlanInsight() async {
         guard let profile = onboardingStore.profile ?? previewState.input?.profile else {
             planInsight = nil
             return
@@ -337,7 +355,7 @@ struct WorkoutPreviewView: View {
             trophies: trophyStore.snapshot,
             context: SignalGenerationContext(historySessionCount: historyStore.summaries.count)
         )
-        let generated = InsightEngine().generatePlanInsights(
+        let generated = await InsightEngine().generatePlanInsights(
             profile: profile,
             plan: plan,
             trendSnapshot: trendSnapshot,
@@ -346,7 +364,7 @@ struct WorkoutPreviewView: View {
             engagementRecords: insightStore.engagementRecordsSnapshot(),
             now: now
         )
-        planInsight = insightStore.selectInsights(
+        planInsight = await insightStore.selectInsights(
             generated,
             for: .workoutPreview,
             profile: profile,

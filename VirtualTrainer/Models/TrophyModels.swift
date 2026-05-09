@@ -1610,8 +1610,8 @@ final class TrophyStore: ObservableObject {
     private let fileURL: URL
     private let engine: TrophyEngine
     private let writeJournal: LocalWriteJournal
-    private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private let persistenceActor: PersistenceActor
     private var currentAccountId: String?
     private var allProgress: [TrophyProgress] = []
     private var eventLog: [TrophyUnlockEvent] = []
@@ -1620,22 +1620,23 @@ final class TrophyStore: ObservableObject {
         fileURL: URL? = nil,
         calendar: Calendar = .current,
         accountId: String? = nil,
-        writeJournal: LocalWriteJournal? = nil
+        writeJournal: LocalWriteJournal? = nil,
+        persistenceActor: PersistenceActor = .shared
     ) {
         let resolvedFileURL = fileURL ?? Self.defaultTrophyURL()
         self.fileURL = resolvedFileURL
         self.engine = TrophyEngine(calendar: calendar)
         self.writeJournal = writeJournal ?? LocalWriteJournal(
-            fileURL: LocalWriteJournal.defaultJournalURL(alongside: resolvedFileURL)
+            fileURL: LocalWriteJournal.defaultJournalURL(alongside: resolvedFileURL),
+            persistenceActor: persistenceActor
         )
+        self.persistenceActor = persistenceActor
         self.currentAccountId = AccountOwnership.normalizedAccountId(accountId)
         self.snapshot = engine.updateAll(
             history: [],
             calibrationStatus: .notStarted,
             previousSnapshot: nil
         ).snapshot
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
         loadSnapshot()
     }
@@ -1670,9 +1671,9 @@ final class TrophyStore: ObservableObject {
         calibrationStatus: CalibrationStatus,
         now: Date = Date(),
         operationId: UUID? = nil
-    ) -> [TrophyUnlockEvent] {
+    ) async -> [TrophyUnlockEvent] {
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return [] }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return [] }
 
         let result = engine.update(
             after: summary,
@@ -1682,7 +1683,7 @@ final class TrophyStore: ObservableObject {
             canonicalUnlockEvents: visibleUnlockEvents(),
             now: now
         )
-        return apply(result, operationId: writeOperationId, createdAt: now)
+        return await apply(result, operationId: writeOperationId, createdAt: now)
             ? latestUnlockEvents
             : []
     }
@@ -1693,9 +1694,9 @@ final class TrophyStore: ObservableObject {
         calibrationStatus: CalibrationStatus,
         now: Date = Date(),
         operationId: UUID? = nil
-    ) -> [TrophyUnlockEvent] {
+    ) async -> [TrophyUnlockEvent] {
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return [] }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return [] }
 
         let result = engine.updateAll(
             history: history,
@@ -1704,7 +1705,7 @@ final class TrophyStore: ObservableObject {
             canonicalUnlockEvents: visibleUnlockEvents(),
             now: now
         )
-        return apply(result, operationId: writeOperationId, createdAt: now)
+        return await apply(result, operationId: writeOperationId, createdAt: now)
             ? latestUnlockEvents
             : []
     }
@@ -1715,9 +1716,9 @@ final class TrophyStore: ObservableObject {
         calibrationStatus: CalibrationStatus,
         now: Date = Date(),
         operationId: UUID? = nil
-    ) -> Bool {
+    ) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         let previousSnapshot = snapshot
         let previousUnlockEvents = latestUnlockEvents
@@ -1767,14 +1768,14 @@ final class TrophyStore: ObservableObject {
         mergeCurrentProgressIntoAll(stampedProgress)
         latestUnlockEvents = newEvents
 
-        guard persist() else {
+        guard await persist() != nil else {
             allProgress = previousAllProgress
             eventLog = previousEventLog
             snapshot = previousSnapshot
             latestUnlockEvents = previousUnlockEvents
             return false
         }
-        recordWriteOperation(writeOperationId, createdAt: now)
+        await recordWriteOperation(writeOperationId, createdAt: now)
         return true
     }
 
@@ -1783,9 +1784,9 @@ final class TrophyStore: ObservableObject {
         for trophyId: String,
         retractedAt: Date = Date(),
         operationId: UUID? = nil
-    ) -> Bool {
+    ) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         let activeEvents = visibleUnlockEvents()
             .filter { $0.trophyId == trophyId && !$0.isRetracted }
@@ -1807,13 +1808,13 @@ final class TrophyStore: ObservableObject {
         latestUnlockEvents.removeAll { $0.trophyId == trophyId }
         applyVisibleSnapshot(generatedAt: retractedAt, events: latestUnlockEvents)
 
-        guard persist() else {
+        guard await persist() != nil else {
             eventLog = previousEventLog
             snapshot = previousSnapshot
             latestUnlockEvents = previousUnlockEvents
             return false
         }
-        recordWriteOperation(writeOperationId, createdAt: retractedAt)
+        await recordWriteOperation(writeOperationId, createdAt: retractedAt)
         return true
     }
 
@@ -1834,7 +1835,7 @@ final class TrophyStore: ObservableObject {
     }
 
     @discardableResult
-    func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) -> Bool {
+    func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) async -> Bool {
         guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
             persistenceError = "Account id is required before local trophy data can be claimed."
             return false
@@ -1844,7 +1845,7 @@ final class TrophyStore: ObservableObject {
         else { return true }
 
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         let writeCreatedAt = Date()
         let previousAllProgress = allProgress
@@ -1873,13 +1874,13 @@ final class TrophyStore: ObservableObject {
         )
         applyVisibleSnapshot()
 
-        guard persist() else {
+        guard await persist() != nil else {
             allProgress = previousAllProgress
             eventLog = previousEventLog
             applyVisibleSnapshot()
             return false
         }
-        recordWriteOperation(writeOperationId, createdAt: writeCreatedAt)
+        await recordWriteOperation(writeOperationId, createdAt: writeCreatedAt)
         return true
     }
 
@@ -1888,7 +1889,7 @@ final class TrophyStore: ObservableObject {
         _ result: TrophyEngineResult,
         operationId: UUID,
         createdAt: Date
-    ) -> Bool {
+    ) async -> Bool {
         let previousSnapshot = snapshot
         let previousUnlockEvents = latestUnlockEvents
         let previousAllProgress = allProgress
@@ -1910,19 +1911,19 @@ final class TrophyStore: ObservableObject {
             newlyEarnedEvents: canonicalNewEvents
         )
         latestUnlockEvents = canonicalNewEvents
-        guard persist() else {
+        guard await persist() != nil else {
             allProgress = previousAllProgress
             eventLog = previousEventLog
             snapshot = previousSnapshot
             latestUnlockEvents = previousUnlockEvents
             return false
         }
-        recordWriteOperation(operationId, createdAt: createdAt)
+        await recordWriteOperation(operationId, createdAt: createdAt)
         return true
     }
 
-    private func recordWriteOperation(_ operationId: UUID, createdAt: Date) {
-        _ = writeJournal.record(
+    private func recordWriteOperation(_ operationId: UUID, createdAt: Date) async {
+        _ = await writeJournal.record(
             operationId: operationId,
             entityKind: .trophyEvent,
             createdAt: createdAt
@@ -1954,12 +1955,8 @@ final class TrophyStore: ObservableObject {
     }
 
     @discardableResult
-    private func persist() -> Bool {
+    private func persist() async -> PersistenceWriteOutcome? {
         do {
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
             let persistedSnapshot = TrophyProgressSnapshot(
                 accountId: nil,
                 catalogVersion: snapshot.catalogVersion,
@@ -1968,13 +1965,16 @@ final class TrophyStore: ObservableObject {
                 unlockEventLog: dedupedUnlockEventsByStorageKey(eventLog),
                 newlyEarnedEvents: []
             )
-            let data = try encoder.encode(persistedSnapshot)
-            try data.write(to: fileURL, options: [.atomic])
+            let data = try await persistenceActor.encode(
+                persistedSnapshot,
+                outputFormatting: [.prettyPrinted, .sortedKeys]
+            )
+            let outcome = try await persistenceActor.writeLatest(data, to: fileURL, options: [.atomic])
             persistenceError = nil
-            return true
+            return outcome
         } catch {
             persistenceError = "Could not save trophies: \(error.localizedDescription)"
-            return false
+            return nil
         }
     }
 

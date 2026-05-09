@@ -431,18 +431,23 @@ final class InsightStore: ObservableObject {
     private var deliveryRecords: [String: InsightDeliveryRecord] = [:]
     private var engagementRecords: [String: InsightEngagementRecord] = [:]
     private let ranker = InsightRanker()
-    private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private let persistenceActor: PersistenceActor
 
-    init(fileURL: URL? = nil, accountId: String? = nil, writeJournal: LocalWriteJournal? = nil) {
+    init(
+        fileURL: URL? = nil,
+        accountId: String? = nil,
+        writeJournal: LocalWriteJournal? = nil,
+        persistenceActor: PersistenceActor = .shared
+    ) {
         let resolvedFileURL = fileURL ?? Self.defaultInsightURL()
         self.fileURL = resolvedFileURL
         self.writeJournal = writeJournal ?? LocalWriteJournal(
-            fileURL: LocalWriteJournal.defaultJournalURL(alongside: resolvedFileURL)
+            fileURL: LocalWriteJournal.defaultJournalURL(alongside: resolvedFileURL),
+            persistenceActor: persistenceActor
         )
+        self.persistenceActor = persistenceActor
         self.currentAccountId = AccountOwnership.normalizedAccountId(accountId)
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
         load()
     }
@@ -464,9 +469,9 @@ final class InsightStore: ObservableObject {
         limit: Int,
         now: Date = Date(),
         operationId: UUID? = nil
-    ) -> [AIInsight] {
+    ) async -> [AIInsight] {
         let writeOperationId = operationId ?? UUID()
-        if writeJournal.contains(operationId: writeOperationId) {
+        if await writeJournal.contains(operationId: writeOperationId) {
             return Array(fetchCandidates(for: surface, profile: profile, now: now).prefix(max(limit, 0)))
         }
 
@@ -478,7 +483,7 @@ final class InsightStore: ObservableObject {
 
         let candidates = fetchCandidates(for: surface, profile: profile, now: now)
         let selected = Array(candidates.prefix(max(limit, 0)))
-        guard persist() else {
+        guard await persist() != nil else {
             restoreState(
                 insights: previousAllInsights,
                 deliveryRecords: previousAllDeliveryRecords,
@@ -486,7 +491,7 @@ final class InsightStore: ObservableObject {
             )
             return []
         }
-        recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: now)
+        await recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: now)
         return selected
     }
 
@@ -498,9 +503,9 @@ final class InsightStore: ObservableObject {
         limit: Int,
         now: Date = Date(),
         operationId: UUID? = nil
-    ) -> [AIInsight] {
+    ) async -> [AIInsight] {
         let writeOperationId = operationId ?? UUID()
-        if writeJournal.contains(operationId: writeOperationId) {
+        if await writeJournal.contains(operationId: writeOperationId) {
             let generatedDedupeKeys = Set(
                 generatedInsights
                     .filter { !$0.isDeleted && !$0.isExpired(now: now) && !$0.evidence.isEmpty && $0.surfaces.contains(surface) }
@@ -527,7 +532,7 @@ final class InsightStore: ObservableObject {
         let candidates = fetchCandidates(for: surface, profile: profile, now: now)
             .filter { generatedDedupeKeys.contains($0.dedupeKey) }
         let selected = Array(candidates.prefix(max(limit, 0)))
-        guard persist() else {
+        guard await persist() != nil else {
             restoreState(
                 insights: previousAllInsights,
                 deliveryRecords: previousAllDeliveryRecords,
@@ -535,7 +540,7 @@ final class InsightStore: ObservableObject {
             )
             return []
         }
-        recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: now)
+        await recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: now)
         return selected
     }
 
@@ -593,7 +598,7 @@ final class InsightStore: ObservableObject {
     }
 
     @discardableResult
-    func applyRemoteDeliveryRecords(_ remoteRecords: [InsightDeliveryRecord]) -> Bool {
+    func applyRemoteDeliveryRecords(_ remoteRecords: [InsightDeliveryRecord]) async -> Bool {
         let incomingRecords = remoteRecords.filter(isVisible)
         guard !incomingRecords.isEmpty else { return true }
 
@@ -615,7 +620,7 @@ final class InsightStore: ObservableObject {
         allDeliveryRecords = bestDeliveryRecordsByStorageKey(Array(allDeliveryRecords.values))
         applyVisibleState()
 
-        guard persist() else {
+        guard await persist() != nil else {
             restoreState(
                 insights: previousAllInsights,
                 deliveryRecords: previousAllDeliveryRecords,
@@ -627,7 +632,7 @@ final class InsightStore: ObservableObject {
     }
 
     @discardableResult
-    func applyRemoteEngagementRecords(_ remoteRecords: [InsightEngagementRecord]) -> Bool {
+    func applyRemoteEngagementRecords(_ remoteRecords: [InsightEngagementRecord]) async -> Bool {
         let incomingRecords = remoteRecords.filter(isVisible)
         guard !incomingRecords.isEmpty else { return true }
 
@@ -646,7 +651,7 @@ final class InsightStore: ObservableObject {
         allEngagementRecords = bestEngagementRecordsByStorageKey(Array(allEngagementRecords.values))
         applyVisibleState()
 
-        guard persist() else {
+        guard await persist() != nil else {
             restoreState(
                 insights: previousAllInsights,
                 deliveryRecords: previousAllDeliveryRecords,
@@ -669,15 +674,15 @@ final class InsightStore: ObservableObject {
         on surface: InsightSurface,
         now: Date = Date(),
         operationId: UUID? = nil
-    ) {
+    ) async {
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return }
 
         let previousAllInsights = allInsights
         let previousAllDeliveryRecords = allDeliveryRecords
         let previousAllEngagementRecords = allEngagementRecords
         recordPresented(insight, on: surface, now: now, operationId: writeOperationId)
-        guard persist() else {
+        guard await persist() != nil else {
             restoreState(
                 insights: previousAllInsights,
                 deliveryRecords: previousAllDeliveryRecords,
@@ -685,7 +690,7 @@ final class InsightStore: ObservableObject {
             )
             return
         }
-        recordWriteOperation(writeOperationId, entityKind: .insightDelivery, createdAt: now)
+        await recordWriteOperation(writeOperationId, entityKind: .insightDelivery, createdAt: now)
     }
 
     func recordPresentation(
@@ -693,15 +698,15 @@ final class InsightStore: ObservableObject {
         on surface: InsightSurface,
         now: Date = Date(),
         operationId: UUID? = nil
-    ) {
+    ) async {
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return }
 
         let previousAllInsights = allInsights
         let previousAllDeliveryRecords = allDeliveryRecords
         let previousAllEngagementRecords = allEngagementRecords
         recordPresented(dedupeKey: dedupeKey, on: surface, now: now, operationId: writeOperationId)
-        guard persist() else {
+        guard await persist() != nil else {
             restoreState(
                 insights: previousAllInsights,
                 deliveryRecords: previousAllDeliveryRecords,
@@ -709,7 +714,7 @@ final class InsightStore: ObservableObject {
             )
             return
         }
-        recordWriteOperation(writeOperationId, entityKind: .insightDelivery, createdAt: now)
+        await recordWriteOperation(writeOperationId, entityKind: .insightDelivery, createdAt: now)
     }
 
     func recordEngagement(
@@ -717,9 +722,9 @@ final class InsightStore: ObservableObject {
         kind: InsightEngagementKind,
         now: Date = Date(),
         operationId: UUID? = nil
-    ) {
+    ) async {
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return }
 
         let previousAllInsights = allInsights
         let previousAllDeliveryRecords = allDeliveryRecords
@@ -741,7 +746,7 @@ final class InsightStore: ObservableObject {
             allEngagementRecords[key] = record
         }
         applyVisibleState()
-        guard persist() else {
+        guard await persist() != nil else {
             restoreState(
                 insights: previousAllInsights,
                 deliveryRecords: previousAllDeliveryRecords,
@@ -749,7 +754,7 @@ final class InsightStore: ObservableObject {
             )
             return
         }
-        recordWriteOperation(writeOperationId, entityKind: .insightEngagement, createdAt: now)
+        await recordWriteOperation(writeOperationId, entityKind: .insightEngagement, createdAt: now)
     }
 
     @discardableResult
@@ -757,13 +762,13 @@ final class InsightStore: ObservableObject {
         _ insights: [AIInsight],
         replacingInsightsReferencing workoutIds: Set<UUID> = [],
         now: Date = Date()
-    ) -> Bool {
+    ) async -> Bool {
         let previousAllInsights = allInsights
         let previousAllDeliveryRecords = allDeliveryRecords
         let previousAllEngagementRecords = allEngagementRecords
         let sampleKeys = Set(insights.map(\.dedupeKey))
 
-        _ = removeInsightsForDebug(
+        _ = await removeInsightsForDebug(
             dedupeKeys: sampleKeys,
             referencingWorkoutIds: workoutIds,
             shouldPersist: false
@@ -774,7 +779,7 @@ final class InsightStore: ObservableObject {
         }
         ingest(insights, now: now)
         expireStale(now: now)
-        guard persist() else {
+        guard await persist() != nil else {
             allInsights = previousAllInsights
             allDeliveryRecords = previousAllDeliveryRecords
             allEngagementRecords = previousAllEngagementRecords
@@ -788,8 +793,8 @@ final class InsightStore: ObservableObject {
     func removeInsightsForDebug(
         dedupeKeys: Set<String>,
         referencingWorkoutIds workoutIds: Set<UUID> = []
-    ) -> Bool {
-        removeInsightsForDebug(
+    ) async -> Bool {
+        await removeInsightsForDebug(
             dedupeKeys: dedupeKeys,
             referencingWorkoutIds: workoutIds,
             shouldPersist: true
@@ -797,9 +802,9 @@ final class InsightStore: ObservableObject {
     }
 
     @discardableResult
-    func invalidateInsight(dedupeKey: String, deletedAt: Date = Date(), operationId: UUID? = nil) -> Bool {
+    func invalidateInsight(dedupeKey: String, deletedAt: Date = Date(), operationId: UUID? = nil) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         let previousAllInsights = allInsights
         var didInvalidate = false
@@ -816,12 +821,12 @@ final class InsightStore: ObservableObject {
 
         guard didInvalidate else { return false }
         applyVisibleState()
-        guard persist() else {
+        guard await persist() != nil else {
             allInsights = previousAllInsights
             applyVisibleState()
             return false
         }
-        recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: deletedAt)
+        await recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: deletedAt)
         return true
     }
 
@@ -830,9 +835,9 @@ final class InsightStore: ObservableObject {
         id: UUID,
         deletedAt: Date = Date(),
         operationId: UUID? = nil
-    ) -> Int {
+    ) async -> Int {
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return 0 }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return 0 }
 
         let previousAllInsights = allInsights
         var invalidatedCount = 0
@@ -848,25 +853,25 @@ final class InsightStore: ObservableObject {
 
         guard invalidatedCount > 0 else { return 0 }
         applyVisibleState()
-        guard persist() else {
+        guard await persist() != nil else {
             allInsights = previousAllInsights
             applyVisibleState()
             return 0
         }
-        recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: deletedAt)
+        await recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: deletedAt)
         return invalidatedCount
     }
 
-    func clearForDebug() {
+    func clearForDebug() async {
         allInsights.removeAll { isVisible($0) }
         allDeliveryRecords = allDeliveryRecords.filter { !isVisible($0.value) }
         allEngagementRecords = allEngagementRecords.filter { !isVisible($0.value) }
         applyVisibleState()
-        persist()
+        _ = await persist()
     }
 
     @discardableResult
-    func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) -> Bool {
+    func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) async -> Bool {
         guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
             persistenceError = "Account id is required before local insight data can be claimed."
             return false
@@ -877,7 +882,7 @@ final class InsightStore: ObservableObject {
         guard hasClaimableData else { return true }
 
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         let writeCreatedAt = Date()
         let previousAllInsights = allInsights
@@ -919,14 +924,14 @@ final class InsightStore: ObservableObject {
         )
         applyVisibleState()
 
-        guard persist() else {
+        guard await persist() != nil else {
             allInsights = previousAllInsights
             allDeliveryRecords = previousAllDeliveryRecords
             allEngagementRecords = previousAllEngagementRecords
             applyVisibleState()
             return false
         }
-        recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: writeCreatedAt)
+        await recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: writeCreatedAt)
         return true
     }
 }
@@ -1150,12 +1155,8 @@ private extension InsightStore {
     }
 
     @discardableResult
-    func persist() -> Bool {
+    func persist() async -> PersistenceWriteOutcome? {
         do {
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
             let snapshot = PersistedInsightStoreSnapshot(
                 sourcePolicyVersion: AIInsight.currentSourcePolicyVersion,
                 savedAt: Date(),
@@ -1163,13 +1164,16 @@ private extension InsightStore {
                 deliveryRecords: Array(allDeliveryRecords.values),
                 engagementRecords: Array(allEngagementRecords.values)
             )
-            let data = try encoder.encode(snapshot)
-            try data.write(to: fileURL, options: [.atomic])
+            let data = try await persistenceActor.encode(
+                snapshot,
+                outputFormatting: [.prettyPrinted, .sortedKeys]
+            )
+            let outcome = try await persistenceActor.writeLatest(data, to: fileURL, options: [.atomic])
             persistenceError = nil
-            return true
+            return outcome
         } catch {
             persistenceError = "Could not save coach insights: \(error.localizedDescription)"
-            return false
+            return nil
         }
     }
 
@@ -1191,8 +1195,8 @@ private extension InsightStore {
         _ operationId: UUID,
         entityKind: WriteEntityKind,
         createdAt: Date
-    ) {
-        _ = writeJournal.record(
+    ) async {
+        _ = await writeJournal.record(
             operationId: operationId,
             entityKind: entityKind,
             createdAt: createdAt
@@ -1400,7 +1404,7 @@ private extension InsightStore {
         dedupeKeys: Set<String>,
         referencingWorkoutIds workoutIds: Set<UUID>,
         shouldPersist: Bool
-    ) -> Bool {
+    ) async -> Bool {
         let keysToRemove = dedupeKeys.union(keysReferencingWorkoutIds(workoutIds))
         guard !keysToRemove.isEmpty else { return true }
 
@@ -1417,7 +1421,7 @@ private extension InsightStore {
         applyVisibleState()
 
         guard shouldPersist else { return true }
-        guard persist() else {
+        guard await persist() != nil else {
             allInsights = previousAllInsights
             allDeliveryRecords = previousAllDeliveryRecords
             allEngagementRecords = previousAllEngagementRecords

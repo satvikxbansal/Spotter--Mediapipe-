@@ -8,7 +8,7 @@ final class InsightEngineTests: XCTestCase {
         return calendar
     }()
 
-    func testLowPushupFormAfterRepEightCreatesSpecificCorrectionInsight() throws {
+    func testLowPushupFormAfterRepEightCreatesSpecificCorrectionInsight() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let summary = makeSummary(
             idSuffix: "9001",
@@ -17,7 +17,7 @@ final class InsightEngineTests: XCTestCase {
             scores: [92, 91, 90, 89, 88, 86, 84, 70, 68],
             cueMessages: ["Keep your shoulders stacked"]
         )
-        let insights = workoutInsights(summary: summary, history: [summary], now: now)
+        let insights = await workoutInsights(summary: summary, history: [summary], now: now)
 
         let insight = try XCTUnwrap(insights.first { $0.type == .formCorrection })
         XCTAssertEqual(insight.relatedExerciseType, .pushup)
@@ -26,7 +26,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertTrue(insight.message.contains("rep 8"))
     }
 
-    func testSquatFormImprovementAfterRepFourCreatesGrowthInsight() throws {
+    func testSquatFormImprovementAfterRepFourCreatesGrowthInsight() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let quality = SetQualitySummary(
             totalScoredReps: 7,
@@ -51,8 +51,8 @@ final class InsightEngineTests: XCTestCase {
             qualityOverride: quality
         )
 
-        let insight = try XCTUnwrap(
-            workoutInsights(summary: summary, history: [summary], now: now)
+        let insight = try unwrap(
+            await workoutInsights(summary: summary, history: [summary], now: now)
                 .first { $0.type == .growthCelebration }
         )
 
@@ -61,7 +61,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertTrue(insight.message.contains("control stabilized"))
     }
 
-    func testRepeatedCueAcrossWorkoutsCreatesFocusedCueInsight() throws {
+    func testRepeatedCueAcrossWorkoutsCreatesFocusedCueInsight() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(
@@ -80,7 +80,7 @@ final class InsightEngineTests: XCTestCase {
             )
         ]
 
-        let insights = profileInsights(history: history, now: now)
+        let insights = await profileInsights(history: history, now: now)
         let insight = try XCTUnwrap(insights.first { $0.recommendedAction == .focusCue })
 
         XCTAssertEqual(insight.relatedExerciseType, .lunge)
@@ -88,7 +88,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(insight.evidence.count, 2)
     }
 
-    func testWorkoutRepeatedCueCandidateNormalizesCueVariants() throws {
+    func testWorkoutRepeatedCueCandidateNormalizesCueVariants() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let summary = makeSummary(
             idSuffix: "9061",
@@ -102,8 +102,8 @@ final class InsightEngineTests: XCTestCase {
             ]
         )
 
-        let insight = try XCTUnwrap(
-            workoutInsights(summary: summary, history: [summary], now: now)
+        let insight = try unwrap(
+            await workoutInsights(summary: summary, history: [summary], now: now)
                 .first { insight in
                     insight.evidence.contains { $0.metric == "repeatedCue" }
                 }
@@ -114,7 +114,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertEqual(Set(insight.evidence.map { CueNormalizer.normalize($0.value) }), ["wrists neutral"])
     }
 
-    func testHighCompletionAndHighFormCreatesSafeProgressionInsight() throws {
+    func testHighCompletionAndHighFormCreatesSafeProgressionInsight() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let summary = makeSummary(
             idSuffix: "9005",
@@ -124,8 +124,8 @@ final class InsightEngineTests: XCTestCase {
             completionPercent: 1
         )
 
-        let insight = try XCTUnwrap(
-            workoutInsights(summary: summary, history: [summary], now: now)
+        let insight = try unwrap(
+            await workoutInsights(summary: summary, history: [summary], now: now)
                 .first { $0.recommendedAction == .increaseTarget }
         )
 
@@ -133,7 +133,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertTrue(insight.message.contains("quality"))
     }
 
-    func testRepeatedRestExtensionsCreateFatigueVolumeCautionInsight() throws {
+    func testRepeatedRestExtensionsCreateFatigueVolumeCautionInsight() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let summary = makeSummary(
             idSuffix: "9006",
@@ -145,8 +145,8 @@ final class InsightEngineTests: XCTestCase {
             ]
         )
 
-        let insight = try XCTUnwrap(
-            workoutInsights(summary: summary, history: [summary], now: now)
+        let insight = try unwrap(
+            await workoutInsights(summary: summary, history: [summary], now: now)
                 .first { $0.type == .recovery }
         )
 
@@ -154,20 +154,20 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertEqual(insight.severity, .caution)
     }
 
-    func testStreakNearMilestoneCreatesConsistencyInsight() throws {
+    func testStreakNearMilestoneCreatesConsistencyInsight() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(idSuffix: "9007", endedAt: now),
             makeSummary(idSuffix: "9008", endedAt: date(year: 2026, month: 5, day: 5, hour: 12))
         ]
 
-        let insight = try XCTUnwrap(dashboardInsights(history: history, now: now).first { $0.type == .consistency })
+        let insight = try unwrap(await dashboardInsights(history: history, now: now).first { $0.type == .consistency })
 
         XCTAssertEqual(insight.recommendedAction, .protectStreakWithSmartStart)
         XCTAssertTrue(insight.message.contains("2 days") || insight.shortMessage.contains("2 days"))
     }
 
-    func testTrophyNearUnlockCreatesTrophyProgressInsight() throws {
+    func testTrophyNearUnlockCreatesTrophyProgressInsight() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [makeSummary(idSuffix: "9009", endedAt: now, reps: 20)]
         let trophies = trophySnapshot(
@@ -177,13 +177,13 @@ final class InsightEngineTests: XCTestCase {
             ]
         )
 
-        let insight = try XCTUnwrap(dashboardInsights(history: history, trophies: trophies, now: now).first { $0.type == .trophyProgress })
+        let insight = try unwrap(await dashboardInsights(history: history, trophies: trophies, now: now).first { $0.type == .trophyProgress })
 
         XCTAssertEqual(insight.recommendedAction, .celebrate)
         XCTAssertTrue(insight.message.contains("1K Club") || insight.headline.contains("1K Club"))
     }
 
-    func testEmptyHistoryProducesNoFakeTrendClaims() {
+    func testEmptyHistoryProducesNoFakeTrendClaims() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let profile = makeProfile()
         let trophies = emptyTrophySnapshot(now: now)
@@ -202,33 +202,35 @@ final class InsightEngineTests: XCTestCase {
         )
         let engine = InsightEngine()
 
-        XCTAssertTrue(engine.generateDashboardInsights(profile: profile, trendSnapshot: snapshot, signals: signals, trophies: trophies).isEmpty)
-        XCTAssertTrue(engine.generateProfileInsights(profile: profile, trendSnapshot: snapshot, signals: signals, trophies: trophies).isEmpty)
-        XCTAssertTrue(engine.generateDayOverDayInsights(trendSnapshot: snapshot, signals: signals, profile: profile).isEmpty)
+        assertTrue(await engine.generateDashboardInsights(profile: profile, trendSnapshot: snapshot, signals: signals, trophies: trophies).isEmpty)
+        assertTrue(await engine.generateProfileInsights(profile: profile, trendSnapshot: snapshot, signals: signals, trophies: trophies).isEmpty)
+        assertTrue(await engine.generateDayOverDayInsights(trendSnapshot: snapshot, signals: signals, profile: profile).isEmpty)
     }
 
-    func testEveryGeneratedInsightHasEvidence() {
+    func testEveryGeneratedInsightHasEvidence() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(idSuffix: "9010", endedAt: now, exerciseType: .pushup, scores: [90, 88, 86, 70], cueMessages: ["Stack shoulders"]),
             makeSummary(idSuffix: "9011", endedAt: date(year: 2026, month: 5, day: 5, hour: 12), exerciseType: .squat, averageFormScore: 92)
         ]
-        let insights = dashboardInsights(history: history, now: now) + profileInsights(history: history, now: now)
+        let dashboard = await dashboardInsights(history: history, now: now)
+        let profileInsights = await profileInsights(history: history, now: now)
+        let insights = dashboard + profileInsights
 
         XCTAssertFalse(insights.isEmpty)
         XCTAssertTrue(insights.allSatisfy { !$0.evidence.isEmpty })
     }
 
-    func testEveryGeneratedInsightHasRecommendedAction() {
+    func testEveryGeneratedInsightHasRecommendedAction() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let summary = makeSummary(idSuffix: "9012", endedAt: now, exerciseType: .squat, scores: [70, 72, 88, 90])
-        let insights = workoutInsights(summary: summary, history: [summary], now: now)
+        let insights = await workoutInsights(summary: summary, history: [summary], now: now)
 
         XCTAssertFalse(insights.isEmpty)
         XCTAssertTrue(insights.allSatisfy { $0.recommendedAction != .noActionNeeded })
     }
 
-    func testDerivedSignalsProtectCleanCapacityTargetFitProgressionAndQualityPR() {
+    func testDerivedSignalsProtectCleanCapacityTargetFitProgressionAndQualityPR() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let latest = makeSummary(
             idSuffix: "9040",
@@ -274,7 +276,7 @@ final class InsightEngineTests: XCTestCase {
         assertNoUnsupportedPhysiologyCopy(in: signals)
     }
 
-    func testDerivedSignalsDetectBalanceCueClustersRestResponseAndSessionFit() {
+    func testDerivedSignalsDetectBalanceCueClustersRestResponseAndSessionFit() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(
@@ -332,7 +334,7 @@ final class InsightEngineTests: XCTestCase {
         assertNoUnsupportedPhysiologyCopy(in: signals)
     }
 
-    func testDerivedSignalsDetectReacquisitionAndRepeatedExerciseFriction() {
+    func testDerivedSignalsDetectReacquisitionAndRepeatedExerciseFriction() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(
@@ -370,7 +372,7 @@ final class InsightEngineTests: XCTestCase {
         assertNoUnsupportedPhysiologyCopy(in: signals)
     }
 
-    func testDerivedSignalsDoNotInferTargetFitOrQualityPRWithoutQualityEvidence() {
+    func testDerivedSignalsDoNotInferTargetFitOrQualityPRWithoutQualityEvidence() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let unscoredTargetMet = makeSummary(
             idSuffix: "9053",
@@ -400,7 +402,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertNil(noPriorQualitySignals.first { $0.type == .qualityPR })
     }
 
-    func testBootstrapFirstSessionSignalsAndDashboardInsight() throws {
+    func testBootstrapFirstSessionSignalsAndDashboardInsight() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(
@@ -422,7 +424,7 @@ final class InsightEngineTests: XCTestCase {
         let repCleanliness = try XCTUnwrap(signals.first { $0.type == .repCleanlinessIntro })
         XCTAssertEqual(repCleanliness.value, "75% good-form reps")
 
-        let dashboard = dashboardInsights(history: history, now: now)
+        let dashboard = await dashboardInsights(history: history, now: now)
         XCTAssertFalse(
             dashboard.isEmpty,
             "Signals: \(signals.map { $0.type.rawValue }.sorted().joined(separator: ", "))"
@@ -440,7 +442,7 @@ final class InsightEngineTests: XCTestCase {
         )
     }
 
-    func testBootstrapSecondSessionRepeatedExerciseProgress() throws {
+    func testBootstrapSecondSessionRepeatedExerciseProgress() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(
@@ -467,7 +469,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertEqual(signal.evidenceRefs.count, 2)
     }
 
-    func testWarmupThirdSessionUsesLatestWorkoutTrendWindow() throws {
+    func testWarmupThirdSessionUsesLatestWorkoutTrendWindow() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(idSuffix: "9065", endedAt: now, exerciseType: .squat, reps: 22, averageFormScore: 91),
@@ -487,7 +489,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertEqual(volumeSignal.evidenceRefs.count, 2)
     }
 
-    func testWarmupFifthSessionUsesLatestWorkoutDropSignals() throws {
+    func testWarmupFifthSessionUsesLatestWorkoutDropSignals() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(idSuffix: "9068", endedAt: now, exerciseType: .squat, reps: 5, averageFormScore: 70),
@@ -510,7 +512,7 @@ final class InsightEngineTests: XCTestCase {
         assertSignal(.personalBaseline, existsIn: signals)
     }
 
-    func testSixSessionsUseStandardThreeWorkoutTrendWindow() throws {
+    func testSixSessionsUseStandardThreeWorkoutTrendWindow() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(idSuffix: "9073", endedAt: now, exerciseType: .squat, reps: 18, averageFormScore: 92),
@@ -531,7 +533,7 @@ final class InsightEngineTests: XCTestCase {
         assertSignal(.personalBaseline, existsIn: signals)
     }
 
-    func testBlockedProgressionReadinessDoesNotMapToIncreaseTarget() throws {
+    func testBlockedProgressionReadinessDoesNotMapToIncreaseTarget() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(
@@ -576,7 +578,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertEqual(candidate.candidateAction, .repeatTarget)
     }
 
-    func testRestResponseIgnoresAlreadyCleanSetsAfterExtendedRest() {
+    func testRestResponseIgnoresAlreadyCleanSetsAfterExtendedRest() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(
@@ -595,7 +597,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertNil(signals.first { $0.type == .restResponse })
     }
 
-    func testEarlyRestSkipDoesNotBecomeTargetTooAggressive() {
+    func testEarlyRestSkipDoesNotBecomeTargetTooAggressive() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(
@@ -612,7 +614,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertNil(signals.first { $0.type == .targetFit && $0.value == "too aggressive" })
     }
 
-    func testRankerChoosesSpecificActionableInsightOverGenericPraise() {
+    func testRankerChoosesSpecificActionableInsightOverGenericPraise() async {
         let evidence = InsightEvidence(
             metric: "formDropOff",
             value: "after rep 8",
@@ -662,7 +664,7 @@ final class InsightEngineTests: XCTestCase {
         )
     }
 
-    func testRankerAppliesEngagementSignals() {
+    func testRankerAppliesEngagementSignals() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let neutral = makeRankerCandidate(dedupeKey: "neutral")
         let opened = makeRankerCandidate(dedupeKey: "opened")
@@ -721,36 +723,36 @@ final class InsightEngineTests: XCTestCase {
     }
 
     @MainActor
-    func testImpressionPreventsSameInsightFromRepeatingEveryLaunch() throws {
+    func testImpressionPreventsSameInsightFromRepeatingEveryLaunch() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let store = InsightStore(fileURL: temporaryInsightURL())
         let insight = makeStoredInsight(now: now)
 
         let profile = makeProfile()
-        let first = store.selectInsights([insight], for: .profile, profile: profile, limit: 1, now: now)
+        let first = await store.selectInsights([insight], for: .profile, profile: profile, limit: 1, now: now)
         let presented = try XCTUnwrap(first.first)
-        store.recordImpression(presented, on: .profile, now: now)
-        let second = store.selectInsights([insight], for: .profile, profile: profile, limit: 1, now: now.addingTimeInterval(60))
-        let afterCooldown = store.selectInsights([insight], for: .profile, profile: profile, limit: 1, now: now.addingTimeInterval(24 * 60 * 60))
+        await store.recordImpression(presented, on: .profile, now: now)
+        let second = await store.selectInsights([insight], for: .profile, profile: profile, limit: 1, now: now.addingTimeInterval(60))
+        let afterCooldown = await store.selectInsights([insight], for: .profile, profile: profile, limit: 1, now: now.addingTimeInterval(24 * 60 * 60))
 
         XCTAssertEqual(first.count, 1)
         XCTAssertTrue(second.isEmpty)
         XCTAssertEqual(afterCooldown.count, 1)
     }
 
-    func testHeartRateBPMCopyIsNotGeneratedWithoutHeartRateData() {
+    func testHeartRateBPMCopyIsNotGeneratedWithoutHeartRateData() async {
         let insight = unsafeNarrativeInsight(value: "160 BPM heart rate spike")
 
         assertNoUnsupportedPhysiologyCopy(in: insight)
     }
 
-    func testWeightLossAndCalorieClaimsAreNotGeneratedWithoutSupportedData() {
+    func testWeightLossAndCalorieClaimsAreNotGeneratedWithoutSupportedData() async {
         let insight = unsafeNarrativeInsight(value: "500 calories for weight loss")
 
         assertNoUnsupportedPhysiologyCopy(in: insight)
     }
 
-    func testLimitationAwareProfileProducesConservativeSafetyInsight() throws {
+    func testLimitationAwareProfileProducesConservativeSafetyInsight() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let profile = makeProfile(limitations: [.shoulderSensitive])
         let plan = WorkoutPlanV2(
@@ -788,8 +790,8 @@ final class InsightEngineTests: XCTestCase {
             now: now
         )
 
-        let insight = try XCTUnwrap(
-            InsightEngine().generatePlanInsights(
+        let insight = try unwrap(
+            await InsightEngine().generatePlanInsights(
                 profile: profile,
                 plan: plan,
                 trendSnapshot: snapshot,
@@ -802,20 +804,20 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertTrue(insight.message.contains("Shoulder sensitive"))
     }
 
-    func testDashboardInsightIsShort() throws {
+    func testDashboardInsightIsShort() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(idSuffix: "9013", endedAt: now),
             makeSummary(idSuffix: "9014", endedAt: date(year: 2026, month: 5, day: 5, hour: 12))
         ]
 
-        let insight = try XCTUnwrap(dashboardInsights(history: history, now: now).first)
+        let insight = try unwrap(await dashboardInsights(history: history, now: now).first)
 
         XCTAssertLessThanOrEqual(insight.message.count, 140)
         XCTAssertLessThanOrEqual(insight.shortMessage.count, 140)
     }
 
-    func testWorkoutSummaryInsightIsSpecific() throws {
+    func testWorkoutSummaryInsightIsSpecific() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let summary = makeSummary(
             idSuffix: "9015",
@@ -825,7 +827,7 @@ final class InsightEngineTests: XCTestCase {
             cueMessages: ["Stack shoulders"]
         )
 
-        let insight = try XCTUnwrap(workoutInsights(summary: summary, history: [summary], now: now).first)
+        let insight = try unwrap(await workoutInsights(summary: summary, history: [summary], now: now).first)
 
         XCTAssertTrue(insight.message.localizedCaseInsensitiveContains("push"))
         XCTAssertTrue(insight.message.contains("rep"))
@@ -910,7 +912,7 @@ final class InsightEngineTests: XCTestCase {
             }
         )
 
-        let deterministic = workoutInsights(summary: summary, history: [summary], now: now)
+        let deterministic = await workoutInsights(summary: summary, history: [summary], now: now)
         let noopRewrite = await noopRewriteEngine.generateWorkoutInsights(
             profile: profile,
             summary: summary,
@@ -946,7 +948,7 @@ final class InsightEngineTests: XCTestCase {
             profile: profile,
             trophies: trophies
         )
-        let deterministic = workoutInsights(summary: summary, history: [summary], now: now)
+        let deterministic = await workoutInsights(summary: summary, history: [summary], now: now)
         let engine = InsightEngine(
             featureFlags: FeatureFlags(enabled: [.coachInsightLLMRewrite]),
             insightRewriter: StubInsightRewriter { _ in
@@ -972,7 +974,7 @@ final class InsightEngineTests: XCTestCase {
         )
     }
 
-    func testProfileInsightConnectsMultipleSessions() throws {
+    func testProfileInsightConnectsMultipleSessions() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(idSuffix: "9016", endedAt: date(year: 2026, month: 5, day: 1, hour: 12), exerciseType: .pushup, averageFormScore: 68),
@@ -981,14 +983,14 @@ final class InsightEngineTests: XCTestCase {
             makeSummary(idSuffix: "9019", endedAt: now, exerciseType: .pushup, averageFormScore: 92)
         ]
 
-        let insight = try XCTUnwrap(profileInsights(history: history, now: now).first { $0.type == .growthCelebration })
+        let insight = try unwrap(await profileInsights(history: history, now: now).first { $0.type == .growthCelebration })
         let workoutIds = Set(insight.evidence.compactMap(\.workoutId))
 
         XCTAssertEqual(insight.relatedExerciseType, .pushup)
         XCTAssertGreaterThanOrEqual(workoutIds.count, 2)
     }
 
-    func testFatigueInsightDoesNotPretendRestWasExtended() throws {
+    func testFatigueInsightDoesNotPretendRestWasExtended() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let profile = makeProfile()
         let signal = UserTrainingSignal(
@@ -1008,8 +1010,8 @@ final class InsightEngineTests: XCTestCase {
             createdAt: now
         )
 
-        let insight = try XCTUnwrap(
-            InsightEngine().generateDashboardInsights(
+        let insight = try unwrap(
+            await InsightEngine().generateDashboardInsights(
                 profile: profile,
                 trendSnapshot: makeTrendSnapshot(now: now, totalWorkouts: 3),
                 signals: [signal],
@@ -1021,7 +1023,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertTrue(insight.message.localizedCaseInsensitiveContains("strain"))
     }
 
-    func testHoldProgressionInsightDoesNotRecommendAddingReps() throws {
+    func testHoldProgressionInsightDoesNotRecommendAddingReps() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let summary = WorkoutSessionSummary(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000009401") ?? UUID(),
@@ -1057,8 +1059,8 @@ final class InsightEngineTests: XCTestCase {
             createdAt: now
         )
 
-        let insight = try XCTUnwrap(
-            workoutInsights(summary: summary, history: [summary], now: now)
+        let insight = try unwrap(
+            await workoutInsights(summary: summary, history: [summary], now: now)
                 .first { $0.recommendedAction == .increaseTarget }
         )
 
@@ -1066,7 +1068,7 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertFalse(insight.message.localizedCaseInsensitiveContains("one rep"))
     }
 
-    func testPlanPreviewFiltersExerciseSpecificSignalsOutsideTodaysPlan() {
+    func testPlanPreviewFiltersExerciseSpecificSignalsOutsideTodaysPlan() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let profile = makeProfile()
         let offPlanSignal = UserTrainingSignal(
@@ -1089,7 +1091,7 @@ final class InsightEngineTests: XCTestCase {
             createdAt: now
         )
 
-        let insights = InsightEngine().generatePlanInsights(
+        let insights = await InsightEngine().generatePlanInsights(
             profile: profile,
             plan: makePlan(),
             trendSnapshot: makeTrendSnapshot(now: now, totalWorkouts: 3, currentStreak: 1),
@@ -1101,7 +1103,7 @@ final class InsightEngineTests: XCTestCase {
     }
 
     @MainActor
-    func testPersistedDuplicateDeliveryRecordsMergeSurfaceCooldowns() throws {
+    func testPersistedDuplicateDeliveryRecordsMergeSurfaceCooldowns() async throws {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let url = temporaryInsightURL()
         let insight = makeStoredInsight(now: now)
@@ -1127,8 +1129,8 @@ final class InsightEngineTests: XCTestCase {
 
         let store = InsightStore(fileURL: url)
 
-        XCTAssertTrue(
-            store.selectInsights([insight], for: .profile, profile: makeProfile(), limit: 1, now: now).isEmpty
+        assertTrue(
+            await store.selectInsights([insight], for: .profile, profile: makeProfile(), limit: 1, now: now).isEmpty
         )
     }
 }
@@ -1154,7 +1156,7 @@ private extension InsightEngineTests {
         summary: WorkoutSessionSummary,
         history: [WorkoutSessionSummary],
         now: Date
-    ) -> [AIInsight] {
+    ) async -> [AIInsight] {
         let profile = makeProfile()
         let trophies = emptyTrophySnapshot(now: now)
         let trendEngine = TrendEngine(calendar: calendar)
@@ -1170,7 +1172,7 @@ private extension InsightEngineTests {
             profile: profile,
             trophies: trophies
         )
-        return InsightEngine().generateWorkoutInsights(
+        return await InsightEngine().generateWorkoutInsights(
             profile: profile,
             summary: summary,
             plan: makePlan(),
@@ -1183,7 +1185,7 @@ private extension InsightEngineTests {
         history: [WorkoutSessionSummary],
         trophies: TrophyProgressSnapshot? = nil,
         now: Date
-    ) -> [AIInsight] {
+    ) async -> [AIInsight] {
         let profile = makeProfile()
         let resolvedTrophies = trophies ?? emptyTrophySnapshot(now: now)
         let trendEngine = TrendEngine(calendar: calendar)
@@ -1199,7 +1201,7 @@ private extension InsightEngineTests {
             profile: profile,
             trophies: resolvedTrophies
         )
-        return InsightEngine().generateDashboardInsights(
+        return await InsightEngine().generateDashboardInsights(
             profile: profile,
             trendSnapshot: snapshot,
             signals: signals,
@@ -1210,7 +1212,7 @@ private extension InsightEngineTests {
     func profileInsights(
         history: [WorkoutSessionSummary],
         now: Date
-    ) -> [AIInsight] {
+    ) async -> [AIInsight] {
         let profile = makeProfile()
         let trophies = emptyTrophySnapshot(now: now)
         let trendEngine = TrendEngine(calendar: calendar)
@@ -1226,7 +1228,7 @@ private extension InsightEngineTests {
             profile: profile,
             trophies: trophies
         )
-        return InsightEngine().generateProfileInsights(
+        return await InsightEngine().generateProfileInsights(
             profile: profile,
             trendSnapshot: snapshot,
             signals: signals,

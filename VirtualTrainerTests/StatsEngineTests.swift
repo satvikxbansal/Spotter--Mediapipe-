@@ -9,7 +9,7 @@ final class StatsEngineTests: XCTestCase {
         return calendar
     }()
 
-    func testStatsEngineComputesXPDeterministically() {
+    func testStatsEngineComputesXPDeterministically() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let history = [
             makeSummary(
@@ -74,7 +74,7 @@ final class StatsEngineTests: XCTestCase {
         XCTAssertEqual(stats.level, 1)
     }
 
-    func testLevelFormulaIsStable() {
+    func testLevelFormulaIsStable() async {
         XCTAssertEqual(StatsEngine.level(forXP: -10), 1)
         XCTAssertEqual(StatsEngine.level(forXP: 0), 1)
         XCTAssertEqual(StatsEngine.level(forXP: 499), 1)
@@ -84,7 +84,7 @@ final class StatsEngineTests: XCTestCase {
         XCTAssertEqual(StatsEngine.xpRequired(forLevel: 3), 1_000)
     }
 
-    func testEmptyHistoryStatsDoNotCrash() {
+    func testEmptyHistoryStatsDoNotCrash() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let stats = StatsEngine(calendar: calendar).makeStats(
             history: [],
@@ -99,7 +99,7 @@ final class StatsEngineTests: XCTestCase {
         XCTAssertNil(stats.lastWorkoutAt)
     }
 
-    func testStatsEnginePrefersServerEndedAtForStreaksAndLastWorkoutDate() {
+    func testStatsEnginePrefersServerEndedAtForStreaksAndLastWorkoutDate() async {
         let now = date(year: 2026, month: 5, day: 6, hour: 12)
         let serverTimedSummary = makeSummary(
             idSuffix: "4051",
@@ -124,7 +124,7 @@ final class StatsEngineTests: XCTestCase {
         XCTAssertEqual(stats.lastWorkoutAt, now)
     }
 
-    func testHistorySelectionReturnsDetailSummary() {
+    func testHistorySelectionReturnsDetailSummary() async {
         let first = makeSummary(
             idSuffix: "4101",
             mode: .plannedWorkout,
@@ -144,7 +144,7 @@ final class StatsEngineTests: XCTestCase {
         XCTAssertEqual(selected, second)
     }
 
-    func testTrophyCountComesFromTrophyStoreSnapshot() {
+    func testTrophyCountComesFromTrophyStoreSnapshot() async {
         let now = date(year: 2026, month: 5, day: 1, hour: 12)
         let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
         let summary = makeSummary(
@@ -154,7 +154,7 @@ final class StatsEngineTests: XCTestCase {
             reps: 10
         )
 
-        store.updateAll(
+        await store.updateAll(
             history: [summary],
             calibrationStatus: .notStarted,
             now: now

@@ -36,14 +36,20 @@ struct VirtualTrainerApp: App {
             .environmentObject(insightStore)
             .onAppear {
                 syncStoresWithAccount()
-                themeStore.sync(with: onboardingStore.profile)
+                Task {
+                    await themeStore.sync(with: onboardingStore.profile)
+                }
             }
             .onChange(of: accountContext.currentAccountId) {
                 syncStoresWithAccount()
-                themeStore.sync(with: onboardingStore.profile)
+                Task {
+                    await themeStore.sync(with: onboardingStore.profile)
+                }
             }
             .onChange(of: onboardingStore.profile) {
-                themeStore.sync(with: onboardingStore.profile)
+                Task {
+                    await themeStore.sync(with: onboardingStore.profile)
+                }
             }
         }
     }

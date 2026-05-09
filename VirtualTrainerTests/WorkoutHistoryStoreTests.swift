@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class WorkoutHistoryStoreTests: XCTestCase {
-    func testSavePlannedWorkoutSummary() throws {
+    func testSavePlannedWorkoutSummary() async throws {
         let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
         let plan = makePlan()
         let setSummary = makeSetSummary(planId: plan.id)
@@ -18,7 +18,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
             createdAt: Date(timeIntervalSince1970: 1_776_200_061)
         )
 
-        XCTAssertTrue(store.addSummary(summary))
+        assertTrue(await store.addSummary(summary))
 
         let fetched = try XCTUnwrap(store.fetchSummary(id: summary.id))
         XCTAssertEqual(fetched.mode, .plannedWorkout)
@@ -29,14 +29,14 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(fetched.completionPercent, 1)
     }
 
-    func testSaveFreeAnalysisSummary() throws {
+    func testSaveFreeAnalysisSummary() async throws {
         let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
         let summary = WorkoutSessionSummary.freeAnalysis(
             from: makeFreeAnalysisSummary(),
             createdAt: Date(timeIntervalSince1970: 1_776_200_120)
         )
 
-        XCTAssertTrue(store.addSummary(summary))
+        assertTrue(await store.addSummary(summary))
 
         let fetched = try XCTUnwrap(store.fetchSummary(id: summary.id))
         XCTAssertEqual(fetched.mode, .freeAnalysis)
@@ -47,7 +47,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(fetched.topCue?.cueMessage, "Keep your core braced")
     }
 
-    func testFetchRecentHistorySortsNewestFirst() throws {
+    func testFetchRecentHistorySortsNewestFirst() async throws {
         let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
         let older = makeStoredSummary(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000001001") ?? UUID(),
@@ -65,16 +65,16 @@ final class WorkoutHistoryStoreTests: XCTestCase {
             endedAt: Date(timeIntervalSince1970: 1_776_200_100)
         )
 
-        store.addSummary(older)
-        store.addSummary(newest)
-        store.addSummary(middle)
+        await store.addSummary(older)
+        await store.addSummary(newest)
+        await store.addSummary(middle)
 
         let recent = store.fetchRecentSummaries(limit: 2)
 
         XCTAssertEqual(recent.map(\.title), ["Newest", "Middle"])
     }
 
-    func testSummaryCodableRoundtrip() throws {
+    func testSummaryCodableRoundtrip() async throws {
         let encoder = JSONEncoder()
         let decoder = JSONDecoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -92,7 +92,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertNil(decoded.deletedAt)
     }
 
-    func testSummaryTombstoneHelpersAndCodableRoundtrip() throws {
+    func testSummaryTombstoneHelpersAndCodableRoundtrip() async throws {
         let encoder = JSONEncoder()
         let decoder = JSONDecoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -113,7 +113,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertFalse(decoded.restored().isDeleted)
     }
 
-    func testOldWorkoutSessionSummaryJSONDecodesWithEvidenceDefaults() throws {
+    func testOldWorkoutSessionSummaryJSONDecodesWithEvidenceDefaults() async throws {
         let json = """
         {
           "id": "00000000-0000-0000-0000-000000001040",
@@ -172,7 +172,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertNil(decoded.deletedAt)
     }
 
-    func testOlderWorkoutSessionSummaryJSONDecodesWithoutCreatedAt() throws {
+    func testOlderWorkoutSessionSummaryJSONDecodesWithoutCreatedAt() async throws {
         let json = """
         {
           "id": "00000000-0000-0000-0000-000000001045",
@@ -209,7 +209,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertNil(decoded.deletedAt)
     }
 
-    func testRepQualityEventCodableRoundtrip() throws {
+    func testRepQualityEventCodableRoundtrip() async throws {
         let event = RepQualityEvent(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000001050") ?? UUID(),
             exerciseType: .pushup,
@@ -235,7 +235,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(decoded, event)
     }
 
-    func testSetQualitySummaryClassifiesTrendAndCountsFormReps() {
+    func testSetQualitySummaryClassifiesTrendAndCountsFormReps() async {
         let improved = SetQualitySummary.build(
             repQualityEvents: [
                 makeRepEvent(repIndex: 1, score: 70),
@@ -278,9 +278,9 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(stable.qualityTrend, .stable)
     }
 
-    func testAggregateStats() {
+    func testAggregateStats() async {
         let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
-        store.addSummary(
+        await store.addSummary(
             makeStoredSummary(
                 id: UUID(uuidString: "00000000-0000-0000-0000-000000001005") ?? UUID(),
                 title: "Strength",
@@ -290,7 +290,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
                 completionPercent: 1
             )
         )
-        store.addSummary(
+        await store.addSummary(
             makeStoredSummary(
                 id: UUID(uuidString: "00000000-0000-0000-0000-000000001006") ?? UUID(),
                 mode: .freeAnalysis,
@@ -313,7 +313,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(stats.mostTrainedExerciseType, .squat)
     }
 
-    func testAggregateStatsComputesEvidenceTotalsAndStreaks() throws {
+    func testAggregateStatsComputesEvidenceTotalsAndStreaks() async throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
         let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 6, hour: 12)))
@@ -322,10 +322,10 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         let fourDaysAgo = try XCTUnwrap(calendar.date(byAdding: .day, value: -4, to: today))
         let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL(), calendar: calendar)
 
-        store.addSummary(makeEvidenceSummary(idSuffix: "1061", endedAt: fourDaysAgo, scores: [72, 80], highSeverityCues: 0))
-        store.addSummary(makeEvidenceSummary(idSuffix: "1062", endedAt: twoDaysAgo, scores: [78, 82], highSeverityCues: 1))
-        store.addSummary(makeEvidenceSummary(idSuffix: "1063", endedAt: yesterday, scores: [84, 91], highSeverityCues: 1))
-        store.addSummary(makeEvidenceSummary(idSuffix: "1064", endedAt: today, scores: [88, 94], highSeverityCues: 0))
+        await store.addSummary(makeEvidenceSummary(idSuffix: "1061", endedAt: fourDaysAgo, scores: [72, 80], highSeverityCues: 0))
+        await store.addSummary(makeEvidenceSummary(idSuffix: "1062", endedAt: twoDaysAgo, scores: [78, 82], highSeverityCues: 1))
+        await store.addSummary(makeEvidenceSummary(idSuffix: "1063", endedAt: yesterday, scores: [84, 91], highSeverityCues: 1))
+        await store.addSummary(makeEvidenceSummary(idSuffix: "1064", endedAt: today, scores: [88, 94], highSeverityCues: 0))
 
         let stats = store.aggregateStats(now: today)
 
@@ -338,7 +338,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(stats.mostImprovedExerciseType, .squat)
     }
 
-    func testPlannedWorkoutSummaryIncludesRepEvidence() throws {
+    func testPlannedWorkoutSummaryIncludesRepEvidence() async throws {
         let plan = makePlan()
         let setSummary = makeSetSummary(
             planId: plan.id,
@@ -368,7 +368,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(summary.exerciseSummaries.first?.completionSource, .targetMet)
     }
 
-    func testFreeAnalysisSummaryIncludesRepEvidence() {
+    func testFreeAnalysisSummaryIncludesRepEvidence() async {
         let freeSummary = makeFreeAnalysisSummary(
             repQualityEvents: [
                 makeRepEvent(exerciseType: .pushup, setIndex: nil, repIndex: 1, score: 81),
@@ -385,7 +385,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(summary.totalExcellentFormReps, 1)
     }
 
-    func testNoDuplicateSaveWhenPlannedSummaryIsRequestedMultipleTimes() throws {
+    func testNoDuplicateSaveWhenPlannedSummaryIsRequestedMultipleTimes() async throws {
         var coordinator = PlannedWorkoutCoordinator(
             plan: makePlan(),
             startedAt: Date(timeIntervalSince1970: 1_776_200_000),
@@ -417,14 +417,14 @@ final class WorkoutHistoryStoreTests: XCTestCase {
 
         let firstSummary = coordinator.workoutSessionSummary()
         let secondSummary = coordinator.workoutSessionSummary()
-        XCTAssertTrue(store.addSummary(firstSummary))
-        XCTAssertTrue(store.addSummary(secondSummary))
+        assertTrue(await store.addSummary(firstSummary))
+        assertTrue(await store.addSummary(secondSummary))
 
         XCTAssertEqual(firstSummary.id, secondSummary.id)
         XCTAssertEqual(store.fetchRecentSummaries().count, 1)
     }
 
-    func testAddSummaryUpsertsByID() throws {
+    func testAddSummaryUpsertsByID() async throws {
         let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
         let id = UUID(uuidString: "00000000-0000-0000-0000-000000001085") ?? UUID()
         let first = makeStoredSummary(
@@ -440,15 +440,15 @@ final class WorkoutHistoryStoreTests: XCTestCase {
             totalReps: 16
         )
 
-        XCTAssertTrue(store.addSummary(first))
-        XCTAssertTrue(store.addSummary(replacement))
+        assertTrue(await store.addSummary(first))
+        assertTrue(await store.addSummary(replacement))
 
         XCTAssertEqual(store.fetchRecentSummaries().count, 1)
         XCTAssertEqual(store.fetchSummary(id: id)?.title, "Replacement")
         XCTAssertEqual(store.fetchSummary(id: id)?.totalReps, 16)
     }
 
-    func testDeleteSummaryHidesVisibleQueriesButKeepsTombstoneAndRestoreReturnsIt() throws {
+    func testDeleteSummaryHidesVisibleQueriesButKeepsTombstoneAndRestoreReturnsIt() async throws {
         let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
         let deletedAt = Date(timeIntervalSince1970: 1_776_201_100)
         let summary = makeStoredSummary(
@@ -457,9 +457,9 @@ final class WorkoutHistoryStoreTests: XCTestCase {
             endedAt: Date(timeIntervalSince1970: 1_776_200_000)
         )
 
-        XCTAssertTrue(store.addSummary(summary))
+        assertTrue(await store.addSummary(summary))
         XCTAssertEqual(store.summaries.map(\.id), [summary.id])
-        XCTAssertTrue(store.deleteSummary(id: summary.id, deletedAt: deletedAt))
+        assertTrue(await store.deleteSummary(id: summary.id, deletedAt: deletedAt))
 
         XCTAssertTrue(store.summaries.isEmpty)
         XCTAssertTrue(store.fetchRecentSummaries().isEmpty)
@@ -469,12 +469,12 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(store.fetchDeletedSummaries().map(\.id), [summary.id])
         XCTAssertEqual(store.fetchDirtyOrDeletedSummaries().map(\.id), [summary.id])
 
-        XCTAssertTrue(store.restoreSummary(id: summary.id))
+        assertTrue(await store.restoreSummary(id: summary.id))
         XCTAssertEqual(store.summaries.map(\.id), [summary.id])
         XCTAssertNil(store.fetchSummary(id: summary.id)?.deletedAt)
     }
 
-    func testPurgeTombstonesRemovesOnlyDeletedRecordsOlderThanCutoff() throws {
+    func testPurgeTombstonesRemovesOnlyDeletedRecordsOlderThanCutoff() async throws {
         let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
         let cutoff = Date(timeIntervalSince1970: 1_776_201_000)
         let oldDeleted = makeStoredSummary(
@@ -493,11 +493,11 @@ final class WorkoutHistoryStoreTests: XCTestCase {
             endedAt: Date(timeIntervalSince1970: 1_776_200_200)
         )
 
-        XCTAssertTrue(store.addSummary(oldDeleted))
-        XCTAssertTrue(store.addSummary(recentDeleted))
-        XCTAssertTrue(store.addSummary(active))
+        assertTrue(await store.addSummary(oldDeleted))
+        assertTrue(await store.addSummary(recentDeleted))
+        assertTrue(await store.addSummary(active))
 
-        XCTAssertEqual(store.purgeTombstones(olderThan: cutoff), 1)
+        assertEqual(await store.purgeTombstones(olderThan: cutoff), 1)
 
         XCTAssertNil(store.fetchSummaryIncludingDeleted(id: oldDeleted.id))
         XCTAssertNotNil(store.fetchSummaryIncludingDeleted(id: recentDeleted.id))
@@ -505,7 +505,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(store.fetchDeletedSummaries().map(\.id), [recentDeleted.id])
     }
 
-    func testStatsAndRecentHistoryItemsIgnoreDeletedWorkouts() throws {
+    func testStatsAndRecentHistoryItemsIgnoreDeletedWorkouts() async throws {
         let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
         let visible = makeStoredSummary(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000001090") ?? UUID(),
@@ -522,9 +522,9 @@ final class WorkoutHistoryStoreTests: XCTestCase {
             averageFormScore: 50
         )
 
-        XCTAssertTrue(store.addSummary(visible))
-        XCTAssertTrue(store.addSummary(deleted))
-        XCTAssertTrue(store.deleteSummary(id: deleted.id, deletedAt: Date(timeIntervalSince1970: 1_776_201_200)))
+        assertTrue(await store.addSummary(visible))
+        assertTrue(await store.addSummary(deleted))
+        assertTrue(await store.deleteSummary(id: deleted.id, deletedAt: Date(timeIntervalSince1970: 1_776_201_200)))
 
         let stats = store.aggregateStats(now: Date(timeIntervalSince1970: 1_776_200_500))
         XCTAssertEqual(stats.sessionCount, 1)
@@ -533,7 +533,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(store.recentWorkoutHistoryItems(limit: 10).map(\.id), [visible.id])
     }
 
-    func testRemoveSummariesForDebugPhysicallyRemovesOnlyMatchingRecords() throws {
+    func testRemoveSummariesForDebugPhysicallyRemovesOnlyMatchingRecords() async throws {
         let url = temporaryHistoryURL()
         let store = WorkoutHistoryStore(fileURL: url)
         let sample = makeStoredSummary(
@@ -547,9 +547,9 @@ final class WorkoutHistoryStoreTests: XCTestCase {
             endedAt: Date(timeIntervalSince1970: 1_776_200_600)
         )
 
-        XCTAssertTrue(store.addSummary(sample))
-        XCTAssertTrue(store.addSummary(kept))
-        XCTAssertTrue(store.removeSummariesForDebug(ids: [sample.id]))
+        assertTrue(await store.addSummary(sample))
+        assertTrue(await store.addSummary(kept))
+        assertTrue(await store.removeSummariesForDebug(ids: [sample.id]))
 
         XCTAssertNil(store.fetchSummary(id: sample.id))
         XCTAssertNil(store.fetchSummaryIncludingDeleted(id: sample.id))
@@ -560,7 +560,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.fetchRecentSummaries().map(\.id), [kept.id])
     }
 
-    func testPersistedJSONKeepsTombstonesAfterReload() throws {
+    func testPersistedJSONKeepsTombstonesAfterReload() async throws {
         let url = temporaryHistoryURL()
         let store = WorkoutHistoryStore(fileURL: url)
         let deletedAt = Date(timeIntervalSince1970: 1_776_201_300)
@@ -570,8 +570,8 @@ final class WorkoutHistoryStoreTests: XCTestCase {
             endedAt: Date(timeIntervalSince1970: 1_776_200_500)
         )
 
-        XCTAssertTrue(store.addSummary(summary))
-        XCTAssertTrue(store.deleteSummary(id: summary.id, deletedAt: deletedAt))
+        assertTrue(await store.addSummary(summary))
+        assertTrue(await store.deleteSummary(id: summary.id, deletedAt: deletedAt))
 
         let reloaded = WorkoutHistoryStore(fileURL: url)
 
@@ -581,7 +581,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.allSummariesIncludingTombstones().map(\.id), [summary.id])
     }
 
-    func testSameOperationIdAddsSummaryOnlyOnce() throws {
+    func testSameOperationIdAddsSummaryOnlyOnce() async throws {
         let url = temporaryHistoryURL()
         let journal = LocalWriteJournal(
             fileURL: LocalWriteJournal.defaultJournalURL(alongside: url)
@@ -601,8 +601,8 @@ final class WorkoutHistoryStoreTests: XCTestCase {
             totalReps: 30
         )
 
-        XCTAssertTrue(store.addSummary(first, operationId: operationId))
-        XCTAssertTrue(store.addSummary(retryPayload, operationId: operationId))
+        assertTrue(await store.addSummary(first, operationId: operationId))
+        assertTrue(await store.addSummary(retryPayload, operationId: operationId))
 
         let fetched = try XCTUnwrap(store.fetchSummary(id: summaryId))
         XCTAssertEqual(store.fetchRecentSummaries().map(\.id), [summaryId])
@@ -611,7 +611,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(fetched.syncMetadata.pendingOperationId, operationId)
     }
 
-    func testDifferentOperationIdUpdatesSummaryNormally() throws {
+    func testDifferentOperationIdUpdatesSummaryNormally() async throws {
         let url = temporaryHistoryURL()
         let journal = LocalWriteJournal(
             fileURL: LocalWriteJournal.defaultJournalURL(alongside: url)
@@ -632,8 +632,8 @@ final class WorkoutHistoryStoreTests: XCTestCase {
             totalReps: 30
         )
 
-        XCTAssertTrue(store.addSummary(first, operationId: firstOperationId))
-        XCTAssertTrue(store.addSummary(replacement, operationId: secondOperationId))
+        assertTrue(await store.addSummary(first, operationId: firstOperationId))
+        assertTrue(await store.addSummary(replacement, operationId: secondOperationId))
 
         let fetched = try XCTUnwrap(store.fetchSummary(id: summaryId))
         XCTAssertEqual(store.fetchRecentSummaries().map(\.id), [summaryId])
@@ -642,7 +642,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(fetched.syncMetadata.pendingOperationId, secondOperationId)
     }
 
-    func testFailedSaveDoesNotExposeUnsavedSummary() throws {
+    func testFailedSaveDoesNotExposeUnsavedSummary() async throws {
         let blockedParentURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try Data().write(to: blockedParentURL)
@@ -656,7 +656,7 @@ final class WorkoutHistoryStoreTests: XCTestCase {
             endedAt: Date(timeIntervalSince1970: 1_776_200_600)
         )
 
-        XCTAssertFalse(store.addSummary(summary))
+        assertFalse(await store.addSummary(summary))
         XCTAssertNil(store.fetchSummary(id: summary.id))
         XCTAssertTrue(store.fetchRecentSummaries().isEmpty)
         XCTAssertNotNil(store.persistenceError)

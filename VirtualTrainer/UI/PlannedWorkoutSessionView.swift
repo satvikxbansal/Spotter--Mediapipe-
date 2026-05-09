@@ -82,7 +82,9 @@ struct PlannedWorkoutSessionView: View {
             dismiss()
         }
         .onAppear {
-            saveHistorySummaryIfNeeded()
+            Task {
+                await saveHistorySummaryIfNeeded()
+            }
         }
     }
 
@@ -100,25 +102,25 @@ struct PlannedWorkoutSessionView: View {
         dismiss()
     }
 
-    private func saveHistorySummaryIfNeeded() {
+    private func saveHistorySummaryIfNeeded() async {
         guard coordinator.sessionState == .completed,
               !didSaveHistorySummary
         else { return }
 
         let summary = coordinator.workoutSessionSummary()
-        guard historyStore.addSummary(summary) else { return }
+        guard await historyStore.addSummary(summary) else { return }
         savedHistorySummary = summary
-        newlyEarnedTrophyEvents = trophyStore.update(
+        newlyEarnedTrophyEvents = await trophyStore.update(
             after: summary,
             history: historyStore.summaries,
             calibrationStatus: calibrationStore.status
         )
         nearestTrophyProgress = trophyStore.snapshot.nearestInProgress
-        workoutInsight = makeWorkoutInsight(for: summary)
+        workoutInsight = await makeWorkoutInsight(for: summary)
         didSaveHistorySummary = true
     }
 
-    private func makeWorkoutInsight(for summary: WorkoutSessionSummary) -> AIInsight? {
+    private func makeWorkoutInsight(for summary: WorkoutSessionSummary) async -> AIInsight? {
         guard let profile = onboardingStore.profile else { return nil }
         let now = Date()
         let trendEngine = TrendEngine()
@@ -135,7 +137,7 @@ struct PlannedWorkoutSessionView: View {
             trophies: trophyStore.snapshot,
             context: SignalGenerationContext(historySessionCount: historyStore.summaries.count)
         )
-        let generated = InsightEngine().generateWorkoutInsights(
+        let generated = await InsightEngine().generateWorkoutInsights(
             profile: profile,
             summary: summary,
             plan: coordinator.plan,
@@ -147,7 +149,7 @@ struct PlannedWorkoutSessionView: View {
         let currentWorkoutGenerated = generated.filter { insight in
             insight.evidence.contains { $0.workoutId == summary.id }
         }
-        return insightStore.selectGeneratedInsights(
+        return await insightStore.selectGeneratedInsights(
             currentWorkoutGenerated,
             for: .workoutSummary,
             profile: profile,

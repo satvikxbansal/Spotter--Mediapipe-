@@ -84,7 +84,9 @@ struct WorkoutSummaryView: View {
                 insight: insight,
                 summaries: evidenceSummaries
             ) { kind in
-                insightStore.recordEngagement(insight, kind: kind)
+                Task {
+                    await insightStore.recordEngagement(insight, kind: kind)
+                }
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
@@ -245,11 +247,15 @@ struct WorkoutSummaryView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     InsightEvidenceButton {
-                        insightStore.recordEngagement(coachInsight, kind: .opened)
+                        Task {
+                            await insightStore.recordEngagement(coachInsight, kind: .opened)
+                        }
                         selectedInsightEvidence = coachInsight
                     }
                     InsightEngagementPrompt { kind in
-                        insightStore.recordEngagement(coachInsight, kind: kind)
+                        Task {
+                            await insightStore.recordEngagement(coachInsight, kind: kind)
+                        }
                     }
                 }
             }
@@ -264,7 +270,9 @@ struct WorkoutSummaryView: View {
         .id(coachInsight?.id ?? "summary-coach-recap")
         .onAppear {
             if let coachInsight {
-                insightStore.recordImpression(coachInsight, on: .workoutSummary)
+                Task {
+                    await insightStore.recordImpression(coachInsight, on: .workoutSummary)
+                }
             }
         }
     }

@@ -61,21 +61,33 @@ struct ProfileView: View {
                     insight: insight,
                     summaries: historyStore.summaries
                 ) { kind in
-                    insightStore.recordEngagement(insight, kind: kind)
+                    Task {
+                        await insightStore.recordEngagement(insight, kind: kind)
+                    }
                 }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
-            .onAppear(perform: refreshProfileData)
+            .onAppear {
+                Task {
+                    await refreshProfileData()
+                }
+            }
             .onChange(of: historyStore.summaries) {
-                refreshProfileData()
+                Task {
+                    await refreshProfileData()
+                }
             }
             .onChange(of: calibrationStore.status) {
-                refreshTrophies()
+                Task {
+                    await refreshTrophies()
+                }
             }
             .onChange(of: onboardingStore.profile) {
-                themeStore.sync(with: onboardingStore.profile)
-                refreshProfileData()
+                Task {
+                    await themeStore.sync(with: onboardingStore.profile)
+                    await refreshProfileData()
+                }
             }
         }
         .preferredColorScheme(.dark)
@@ -124,9 +136,21 @@ struct ProfileView: View {
                 TrainingPreferenceSection(
                     profile: profile,
                     accent: themeStore.selectedTheme.accentColor,
-                    onGoalChange: { _ = onboardingStore.updatePrimaryGoal($0) },
-                    onCoachChange: { _ = onboardingStore.updatePreferredCoach($0) },
-                    onSessionLengthChange: { _ = onboardingStore.updatePreferredSessionLength($0) }
+                    onGoalChange: { goal in
+                        Task {
+                            _ = await onboardingStore.updatePrimaryGoal(goal)
+                        }
+                    },
+                    onCoachChange: { coach in
+                        Task {
+                            _ = await onboardingStore.updatePreferredCoach(coach)
+                        }
+                    },
+                    onSessionLengthChange: { sessionLength in
+                        Task {
+                            _ = await onboardingStore.updatePreferredSessionLength(sessionLength)
+                        }
+                    }
                 )
 
                 ProfileStatsGrid(stats: stats)
@@ -143,10 +167,12 @@ struct ProfileView: View {
                     ProfileWeeklyRecapCard(
                         recap: weeklyRecap,
                         onAppear: {
-                            insightStore.recordPresentation(
-                                dedupeKey: weeklyRecap.dedupeKey,
-                                on: .profile
-                            )
+                            Task {
+                                await insightStore.recordPresentation(
+                                    dedupeKey: weeklyRecap.dedupeKey,
+                                    on: .profile
+                                )
+                            }
                         }
                     )
                 }
@@ -155,13 +181,19 @@ struct ProfileView: View {
                     profile: profile,
                     insights: profileInsights,
                     onAppear: { insight in
-                        insightStore.recordImpression(insight, on: .profile)
+                        Task {
+                            await insightStore.recordImpression(insight, on: .profile)
+                        }
                     },
                     onEngagement: { insight, kind in
-                        insightStore.recordEngagement(insight, kind: kind)
+                        Task {
+                            await insightStore.recordEngagement(insight, kind: kind)
+                        }
                     },
                     onOpenEvidence: { insight in
-                        insightStore.recordEngagement(insight, kind: .opened)
+                        Task {
+                            await insightStore.recordEngagement(insight, kind: .opened)
+                        }
                         selectedInsightEvidence = insight
                     }
                 )
@@ -182,8 +214,16 @@ struct ProfileView: View {
                     isSampleDataEnabled: isSampleDataEnabled,
                     debugStatusMessage: debugStatusMessage,
                     onSampleDataToggle: setSampleDataEnabledForTesting,
-                    onResetOnboarding: onboardingStore.resetOnboarding,
-                    onResetCalibration: calibrationStore.resetForDebug
+                    onResetOnboarding: {
+                        Task {
+                            await onboardingStore.resetOnboarding()
+                        }
+                    },
+                    onResetCalibration: {
+                        Task {
+                            await calibrationStore.resetForDebug()
+                        }
+                    }
                 )
             }
             .padding(Theme.Spacing.lg)
@@ -191,8 +231,8 @@ struct ProfileView: View {
         }
     }
 
-    private func refreshProfileData() {
-        themeStore.sync(with: onboardingStore.profile)
+    private func refreshProfileData() async {
+        await themeStore.sync(with: onboardingStore.profile)
         guard let profile = onboardingStore.profile else {
             profileInsights = []
             weeklyRecap = nil
@@ -200,36 +240,36 @@ struct ProfileView: View {
             return
         }
         let now = Date()
-        trophyStore.updateAll(
+        await trophyStore.updateAll(
             history: historyStore.summaries,
             calibrationStatus: calibrationStore.status,
             now: now
         )
         weeklyRecap = makeWeeklyRecap(profile: profile, now: now)
-        refreshProfileInsights(profile: profile, now: now)
+        await refreshProfileInsights(profile: profile, now: now)
         isSampleDataEnabled = LocalUITestingSampleData.isPresent(
             history: historyStore.summaries,
             insights: insightStore.recentInsights
         )
     }
 
-    private func refreshTrophies() {
+    private func refreshTrophies() async {
         let now = Date()
-        trophyStore.updateAll(
+        await trophyStore.updateAll(
             history: historyStore.summaries,
             calibrationStatus: calibrationStore.status,
             now: now
         )
         if let profile = onboardingStore.profile {
             weeklyRecap = makeWeeklyRecap(profile: profile, now: now)
-            refreshProfileInsights(profile: profile, now: now)
+            await refreshProfileInsights(profile: profile, now: now)
         }
     }
 
     private func refreshProfileInsights(
         profile: UserProfile,
         now: Date
-    ) {
+    ) async {
         let trendEngine = TrendEngine()
         let trendSnapshot = trendEngine.buildSnapshot(
             history: historyStore.summaries,
@@ -244,7 +284,7 @@ struct ProfileView: View {
             trophies: trophyStore.snapshot,
             context: SignalGenerationContext(historySessionCount: historyStore.summaries.count)
         )
-        let generated = InsightEngine().generateProfileInsights(
+        let generated = await InsightEngine().generateProfileInsights(
             profile: profile,
             trendSnapshot: trendSnapshot,
             signals: signals,
@@ -252,7 +292,7 @@ struct ProfileView: View {
             engagementRecords: insightStore.engagementRecordsSnapshot(),
             now: now
         )
-        profileInsights = insightStore.selectInsights(
+        profileInsights = await insightStore.selectInsights(
             generated,
             for: .profile,
             profile: profile,
@@ -276,8 +316,10 @@ struct ProfileView: View {
 
     private func updateTheme(_ theme: SpotterThemeOption) {
         HapticsEngine.shared.buttonTap()
-        guard onboardingStore.updateSelectedTheme(theme) else { return }
-        themeStore.updateSelectedTheme(theme)
+        Task {
+            guard await onboardingStore.updateSelectedTheme(theme) else { return }
+            await themeStore.updateSelectedTheme(theme)
+        }
     }
 
     private func openSummary(_ summaryID: UUID) {
@@ -296,14 +338,16 @@ struct ProfileView: View {
     }
 
     private func setSampleDataEnabledForTesting(_ isEnabled: Bool) {
-        if isEnabled {
-            loadSampleDataForTesting()
-        } else {
-            clearSampleDataForTesting()
+        Task {
+            if isEnabled {
+                await loadSampleDataForTesting()
+            } else {
+                await clearSampleDataForTesting()
+            }
         }
     }
 
-    private func loadSampleDataForTesting() {
+    private func loadSampleDataForTesting() async {
         guard let profile = onboardingStore.profile else { return }
 
         debugStatusMessage = nil
@@ -312,8 +356,9 @@ struct ProfileView: View {
             now: now,
             coach: profile.preferredCoach.coachPersonality
         )
-        let didSaveHistory = sampleHistory.reduce(true) { didSaveAll, summary in
-            historyStore.addSummary(summary) && didSaveAll
+        var didSaveHistory = true
+        for summary in sampleHistory {
+            didSaveHistory = await historyStore.addSummary(summary) && didSaveHistory
         }
 
         guard didSaveHistory else {
@@ -321,12 +366,12 @@ struct ProfileView: View {
             return
         }
 
-        trophyStore.updateAll(
+        await trophyStore.updateAll(
             history: historyStore.summaries,
             calibrationStatus: calibrationStore.status,
             now: now
         )
-        let didSaveInsights = insightStore.seedInsightsForDebug(
+        let didSaveInsights = await insightStore.seedInsightsForDebug(
             LocalUITestingSampleData.insights(
                 for: sampleHistory,
                 profile: profile,
@@ -339,29 +384,29 @@ struct ProfileView: View {
             debugStatusMessage = insightStore.persistenceError ?? "Could not save sample coach insights."
             return
         }
-        refreshProfileData()
+        await refreshProfileData()
         isSampleDataEnabled = true
         debugStatusMessage = "Loaded 4 sample workouts and 3 coach insights."
         HapticsEngine.shared.successRipple()
     }
 
-    private func clearSampleDataForTesting() {
+    private func clearSampleDataForTesting() async {
         debugStatusMessage = nil
         let sampleWorkoutIDs = LocalUITestingSampleData.workoutIDs
         let now = Date()
 
-        guard historyStore.removeSummariesForDebug(ids: sampleWorkoutIDs) else {
+        guard await historyStore.removeSummariesForDebug(ids: sampleWorkoutIDs) else {
             debugStatusMessage = historyStore.persistenceError ?? "Could not clear sample workout history."
             return
         }
-        guard insightStore.removeInsightsForDebug(
+        guard await insightStore.removeInsightsForDebug(
             dedupeKeys: LocalUITestingSampleData.insightDedupeKeys,
             referencingWorkoutIds: sampleWorkoutIDs
         ) else {
             debugStatusMessage = insightStore.persistenceError ?? "Could not clear sample coach insights."
             return
         }
-        guard trophyStore.recalculateForDebug(
+        guard await trophyStore.recalculateForDebug(
             history: historyStore.summaries,
             calibrationStatus: calibrationStore.status,
             now: now
@@ -382,25 +427,27 @@ struct ProfileView: View {
             self.selectedInsightEvidence = nil
         }
 
-        refreshProfileData()
+        await refreshProfileData()
         isSampleDataEnabled = false
         debugStatusMessage = "Cleared sample workouts and coach insights."
         HapticsEngine.shared.successRipple()
     }
 
     private func deleteSummary(_ summary: WorkoutSessionSummary) {
-        guard historyStore.deleteSummary(id: summary.id) else { return }
-        _ = insightStore.invalidateInsightsReferencingWorkout(id: summary.id)
-        trophyStore.updateAll(
-            history: historyStore.summaries,
-            calibrationStatus: calibrationStore.status
-        )
-        if selectedSummary?.id == summary.id {
-            selectedSummary = nil
+        Task {
+            guard await historyStore.deleteSummary(id: summary.id) else { return }
+            _ = await insightStore.invalidateInsightsReferencingWorkout(id: summary.id)
+            await trophyStore.updateAll(
+                history: historyStore.summaries,
+                calibrationStatus: calibrationStore.status
+            )
+            if selectedSummary?.id == summary.id {
+                selectedSummary = nil
+            }
+            pendingDeleteSummary = nil
+            await refreshProfileData()
+            HapticsEngine.shared.successRipple()
         }
-        pendingDeleteSummary = nil
-        refreshProfileData()
-        HapticsEngine.shared.successRipple()
     }
 }
 
@@ -1944,24 +1991,28 @@ private enum ProfilePreviewData {
         onboardingStore.draft.preferredCoach = .bennett
         onboardingStore.draft.selectedTheme = .hyper
         onboardingStore.draft.timezoneIdentifier = "Asia/Kolkata"
-        onboardingStore.completeOnboarding()
 
         let historyStore = WorkoutHistoryStore(
             fileURL: baseURL.appendingPathComponent("WorkoutHistory.json"),
             calendar: calendar
         )
-        sampleHistory.forEach { _ = historyStore.addSummary($0) }
 
         let calibrationStore = CalibrationStore(fileURL: baseURL.appendingPathComponent("Calibration.json"))
         let trophyStore = TrophyStore(
             fileURL: baseURL.appendingPathComponent("Trophies.json"),
             calendar: calendar
         )
-        trophyStore.updateAll(
-            history: historyStore.summaries,
-            calibrationStatus: calibrationStore.status,
-            now: now
-        )
+        Task {
+            await onboardingStore.completeOnboarding()
+            for summary in sampleHistory {
+                _ = await historyStore.addSummary(summary)
+            }
+            await trophyStore.updateAll(
+                history: historyStore.summaries,
+                calibrationStatus: calibrationStore.status,
+                now: now
+            )
+        }
 
         return ProfilePreviewStores(
             onboardingStore: onboardingStore,

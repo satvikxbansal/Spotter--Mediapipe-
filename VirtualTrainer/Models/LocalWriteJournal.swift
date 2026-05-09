@@ -18,26 +18,28 @@ nonisolated struct LocalWriteJournalSnapshot: Codable, Equatable {
     }
 }
 
-nonisolated final class LocalWriteJournal {
+actor LocalWriteJournal {
     private let fileURL: URL
     private let maxEntryCount: Int
-    private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private let persistenceActor: PersistenceActor
     private var entries: [LocalWriteJournalEntry] = []
 
     private(set) var persistenceError: String?
 
-    init(fileURL: URL? = nil, maxEntryCount: Int = 512) {
+    init(
+        fileURL: URL? = nil,
+        maxEntryCount: Int = 512,
+        persistenceActor: PersistenceActor = .shared
+    ) {
         self.fileURL = fileURL ?? Self.defaultJournalURL()
         self.maxEntryCount = max(maxEntryCount, 1)
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
+        self.persistenceActor = persistenceActor
         decoder.dateDecodingStrategy = .iso8601
-        load()
     }
 
-    func contains(operationId: UUID) -> Bool {
-        load()
+    func contains(operationId: UUID) async -> Bool {
+        await load()
         return entries.contains { $0.operationId == operationId }
     }
 
@@ -46,8 +48,8 @@ nonisolated final class LocalWriteJournal {
         operationId: UUID,
         entityKind: WriteEntityKind,
         createdAt: Date = Date()
-    ) -> Bool {
-        load()
+    ) async -> Bool {
+        await load()
         guard !entries.contains(where: { $0.operationId == operationId }) else { return true }
 
         let previousEntries = entries
@@ -60,7 +62,7 @@ nonisolated final class LocalWriteJournal {
         )
         entries = bounded(entries)
 
-        guard persist() else {
+        guard await persist() else {
             entries = previousEntries
             return false
         }
@@ -68,27 +70,27 @@ nonisolated final class LocalWriteJournal {
     }
 
     @discardableResult
-    func vacuum(olderThan cutoff: Date) -> Int {
-        load()
+    func vacuum(olderThan cutoff: Date) async -> Int {
+        await load()
         let previousEntries = entries
         let retainedEntries = bounded(entries.filter { $0.createdAt >= cutoff })
         let removedCount = entries.count - retainedEntries.count
         guard removedCount > 0 else { return 0 }
 
         entries = retainedEntries
-        guard persist() else {
+        guard await persist() else {
             entries = previousEntries
             return 0
         }
         return removedCount
     }
 
-    func snapshot() -> [LocalWriteJournalEntry] {
-        load()
+    func snapshot() async -> [LocalWriteJournalEntry] {
+        await load()
         return entries
     }
 
-    static func defaultJournalURL(alongside storeFileURL: URL? = nil) -> URL {
+    nonisolated static func defaultJournalURL(alongside storeFileURL: URL? = nil) -> URL {
         if let storeFileURL {
             return storeFileURL
                 .deletingLastPathComponent()
@@ -102,7 +104,7 @@ nonisolated final class LocalWriteJournal {
             .appendingPathComponent("LocalWriteJournal.json")
     }
 
-    private func load() {
+    private func load() async {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             entries = []
             persistenceError = nil
@@ -110,7 +112,7 @@ nonisolated final class LocalWriteJournal {
         }
 
         do {
-            let data = try Data(contentsOf: fileURL)
+            let data = try await persistenceActor.read(from: fileURL)
             if let snapshot = try? decoder.decode(LocalWriteJournalSnapshot.self, from: data) {
                 entries = bounded(snapshot.entries)
             } else {
@@ -124,15 +126,14 @@ nonisolated final class LocalWriteJournal {
     }
 
     @discardableResult
-    private func persist() -> Bool {
+    private func persist() async -> Bool {
         do {
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
             let snapshot = LocalWriteJournalSnapshot(entries: entries)
-            let data = try encoder.encode(snapshot)
-            try data.write(to: fileURL, options: [.atomic])
+            let data = try await persistenceActor.encode(
+                snapshot,
+                outputFormatting: [.prettyPrinted, .sortedKeys]
+            )
+            _ = try await persistenceActor.writeLatest(data, to: fileURL, options: [.atomic])
             persistenceError = nil
             return true
         } catch {

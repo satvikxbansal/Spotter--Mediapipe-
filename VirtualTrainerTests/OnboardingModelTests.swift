@@ -1,6 +1,7 @@
 import XCTest
 @testable import VirtualTrainer
 
+@MainActor
 final class OnboardingModelTests: XCTestCase {
     func testAgeBracketMapping() {
         XCTAssertEqual(UserProfile.ageBracket(for: 18), .teen)
@@ -77,165 +78,147 @@ final class OnboardingModelTests: XCTestCase {
     }
 
     func testOnboardingCompletesWithNewPreferenceFields() async {
-        await MainActor.run {
-            let store = OnboardingStore(fileURL: temporaryProfileURL())
-            store.draft = validDraft()
-            store.draft.limitations = [.kneeSensitive, .highImpactSensitive]
-            store.draft.preferredSessionLength = .thirtyFive
-            store.draft.workoutDaysPerWeek = 4
-            store.draft.reminderPreference = .morning
-            store.draft.timezoneIdentifier = "America/New_York"
-            store.draft.avatarStyle = .performance
+        let store = OnboardingStore(fileURL: temporaryProfileURL())
+        store.draft = validDraft()
+        store.draft.limitations = [.kneeSensitive, .highImpactSensitive]
+        store.draft.preferredSessionLength = .thirtyFive
+        store.draft.workoutDaysPerWeek = 4
+        store.draft.reminderPreference = .morning
+        store.draft.timezoneIdentifier = "America/New_York"
+        store.draft.avatarStyle = .performance
 
-            store.completeOnboarding()
+        await store.completeOnboarding()
 
-            XCTAssertEqual(store.profile?.limitations, [.kneeSensitive, .highImpactSensitive])
-            XCTAssertEqual(store.profile?.preferredSessionLength, .thirtyFive)
-            XCTAssertEqual(store.profile?.workoutDaysPerWeek, 4)
-            XCTAssertEqual(store.profile?.reminderPreference, .morning)
-            XCTAssertEqual(store.profile?.timezoneIdentifier, "America/New_York")
-            XCTAssertEqual(store.profile?.avatarStyle, .performance)
-        }
+        XCTAssertEqual(store.profile?.limitations, [.kneeSensitive, .highImpactSensitive])
+        XCTAssertEqual(store.profile?.preferredSessionLength, .thirtyFive)
+        XCTAssertEqual(store.profile?.workoutDaysPerWeek, 4)
+        XCTAssertEqual(store.profile?.reminderPreference, .morning)
+        XCTAssertEqual(store.profile?.timezoneIdentifier, "America/New_York")
+        XCTAssertEqual(store.profile?.avatarStyle, .performance)
     }
 
     func testProfilePreferenceUpdatePersistsNewFields() async {
-        await MainActor.run {
-            let url = temporaryProfileURL()
-            let store = OnboardingStore(fileURL: url)
-            store.draft = validDraft()
-            store.completeOnboarding()
+        let url = temporaryProfileURL()
+        let store = OnboardingStore(fileURL: url)
+        store.draft = validDraft()
+        await store.completeOnboarding()
 
-            store.updateTrainingPreferences(
-                limitations: [.wristSensitive, .lowerBackSensitive],
-                preferredSessionLength: .fifteen,
-                workoutDaysPerWeek: 5,
-                reminderPreference: .evening,
-                timezoneIdentifier: "Asia/Kolkata",
-                avatarStyle: .longevity
-            )
+        _ = await store.updateTrainingPreferences(
+            limitations: [.wristSensitive, .lowerBackSensitive],
+            preferredSessionLength: .fifteen,
+            workoutDaysPerWeek: 5,
+            reminderPreference: .evening,
+            timezoneIdentifier: "Asia/Kolkata",
+            avatarStyle: .longevity
+        )
 
-            let reloadedStore = OnboardingStore(fileURL: url)
-            XCTAssertEqual(reloadedStore.profile?.limitations, [.wristSensitive, .lowerBackSensitive])
-            XCTAssertEqual(reloadedStore.profile?.preferredSessionLength, .fifteen)
-            XCTAssertEqual(reloadedStore.profile?.workoutDaysPerWeek, 5)
-            XCTAssertEqual(reloadedStore.profile?.reminderPreference, .evening)
-            XCTAssertEqual(reloadedStore.profile?.timezoneIdentifier, "Asia/Kolkata")
-            XCTAssertEqual(reloadedStore.profile?.avatarStyle, .longevity)
-        }
+        let reloadedStore = OnboardingStore(fileURL: url)
+        XCTAssertEqual(reloadedStore.profile?.limitations, [.wristSensitive, .lowerBackSensitive])
+        XCTAssertEqual(reloadedStore.profile?.preferredSessionLength, .fifteen)
+        XCTAssertEqual(reloadedStore.profile?.workoutDaysPerWeek, 5)
+        XCTAssertEqual(reloadedStore.profile?.reminderPreference, .evening)
+        XCTAssertEqual(reloadedStore.profile?.timezoneIdentifier, "Asia/Kolkata")
+        XCTAssertEqual(reloadedStore.profile?.avatarStyle, .longevity)
     }
 
     func testChangingGoalUpdatesProfileAndNextGeneratedPlan() async {
-        await MainActor.run {
-            let store = OnboardingStore(fileURL: temporaryProfileURL())
-            store.draft = validDraft()
-            store.completeOnboarding()
+        let store = OnboardingStore(fileURL: temporaryProfileURL())
+        store.draft = validDraft()
+        await store.completeOnboarding()
 
-            store.updatePrimaryGoal(.longevity)
+        await store.updatePrimaryGoal(.longevity)
 
-            guard let profile = store.profile else {
-                XCTFail("Expected completed profile")
-                return
-            }
-            let plan = PlanService().generateDailyPlan(profile: profile)
-            XCTAssertEqual(profile.primaryGoal, .longevity)
-            XCTAssertEqual(plan.title, "25-Minute Longevity")
+        guard let profile = store.profile else {
+            XCTFail("Expected completed profile")
+            return
         }
+        let plan = PlanService().generateDailyPlan(profile: profile)
+        XCTAssertEqual(profile.primaryGoal, .longevity)
+        XCTAssertEqual(plan.title, "25-Minute Longevity")
     }
 
     func testChangingCoachUpdatesProfileAndNextGeneratedPlan() async {
-        await MainActor.run {
-            let store = OnboardingStore(fileURL: temporaryProfileURL())
-            store.draft = validDraft()
-            store.completeOnboarding()
+        let store = OnboardingStore(fileURL: temporaryProfileURL())
+        store.draft = validDraft()
+        await store.completeOnboarding()
 
-            store.updatePreferredCoach(.fletcher)
+        await store.updatePreferredCoach(.fletcher)
 
-            guard let profile = store.profile else {
-                XCTFail("Expected completed profile")
-                return
-            }
-            let plan = PlanService().generateDailyPlan(profile: profile)
-            XCTAssertEqual(profile.preferredCoach, .fletcher)
-            XCTAssertEqual(plan.coach, .drill)
+        guard let profile = store.profile else {
+            XCTFail("Expected completed profile")
+            return
         }
+        let plan = PlanService().generateDailyPlan(profile: profile)
+        XCTAssertEqual(profile.preferredCoach, .fletcher)
+        XCTAssertEqual(plan.coach, .drill)
     }
 
     func testChangingThemeUpdatesProfileAndThemeStore() async {
-        await MainActor.run {
-            let profileURL = temporaryProfileURL()
-            let themeURL = temporaryThemeURL()
-            let store = OnboardingStore(fileURL: profileURL)
-            let themeStore = ThemeStore(fileURL: themeURL)
-            store.draft = validDraft()
-            store.completeOnboarding()
+        let profileURL = temporaryProfileURL()
+        let themeURL = temporaryThemeURL()
+        let store = OnboardingStore(fileURL: profileURL)
+        let themeStore = ThemeStore(fileURL: themeURL)
+        store.draft = validDraft()
+        await store.completeOnboarding()
 
-            store.updateSelectedTheme(.hotGirl)
-            themeStore.updateSelectedTheme(.hotGirl)
+        await store.updateSelectedTheme(.hotGirl)
+        await themeStore.updateSelectedTheme(.hotGirl)
 
-            let reloadedProfileStore = OnboardingStore(fileURL: profileURL)
-            let reloadedThemeStore = ThemeStore(fileURL: themeURL)
-            XCTAssertEqual(reloadedProfileStore.profile?.selectedTheme, .hotGirl)
-            XCTAssertEqual(reloadedThemeStore.selectedTheme, .hotGirl)
-        }
+        let reloadedProfileStore = OnboardingStore(fileURL: profileURL)
+        let reloadedThemeStore = ThemeStore(fileURL: themeURL)
+        XCTAssertEqual(reloadedProfileStore.profile?.selectedTheme, .hotGirl)
+        XCTAssertEqual(reloadedThemeStore.selectedTheme, .hotGirl)
     }
 
     func testThemeStoreSyncsWithProfileTheme() async {
-        await MainActor.run {
-            let store = OnboardingStore(fileURL: temporaryProfileURL())
-            let themeStore = ThemeStore(fileURL: temporaryThemeURL(), defaultTheme: .spicy)
-            store.draft = validDraft()
-            store.completeOnboarding()
-            store.updateSelectedTheme(.warm)
+        let store = OnboardingStore(fileURL: temporaryProfileURL())
+        let themeStore = ThemeStore(fileURL: temporaryThemeURL(), defaultTheme: .spicy)
+        store.draft = validDraft()
+        await store.completeOnboarding()
+        await store.updateSelectedTheme(.warm)
 
-            themeStore.sync(with: store.profile)
+        await themeStore.sync(with: store.profile)
 
-            XCTAssertEqual(themeStore.selectedTheme, .warm)
-        }
+        XCTAssertEqual(themeStore.selectedTheme, .warm)
     }
 
     func testThemeStorePersistsProfileThemeEvenWhenItMatchesDefault() async {
-        await MainActor.run {
-            let url = temporaryThemeURL()
-            let store = OnboardingStore(fileURL: temporaryProfileURL())
-            let themeStore = ThemeStore(fileURL: url, defaultTheme: .hyper)
-            store.draft = validDraft()
-            store.completeOnboarding()
+        let url = temporaryThemeURL()
+        let store = OnboardingStore(fileURL: temporaryProfileURL())
+        let themeStore = ThemeStore(fileURL: url, defaultTheme: .hyper)
+        store.draft = validDraft()
+        await store.completeOnboarding()
 
-            XCTAssertTrue(themeStore.sync(with: store.profile))
+        assertTrue(await themeStore.sync(with: store.profile))
 
-            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
-            XCTAssertEqual(ThemeStore(fileURL: url).selectedTheme, .hyper)
-        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertEqual(ThemeStore(fileURL: url).selectedTheme, .hyper)
     }
 
     func testFailedThemeProfileUpdateDoesNotMutateInMemoryProfile() async throws {
-        try await MainActor.run {
-            let url = temporaryProfileURL()
-            let store = OnboardingStore(fileURL: url)
-            store.draft = validDraft()
-            store.completeOnboarding()
-            XCTAssertEqual(store.profile?.selectedTheme, .hyper)
+        let url = temporaryProfileURL()
+        let store = OnboardingStore(fileURL: url)
+        store.draft = validDraft()
+        await store.completeOnboarding()
+        XCTAssertEqual(store.profile?.selectedTheme, .hyper)
 
-            let parentURL = url.deletingLastPathComponent()
-            try FileManager.default.removeItem(at: parentURL)
-            try Data().write(to: parentURL)
+        let parentURL = url.deletingLastPathComponent()
+        try FileManager.default.removeItem(at: parentURL)
+        try Data().write(to: parentURL)
 
-            XCTAssertFalse(store.updateSelectedTheme(.spicy))
-            XCTAssertEqual(store.profile?.selectedTheme, .hyper)
-            XCTAssertNotNil(store.persistenceError)
-        }
+        assertFalse(await store.updateSelectedTheme(.spicy))
+        XCTAssertEqual(store.profile?.selectedTheme, .hyper)
+        XCTAssertNotNil(store.persistenceError)
     }
 
     func testChangingPreferredSessionLengthUpdatesProfile() async {
-        await MainActor.run {
-            let store = OnboardingStore(fileURL: temporaryProfileURL())
-            store.draft = validDraft()
-            store.completeOnboarding()
+        let store = OnboardingStore(fileURL: temporaryProfileURL())
+        store.draft = validDraft()
+        await store.completeOnboarding()
 
-            store.updatePreferredSessionLength(.thirtyFive)
+        await store.updatePreferredSessionLength(.thirtyFive)
 
-            XCTAssertEqual(store.profile?.preferredSessionLength, .thirtyFive)
-        }
+        XCTAssertEqual(store.profile?.preferredSessionLength, .thirtyFive)
     }
 
     func testFreeAnalysisContextIsOpenTarget() {

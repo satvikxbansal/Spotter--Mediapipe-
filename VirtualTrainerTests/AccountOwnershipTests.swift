@@ -7,7 +7,7 @@ final class AccountOwnershipTests: XCTestCase {
     private let accountB = "account-b"
     private let now = Date(timeIntervalSince1970: 1_778_067_200)
 
-    func testAccountContextSupportsLocalOnlySetAndClear() {
+    func testAccountContextSupportsLocalOnlySetAndClear() async {
         let context = AccountContext()
 
         XCTAssertTrue(context.isLocalOnly)
@@ -24,7 +24,7 @@ final class AccountOwnershipTests: XCTestCase {
         XCTAssertNil(context.currentAccountId)
     }
 
-    func testLegacyOwnershipJSONDecodesWithNilAccountId() throws {
+    func testLegacyOwnershipJSONDecodesWithNilAccountId() async throws {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
@@ -58,32 +58,32 @@ final class AccountOwnershipTests: XCTestCase {
         XCTAssertNil(calibrationRecord.accountId)
     }
 
-    func testNewSavesStampAccountIdWhenPresentAndLocalOnlyStaysNil() throws {
+    func testNewSavesStampAccountIdWhenPresentAndLocalOnlyStaysNil() async throws {
         let urls = makeStoreURLs()
 
         let accountProfileStore = OnboardingStore(fileURL: urls.profile, accountId: accountA)
         accountProfileStore.draft = validDraft()
-        accountProfileStore.completeOnboarding()
+        await accountProfileStore.completeOnboarding()
         XCTAssertEqual(accountProfileStore.profile?.accountId, accountA)
 
         let localProfileStore = OnboardingStore(fileURL: temporaryURL(named: "LocalProfile.json"))
         localProfileStore.draft = validDraft(displayName: "Local Athlete")
-        localProfileStore.completeOnboarding()
+        await localProfileStore.completeOnboarding()
         XCTAssertNil(localProfileStore.profile?.accountId)
 
         let accountHistoryStore = WorkoutHistoryStore(fileURL: urls.history, accountId: accountA)
         let accountSummary = makeSummary(idSuffix: "9001")
-        XCTAssertTrue(accountHistoryStore.addSummary(accountSummary))
+        assertTrue(await accountHistoryStore.addSummary(accountSummary))
         XCTAssertEqual(accountHistoryStore.fetchSummary(id: accountSummary.id)?.accountId, accountA)
 
         let localHistoryStore = WorkoutHistoryStore(fileURL: temporaryURL(named: "LocalHistory.json"))
         let localSummary = makeSummary(idSuffix: "9002")
-        XCTAssertTrue(localHistoryStore.addSummary(localSummary))
+        assertTrue(await localHistoryStore.addSummary(localSummary))
         XCTAssertNil(localHistoryStore.fetchSummary(id: localSummary.id)?.accountId)
 
         let calibrationStore = CalibrationStore(fileURL: urls.calibration, accountId: accountA)
-        XCTAssertTrue(
-            calibrationStore.saveCompleted(
+        assertTrue(
+            await calibrationStore.saveCompleted(
                 completedReps: 3,
                 startedAt: now,
                 completedAt: now.addingTimeInterval(30),
@@ -94,23 +94,23 @@ final class AccountOwnershipTests: XCTestCase {
         XCTAssertEqual(calibrationStore.record?.accountId, accountA)
 
         let themeStore = ThemeStore(fileURL: urls.theme, defaultTheme: .hyper, accountId: accountA)
-        XCTAssertTrue(themeStore.updateSelectedTheme(.warm))
+        assertTrue(await themeStore.updateSelectedTheme(.warm))
         XCTAssertEqual(ThemeStore(fileURL: urls.theme, defaultTheme: .hyper, accountId: accountA).selectedTheme, .warm)
         XCTAssertEqual(ThemeStore(fileURL: urls.theme, defaultTheme: .hyper, accountId: accountB).selectedTheme, .hyper)
 
         let insightStore = InsightStore(fileURL: urls.insights, accountId: accountA)
         let insight = makeInsight(dedupeKey: "stamp-insight")
-        XCTAssertEqual(
-            insightStore.selectInsights([insight], for: .dashboard, profile: makeProfile(), limit: 1, now: now).first?.accountId,
+        assertEqual(
+            await insightStore.selectInsights([insight], for: .dashboard, profile: makeProfile(), limit: 1, now: now).first?.accountId,
             accountA
         )
-        insightStore.recordImpression(insight, on: .dashboard, now: now)
-        insightStore.recordEngagement(insight, kind: .helpful, now: now)
+        await insightStore.recordImpression(insight, on: .dashboard, now: now)
+        await insightStore.recordEngagement(insight, kind: .helpful, now: now)
         XCTAssertEqual(insightStore.deliveryRecord(for: insight.dedupeKey)?.accountId, accountA)
         XCTAssertEqual(insightStore.engagementRecord(for: insight.dedupeKey)?.accountId, accountA)
 
         let trophyStore = TrophyStore(fileURL: urls.trophies, accountId: accountA)
-        let events = trophyStore.updateAll(
+        let events = await trophyStore.updateAll(
             history: [makeSummary(idSuffix: "9003", accountId: accountA)],
             calibrationStatus: .notStarted,
             now: now
@@ -119,85 +119,85 @@ final class AccountOwnershipTests: XCTestCase {
         XCTAssertTrue(events.allSatisfy { $0.accountId == accountA })
     }
 
-    func testClaimLocalDataForAccountRewritesNilRecordsAndPersists() throws {
+    func testClaimLocalDataForAccountRewritesNilRecordsAndPersists() async throws {
         let urls = makeStoreURLs()
 
         let profileStore = OnboardingStore(fileURL: urls.profile)
         profileStore.draft = validDraft()
-        profileStore.completeOnboarding()
-        XCTAssertTrue(profileStore.claimLocalDataForAccount(id: accountA))
+        await profileStore.completeOnboarding()
+        assertTrue(await profileStore.claimLocalDataForAccount(id: accountA))
         XCTAssertEqual(OnboardingStore(fileURL: urls.profile, accountId: accountA).profile?.accountId, accountA)
 
         let historyStore = WorkoutHistoryStore(fileURL: urls.history)
         let summary = makeSummary(idSuffix: "9101")
-        XCTAssertTrue(historyStore.addSummary(summary))
-        XCTAssertTrue(historyStore.claimLocalDataForAccount(id: accountA))
+        assertTrue(await historyStore.addSummary(summary))
+        assertTrue(await historyStore.claimLocalDataForAccount(id: accountA))
         XCTAssertEqual(
             WorkoutHistoryStore(fileURL: urls.history, accountId: accountA).fetchSummary(id: summary.id)?.accountId,
             accountA
         )
 
         let calibrationStore = CalibrationStore(fileURL: urls.calibration)
-        XCTAssertTrue(calibrationStore.saveSkipped(at: now))
-        XCTAssertTrue(calibrationStore.claimLocalDataForAccount(id: accountA))
+        assertTrue(await calibrationStore.saveSkipped(at: now))
+        assertTrue(await calibrationStore.claimLocalDataForAccount(id: accountA))
         XCTAssertEqual(CalibrationStore(fileURL: urls.calibration, accountId: accountA).record?.accountId, accountA)
 
         let themeStore = ThemeStore(fileURL: urls.theme, defaultTheme: .hyper)
-        XCTAssertTrue(themeStore.updateSelectedTheme(.spicy))
-        XCTAssertTrue(themeStore.claimLocalDataForAccount(id: accountA))
+        assertTrue(await themeStore.updateSelectedTheme(.spicy))
+        assertTrue(await themeStore.claimLocalDataForAccount(id: accountA))
         XCTAssertEqual(ThemeStore(fileURL: urls.theme, defaultTheme: .hyper, accountId: accountA).selectedTheme, .spicy)
 
         let insightStore = InsightStore(fileURL: urls.insights)
         let insight = makeInsight(dedupeKey: "claim-insight")
-        _ = insightStore.selectInsights([insight], for: .dashboard, profile: makeProfile(), limit: 1, now: now)
-        insightStore.recordImpression(insight, on: .dashboard, now: now)
-        insightStore.recordEngagement(insight, kind: .opened, now: now)
-        XCTAssertTrue(insightStore.claimLocalDataForAccount(id: accountA))
+        _ = await insightStore.selectInsights([insight], for: .dashboard, profile: makeProfile(), limit: 1, now: now)
+        await insightStore.recordImpression(insight, on: .dashboard, now: now)
+        await insightStore.recordEngagement(insight, kind: .opened, now: now)
+        assertTrue(await insightStore.claimLocalDataForAccount(id: accountA))
         let reloadedInsightStore = InsightStore(fileURL: urls.insights, accountId: accountA)
         XCTAssertEqual(reloadedInsightStore.recentInsights.first?.accountId, accountA)
         XCTAssertEqual(reloadedInsightStore.deliveryRecord(for: insight.dedupeKey)?.accountId, accountA)
         XCTAssertEqual(reloadedInsightStore.engagementRecord(for: insight.dedupeKey)?.accountId, accountA)
 
         let trophyStore = TrophyStore(fileURL: urls.trophies)
-        _ = trophyStore.updateAll(
+        _ = await trophyStore.updateAll(
             history: [makeSummary(idSuffix: "9102")],
             calibrationStatus: .notStarted,
             now: now
         )
-        XCTAssertTrue(trophyStore.claimLocalDataForAccount(id: accountA))
+        assertTrue(await trophyStore.claimLocalDataForAccount(id: accountA))
         let reloadedTrophyStore = TrophyStore(fileURL: urls.trophies, accountId: accountA)
         XCTAssertTrue(reloadedTrophyStore.snapshot.progress.allSatisfy { $0.accountId == accountA })
     }
 
-    func testRecordsForAnotherAccountAreFilteredWhenAccountIsSet() throws {
+    func testRecordsForAnotherAccountAreFilteredWhenAccountIsSet() async throws {
         let urls = makeStoreURLs()
 
         let profileStore = OnboardingStore(fileURL: urls.profile, accountId: accountA)
         profileStore.draft = validDraft()
-        profileStore.completeOnboarding()
+        await profileStore.completeOnboarding()
         profileStore.setCurrentAccountId(accountB)
         XCTAssertNil(profileStore.profile)
 
         let historyStore = WorkoutHistoryStore(fileURL: urls.history, accountId: accountA)
         let summary = makeSummary(idSuffix: "9201")
-        XCTAssertTrue(historyStore.addSummary(summary))
+        assertTrue(await historyStore.addSummary(summary))
         historyStore.setCurrentAccountId(accountB)
         XCTAssertTrue(historyStore.fetchRecentSummaries().isEmpty)
         XCTAssertNil(historyStore.fetchSummary(id: summary.id))
 
         let calibrationStore = CalibrationStore(fileURL: urls.calibration, accountId: accountA)
-        XCTAssertTrue(calibrationStore.saveSkipped(at: now))
+        assertTrue(await calibrationStore.saveSkipped(at: now))
         calibrationStore.setCurrentAccountId(accountB)
         XCTAssertNil(calibrationStore.record)
         XCTAssertEqual(calibrationStore.status, .notStarted)
 
         let themeStore = ThemeStore(fileURL: urls.theme, defaultTheme: .hyper, accountId: accountA)
-        XCTAssertTrue(themeStore.updateSelectedTheme(.hotGirl))
+        assertTrue(await themeStore.updateSelectedTheme(.hotGirl))
         themeStore.setCurrentAccountId(accountB)
         XCTAssertEqual(themeStore.selectedTheme, .hyper)
 
         let insightStore = InsightStore(fileURL: urls.insights, accountId: accountA)
-        _ = insightStore.selectInsights(
+        _ = await insightStore.selectInsights(
             [makeInsight(dedupeKey: "other-account-insight")],
             for: .profile,
             profile: makeProfile(),
@@ -208,7 +208,7 @@ final class AccountOwnershipTests: XCTestCase {
         XCTAssertTrue(insightStore.recentInsights.isEmpty)
 
         let trophyStore = TrophyStore(fileURL: urls.trophies, accountId: accountA)
-        _ = trophyStore.updateAll(
+        _ = await trophyStore.updateAll(
             history: [makeSummary(idSuffix: "9202", accountId: accountA)],
             calibrationStatus: .notStarted,
             now: now

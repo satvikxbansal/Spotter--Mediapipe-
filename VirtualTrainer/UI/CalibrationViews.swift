@@ -52,9 +52,11 @@ struct CalibrationIntroView: View {
                     .buttonStyle(PrimaryCTAStyle())
 
                     Button("Skip for now") {
-                        calibrationStore.saveSkipped(
-                            notes: "Skipped during first-run calibration."
-                        )
+                        Task {
+                            await calibrationStore.saveSkipped(
+                                notes: "Skipped during first-run calibration."
+                            )
+                        }
                     }
                     .buttonStyle(SecondaryCTAStyle())
 
@@ -97,15 +99,19 @@ struct CalibrationSessionView: View {
             targetReps: CalibrationDefaults.targetReps,
             coach: coachPersonality,
             onCompleted: { record in
-                if calibrationStore.saveCompleted(record) {
-                    trophyStore.updateAll(
-                        history: historyStore.summaries,
-                        calibrationStatus: calibrationStore.status
-                    )
+                Task {
+                    if await calibrationStore.saveCompleted(record) {
+                        await trophyStore.updateAll(
+                            history: historyStore.summaries,
+                            calibrationStatus: calibrationStore.status
+                        )
+                    }
                 }
             },
             onFailed: { record in
-                calibrationStore.saveFailed(record)
+                Task {
+                    await calibrationStore.saveFailed(record)
+                }
             }
         )
     }

@@ -458,7 +458,9 @@ struct FreeAnalysisSummaryView: View {
 
                 VStack(spacing: Theme.Spacing.sm) {
                     Button(didSave ? "Saved to history" : "Save to history") {
-                        saveSummary()
+                        Task {
+                            await saveSummary()
+                        }
                     }
                     .buttonStyle(PrimaryCTAStyle())
                     .disabled(didSave)
@@ -490,11 +492,11 @@ struct FreeAnalysisSummaryView: View {
         .preferredColorScheme(.dark)
     }
 
-    private func saveSummary() {
+    private func saveSummary() async {
         let historySummary = WorkoutSessionSummary.freeAnalysis(from: summary)
-        guard historyStore.addSummary(historySummary) else { return }
+        guard await historyStore.addSummary(historySummary) else { return }
         HapticsEngine.shared.successRipple()
-        newlyEarnedTrophyEvents = trophyStore.update(
+        newlyEarnedTrophyEvents = await trophyStore.update(
             after: historySummary,
             history: historyStore.summaries,
             calibrationStatus: calibrationStore.status

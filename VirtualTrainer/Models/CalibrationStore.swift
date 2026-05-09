@@ -8,8 +8,8 @@ final class CalibrationStore: ObservableObject {
 
     private let fileURL: URL
     private let writeJournal: LocalWriteJournal
-    private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private let persistenceActor: PersistenceActor
     private var currentAccountId: String?
     private var storedRecord: CalibrationRecord?
 
@@ -26,15 +26,20 @@ final class CalibrationStore: ObservableObject {
         record?.isSuccessfulCalibration ?? false
     }
 
-    init(fileURL: URL? = nil, accountId: String? = nil, writeJournal: LocalWriteJournal? = nil) {
+    init(
+        fileURL: URL? = nil,
+        accountId: String? = nil,
+        writeJournal: LocalWriteJournal? = nil,
+        persistenceActor: PersistenceActor = .shared
+    ) {
         let resolvedFileURL = fileURL ?? Self.defaultCalibrationURL()
         self.fileURL = resolvedFileURL
         self.writeJournal = writeJournal ?? LocalWriteJournal(
-            fileURL: LocalWriteJournal.defaultJournalURL(alongside: resolvedFileURL)
+            fileURL: LocalWriteJournal.defaultJournalURL(alongside: resolvedFileURL),
+            persistenceActor: persistenceActor
         )
+        self.persistenceActor = persistenceActor
         self.currentAccountId = AccountOwnership.normalizedAccountId(accountId)
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
         loadRecord()
     }
@@ -55,7 +60,7 @@ final class CalibrationStore: ObservableObject {
     }
 
     @discardableResult
-    func saveCompleted(_ completedRecord: CalibrationRecord, operationId: UUID? = nil) -> Bool {
+    func saveCompleted(_ completedRecord: CalibrationRecord, operationId: UUID? = nil) async -> Bool {
         guard completedRecord.status == .completed else {
             persistenceError = "Calibration completion must use a completed record."
             return false
@@ -64,7 +69,7 @@ final class CalibrationStore: ObservableObject {
             persistenceError = "Calibration needs target reps and camera visibility before it can be completed."
             return false
         }
-        return save(completedRecord, operationId: operationId)
+        return await save(completedRecord, operationId: operationId)
     }
 
     @discardableResult
@@ -78,8 +83,8 @@ final class CalibrationStore: ObservableObject {
         averageFormScore: Double?,
         notes: String? = nil,
         operationId: UUID? = nil
-    ) -> Bool {
-        saveCompleted(
+    ) async -> Bool {
+        await saveCompleted(
             CalibrationRecord.completed(
                 exerciseType: exerciseType,
                 targetReps: targetReps,
@@ -99,17 +104,17 @@ final class CalibrationStore: ObservableObject {
         at date: Date = Date(),
         notes: String? = "Skipped during setup.",
         operationId: UUID? = nil
-    ) -> Bool {
-        save(.skipped(at: date, notes: notes), operationId: operationId)
+    ) async -> Bool {
+        await save(.skipped(at: date, notes: notes), operationId: operationId)
     }
 
     @discardableResult
-    func saveFailed(_ failedRecord: CalibrationRecord, operationId: UUID? = nil) -> Bool {
+    func saveFailed(_ failedRecord: CalibrationRecord, operationId: UUID? = nil) async -> Bool {
         guard failedRecord.status == .failed else {
             persistenceError = "Calibration failure must use a failed record."
             return false
         }
-        return save(failedRecord, operationId: operationId)
+        return await save(failedRecord, operationId: operationId)
     }
 
     @discardableResult
@@ -123,8 +128,8 @@ final class CalibrationStore: ObservableObject {
         averageFormScore: Double? = nil,
         notes: String,
         operationId: UUID? = nil
-    ) -> Bool {
-        saveFailed(
+    ) async -> Bool {
+        await saveFailed(
             CalibrationRecord.failed(
                 exerciseType: exerciseType,
                 targetReps: targetReps,
@@ -139,21 +144,21 @@ final class CalibrationStore: ObservableObject {
         )
     }
 
-    func resetForDebug() {
-        record = nil
-        storedRecord = nil
-        persistenceError = nil
+    func resetForDebug() async {
         do {
             if FileManager.default.fileExists(atPath: fileURL.path) {
-                try FileManager.default.removeItem(at: fileURL)
+                try await persistenceActor.remove(fileURL)
             }
+            record = nil
+            storedRecord = nil
+            persistenceError = nil
         } catch {
             persistenceError = "Could not reset calibration: \(error.localizedDescription)"
         }
     }
 
     @discardableResult
-    func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) -> Bool {
+    func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) async -> Bool {
         guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
             persistenceError = "Account id is required before local calibration data can be claimed."
             return false
@@ -161,7 +166,7 @@ final class CalibrationStore: ObservableObject {
         guard let storedRecord, storedRecord.accountId == nil else { return true }
 
         let writeOperationId = operationId ?? UUID()
-        return save(
+        return await save(
             storedRecord.withAccountId(
                 normalizedAccountId,
                 operationId: writeOperationId,
@@ -197,12 +202,10 @@ final class CalibrationStore: ObservableObject {
         _ updatedRecord: CalibrationRecord,
         stampWithCurrentAccount: Bool = true,
         operationId: UUID? = nil
-    ) -> Bool {
+    ) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !writeJournal.contains(operationId: writeOperationId) else { return true }
+        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
-        let previousRecord = record
-        let previousStoredRecord = storedRecord
         let accountStampedRecord = stampWithCurrentAccount
             ? updatedRecord.withAccountId(
                 currentAccountId,
@@ -210,19 +213,13 @@ final class CalibrationStore: ObservableObject {
                 now: updatedRecord.completedAt
             )
             : updatedRecord
-        storedRecord = accountStampedRecord
-        applyStoredRecord()
-        guard persist() else {
-            record = previousRecord
-            storedRecord = previousStoredRecord
-            return false
-        }
-        recordWriteOperation(writeOperationId, createdAt: accountStampedRecord.completedAt)
+        guard await persist(accountStampedRecord) != nil else { return false }
+        await recordWriteOperation(writeOperationId, createdAt: accountStampedRecord.completedAt)
         return true
     }
 
-    private func recordWriteOperation(_ operationId: UUID, createdAt: Date) {
-        _ = writeJournal.record(
+    private func recordWriteOperation(_ operationId: UUID, createdAt: Date) async {
+        _ = await writeJournal.record(
             operationId: operationId,
             entityKind: .calibration,
             createdAt: createdAt
@@ -230,21 +227,22 @@ final class CalibrationStore: ObservableObject {
     }
 
     @discardableResult
-    private func persist() -> Bool {
-        guard let storedRecord else { return true }
-
+    private func persist(_ record: CalibrationRecord) async -> PersistenceWriteOutcome? {
         do {
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
+            let data = try await persistenceActor.encode(
+                record,
+                outputFormatting: [.prettyPrinted, .sortedKeys]
             )
-            let data = try encoder.encode(storedRecord)
-            try data.write(to: fileURL, options: [.atomic])
+            let outcome = try await persistenceActor.writeLatest(data, to: fileURL, options: [.atomic])
+            if outcome == .written {
+                storedRecord = record
+                applyStoredRecord()
+            }
             persistenceError = nil
-            return true
+            return outcome
         } catch {
             persistenceError = "Could not save calibration: \(error.localizedDescription)"
-            return false
+            return nil
         }
     }
 

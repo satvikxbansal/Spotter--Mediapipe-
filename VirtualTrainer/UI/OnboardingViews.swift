@@ -413,7 +413,9 @@ struct OnboardingCompletionView: View {
             }
 
             Button("Continue to calibration") {
-                store.completeOnboarding()
+                Task {
+                    await store.completeOnboarding()
+                }
             }
             .buttonStyle(PrimaryCTAStyle())
             .disabled(!store.canContinue(from: .completion))

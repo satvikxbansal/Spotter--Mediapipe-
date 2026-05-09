@@ -228,14 +228,16 @@ struct WorkoutDetailSheetView: View {
     }
 
     private func deleteWorkout() {
-        guard historyStore.deleteSummary(id: summary.id) else { return }
-        _ = insightStore.invalidateInsightsReferencingWorkout(id: summary.id)
-        trophyStore.updateAll(
-            history: historyStore.summaries,
-            calibrationStatus: calibrationStore.status
-        )
-        HapticsEngine.shared.successRipple()
-        dismiss()
+        Task {
+            guard await historyStore.deleteSummary(id: summary.id) else { return }
+            _ = await insightStore.invalidateInsightsReferencingWorkout(id: summary.id)
+            await trophyStore.updateAll(
+                history: historyStore.summaries,
+                calibrationStatus: calibrationStore.status
+            )
+            HapticsEngine.shared.successRipple()
+            dismiss()
+        }
     }
 }
 

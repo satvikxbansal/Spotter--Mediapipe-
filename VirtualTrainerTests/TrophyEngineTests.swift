@@ -11,7 +11,7 @@ final class TrophyEngineTests: XCTestCase {
 
     private lazy var engine = TrophyEngine(calendar: calendar)
 
-    func testFirstSavedWorkoutUnlocksTheSpark() throws {
+    func testFirstSavedWorkoutUnlocksTheSpark() async throws {
         let summary = makeSummary(idSuffix: "2001", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
 
         let result = engine.update(
@@ -25,7 +25,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(result.newlyEarnedEvents.contains { $0.trophyId == TrophyDefinitionCatalog.ID.spark })
     }
 
-    func testTrophyUnlockEventCanCarryServerEarnedAt() throws {
+    func testTrophyUnlockEventCanCarryServerEarnedAt() async throws {
         let earnedAt = date(year: 2026, month: 5, day: 1, hour: 10)
         let serverEarnedAt = date(year: 2026, month: 5, day: 1, hour: 10).addingTimeInterval(12)
         let event = TrophyUnlockEvent(
@@ -48,7 +48,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertEqual(decoded.authoritativeEarnedAt, serverEarnedAt)
     }
 
-    func testCompletedCalibrationUnlocksCalibrated() {
+    func testCompletedCalibrationUnlocksCalibrated() async {
         let result = engine.updateAll(
             history: [],
             calibrationStatus: .completed,
@@ -58,7 +58,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(progress(TrophyDefinitionCatalog.ID.calibrated, in: result).earned)
     }
 
-    func testSevenUniqueWorkoutDaysUnlocksSevenDayInferno() {
+    func testSevenUniqueWorkoutDaysUnlocksSevenDayInferno() async {
         let history = (0..<7).map { offset in
             makeSummary(
                 idSuffix: "21\(offset)",
@@ -71,7 +71,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(progress(TrophyDefinitionCatalog.ID.sevenDayInferno, in: result).earned)
     }
 
-    func testWeekendWorkoutsProgressWeekendFlex() {
+    func testWeekendWorkoutsProgressWeekendFlex() async {
         let saturday = makeSummary(
             idSuffix: "2201",
             endedAt: date(year: 2026, month: 5, day: 2, hour: 10)
@@ -88,7 +88,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(progress(TrophyDefinitionCatalog.ID.weekendFlex, in: complete).earned)
     }
 
-    func testMorningAndNightTrophiesRespectLocalCalendar() {
+    func testMorningAndNightTrophiesRespectLocalCalendar() async {
         var localCalendar = Calendar(identifier: .gregorian)
         localCalendar.timeZone = TimeZone(identifier: "Asia/Kolkata") ?? .current
         let localEngine = TrophyEngine(calendar: localCalendar)
@@ -114,7 +114,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(progress(TrophyDefinitionCatalog.ID.nightOwl, in: result).earned)
     }
 
-    func testOneThousandTotalRepsUnlocksOneKClub() {
+    func testOneThousandTotalRepsUnlocksOneKClub() async {
         let history = (0..<10).map { offset in
             makeSummary(
                 idSuffix: "24\(offset)",
@@ -128,7 +128,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(progress(TrophyDefinitionCatalog.ID.oneKClub, in: result).earned)
     }
 
-    func testOneHundredSquatsInOneSessionUnlocksSquatKing() {
+    func testOneHundredSquatsInOneSessionUnlocksSquatKing() async {
         let summary = makeSummary(
             idSuffix: "2501",
             exerciseType: .squat,
@@ -141,7 +141,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(progress(TrophyDefinitionCatalog.ID.squatKing, in: result).earned)
     }
 
-    func testFormArchitectUsesExactRepQualityEvents() {
+    func testFormArchitectUsesExactRepQualityEvents() async {
         let events = (1...500).map { index in
             makeRepEvent(repIndex: index, score: 95)
         }
@@ -162,7 +162,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertEqual(formArchitect.confidence, .exact)
     }
 
-    func testEliteFormRequiresZeroOrLowCueSets() {
+    func testEliteFormRequiresZeroOrLowCueSets() async {
         let nineCleanSets = (0..<9).map { index in
             makeSetSummary(
                 exerciseType: .squat,
@@ -217,7 +217,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(progress(TrophyDefinitionCatalog.ID.eliteForm, in: complete).earned)
     }
 
-    func testZenMasterProgressesOnlyForLongevityOrMobilitySessions() {
+    func testZenMasterProgressesOnlyForLongevityOrMobilitySessions() async {
         let mobility = (0..<9).map { offset in
             makeSummary(
                 idSuffix: "28\(offset)",
@@ -254,7 +254,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(progress(TrophyDefinitionCatalog.ID.zenMaster, in: complete).earned)
     }
 
-    func testNeonPulseIsComingSoonWhenHeartRateIsUnavailable() {
+    func testNeonPulseIsComingSoonWhenHeartRateIsUnavailable() async {
         let result = engine.updateAll(history: [], calibrationStatus: .notStarted)
         let neonPulse = progress(TrophyDefinitionCatalog.ID.neonPulse, in: result)
 
@@ -263,7 +263,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(TrophyDefinitionCatalog.definition(for: TrophyDefinitionCatalog.ID.neonPulse)?.isComingSoon ?? false)
     }
 
-    func testHeavyMetalIsComingSoonWhenLoadTrackingIsUnavailable() {
+    func testHeavyMetalIsComingSoonWhenLoadTrackingIsUnavailable() async {
         let result = engine.updateAll(history: [], calibrationStatus: .notStarted)
         let heavyMetal = progress(TrophyDefinitionCatalog.ID.heavyMetal, in: result)
 
@@ -272,7 +272,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertEqual(TrophyDefinitionCatalog.definition(for: TrophyDefinitionCatalog.ID.heavyMetal)?.dataRequirement, .externalLoad)
     }
 
-    func testBurpeeBeastIsComingSoonWhenBurpeeIsUnsupported() {
+    func testBurpeeBeastIsComingSoonWhenBurpeeIsUnsupported() async {
         let result = engine.updateAll(history: [], calibrationStatus: .notStarted)
         let burpeeBeast = progress(TrophyDefinitionCatalog.ID.burpeeBeast, in: result)
 
@@ -281,7 +281,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertEqual(TrophyDefinitionCatalog.definition(for: TrophyDefinitionCatalog.ID.burpeeBeast)?.dataRequirement, .unsupportedExercise)
     }
 
-    func testApexAndAlphaExcludeComingSoonTrophiesFromEligibility() {
+    func testApexAndAlphaExcludeComingSoonTrophiesFromEligibility() async {
         let now = date(year: 2026, month: 5, day: 1, hour: 10)
         let regularIds = Set(TrophyDefinitionCatalog.regularEligibleDefinitions.map(\.id))
         let previousProgress = TrophyDefinitionCatalog.all.map { definition in
@@ -318,17 +318,17 @@ final class TrophyEngineTests: XCTestCase {
         )
     }
 
-    func testNewlyEarnedTrophyEventsAreEmittedOnce() {
+    func testNewlyEarnedTrophyEventsAreEmittedOnce() async {
         let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
         let summary = makeSummary(idSuffix: "3001", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
 
-        let firstEvents = store.update(
+        let firstEvents = await store.update(
             after: summary,
             history: [summary],
             calibrationStatus: .notStarted,
             now: date(year: 2026, month: 5, day: 1, hour: 11)
         )
-        let secondEvents = store.updateAll(
+        let secondEvents = await store.updateAll(
             history: [summary],
             calibrationStatus: .notStarted,
             now: date(year: 2026, month: 5, day: 1, hour: 12)
@@ -340,17 +340,17 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertEqual(store.allUnlockEvents().count, 1)
     }
 
-    func testRecomputePreservesOriginalCanonicalEarnedAt() {
+    func testRecomputePreservesOriginalCanonicalEarnedAt() async {
         let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
         let summary = makeSummary(idSuffix: "3021", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
         let firstEarnedAt = date(year: 2026, month: 5, day: 1, hour: 11)
 
-        store.updateAll(
+        await store.updateAll(
             history: [summary],
             calibrationStatus: .notStarted,
             now: firstEarnedAt
         )
-        store.updateAll(
+        await store.updateAll(
             history: [summary],
             calibrationStatus: .notStarted,
             now: date(year: 2026, month: 5, day: 2, hour: 11)
@@ -361,10 +361,10 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertEqual(store.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).count, 1)
     }
 
-    func testComingSoonTrophyDoesNotEmitUnlockEvent() {
+    func testComingSoonTrophyDoesNotEmitUnlockEvent() async {
         let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
 
-        let events = store.updateAll(
+        let events = await store.updateAll(
             history: [],
             calibrationStatus: .notStarted,
             now: date(year: 2026, month: 5, day: 1, hour: 11)
@@ -375,16 +375,16 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertFalse(store.snapshot.progress(for: TrophyDefinitionCatalog.ID.neonPulse)?.earned ?? true)
     }
 
-    func testDeletingWorkoutDoesNotEraseCanonicalUnlockEvent() {
+    func testDeletingWorkoutDoesNotEraseCanonicalUnlockEvent() async {
         let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
         let summary = makeSummary(idSuffix: "3031", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
 
-        store.updateAll(
+        await store.updateAll(
             history: [summary],
             calibrationStatus: .notStarted,
             now: date(year: 2026, month: 5, day: 1, hour: 11)
         )
-        let eventsAfterDelete = store.updateAll(
+        let eventsAfterDelete = await store.updateAll(
             history: [],
             calibrationStatus: .notStarted,
             now: date(year: 2026, month: 5, day: 1, hour: 12)
@@ -396,12 +396,12 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertFalse(store.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).first?.isRetracted ?? true)
     }
 
-    func testUnlockEventsCanBeQueriedByTrophyAndDateInterval() {
+    func testUnlockEventsCanBeQueriedByTrophyAndDateInterval() async {
         let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
         let summary = makeSummary(idSuffix: "3041", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
         let earnedAt = date(year: 2026, month: 5, day: 1, hour: 11)
 
-        store.updateAll(
+        await store.updateAll(
             history: [summary],
             calibrationStatus: .notStarted,
             now: earnedAt
@@ -416,7 +416,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertEqual(store.unlockEvents(in: interval).map(\.trophyId), [TrophyDefinitionCatalog.ID.spark])
     }
 
-    func testDeletedWorkoutRecomputeDoesNotRetractAlreadyEarnedTrophyState() {
+    func testDeletedWorkoutRecomputeDoesNotRetractAlreadyEarnedTrophyState() async {
         let summary = makeSummary(idSuffix: "3051", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
         let earned = engine.updateAll(
             history: [summary],
@@ -435,20 +435,20 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertTrue(afterDelete.newlyEarnedEvents.isEmpty)
     }
 
-    func testDebugRecalculationCanRetractSampleOnlyTrophies() {
+    func testDebugRecalculationCanRetractSampleOnlyTrophies() async {
         let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
         let calibratedAt = date(year: 2026, month: 5, day: 1, hour: 9)
         let sampleWorkoutAt = date(year: 2026, month: 5, day: 1, hour: 10)
         let clearedAt = date(year: 2026, month: 5, day: 1, hour: 11)
         let sampleSummary = makeSummary(idSuffix: "3061", endedAt: sampleWorkoutAt)
 
-        store.updateAll(
+        await store.updateAll(
             history: [],
             calibrationStatus: .completed,
             now: calibratedAt
         )
         let calibratedEarnedAt = store.snapshot.progress(for: TrophyDefinitionCatalog.ID.calibrated)?.earnedAt
-        store.updateAll(
+        await store.updateAll(
             history: [sampleSummary],
             calibrationStatus: .completed,
             now: sampleWorkoutAt
@@ -456,8 +456,8 @@ final class TrophyEngineTests: XCTestCase {
 
         XCTAssertTrue(store.snapshot.progress(for: TrophyDefinitionCatalog.ID.spark)?.earned ?? false)
 
-        XCTAssertTrue(
-            store.recalculateForDebug(
+        assertTrue(
+            await store.recalculateForDebug(
                 history: [],
                 calibrationStatus: .completed,
                 now: clearedAt
@@ -474,30 +474,30 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertNotNil(store.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).first?.retractedAt)
     }
 
-    func testAdminRetractionCanTombstoneCanonicalUnlockEvent() {
+    func testAdminRetractionCanTombstoneCanonicalUnlockEvent() async {
         let store = TrophyStore(fileURL: temporaryTrophyURL(), calendar: calendar)
         let summary = makeSummary(idSuffix: "3071", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
         let retractedAt = date(year: 2026, month: 5, day: 1, hour: 12)
 
-        store.updateAll(
+        await store.updateAll(
             history: [summary],
             calibrationStatus: .notStarted,
             now: date(year: 2026, month: 5, day: 1, hour: 11)
         )
 
-        XCTAssertTrue(store.retractUnlockEvent(for: TrophyDefinitionCatalog.ID.spark, retractedAt: retractedAt))
+        assertTrue(await store.retractUnlockEvent(for: TrophyDefinitionCatalog.ID.spark, retractedAt: retractedAt))
 
         let event = store.unlockEvents(for: TrophyDefinitionCatalog.ID.spark).first
         XCTAssertFalse(store.snapshot.progress(for: TrophyDefinitionCatalog.ID.spark)?.earned ?? true)
         XCTAssertEqual(event?.retractedAt, retractedAt)
     }
 
-    func testTrophyProgressPersistsAfterReload() {
+    func testTrophyProgressPersistsAfterReload() async {
         let url = temporaryTrophyURL()
         let summary = makeSummary(idSuffix: "3101", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
         let store = TrophyStore(fileURL: url, calendar: calendar)
 
-        store.update(
+        await store.update(
             after: summary,
             history: [summary],
             calibrationStatus: .notStarted,
@@ -511,11 +511,11 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertEqual(reloaded.allUnlockEvents().count, 1)
     }
 
-    func testFailedTrophyUpdateDoesNotExposeUnsavedProgressOrEvents() throws {
+    func testFailedTrophyUpdateDoesNotExposeUnsavedProgressOrEvents() async throws {
         let summary = makeSummary(idSuffix: "3151", endedAt: date(year: 2026, month: 5, day: 1, hour: 10))
         let store = TrophyStore(fileURL: try unwritableTrophyURL(), calendar: calendar)
 
-        let events = store.update(
+        let events = await store.update(
             after: summary,
             history: [summary],
             calibrationStatus: .notStarted,
@@ -528,7 +528,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertNotNil(store.persistenceError)
     }
 
-    func testDuplicatePersistedProgressDoesNotCrashLookup() {
+    func testDuplicatePersistedProgressDoesNotCrashLookup() async {
         let id = TrophyDefinitionCatalog.ID.spark
         let older = makeProgress(
             trophyId: id,
@@ -553,7 +553,7 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertEqual(snapshot.progressByTrophyId[id]?.currentValue, 0.5)
     }
 
-    func testDuplicatePersistedProgressPreservesEarnedTrophy() {
+    func testDuplicatePersistedProgressPreservesEarnedTrophy() async {
         let id = TrophyDefinitionCatalog.ID.spark
         let earnedAt = date(year: 2026, month: 5, day: 1, hour: 10)
         let earned = makeProgress(
@@ -580,13 +580,13 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertEqual(snapshot.progressByTrophyId[id]?.earnedAt, earnedAt)
     }
 
-    func testTrophyDefinitionsHaveUniqueIds() {
+    func testTrophyDefinitionsHaveUniqueIds() async {
         let ids = TrophyDefinitionCatalog.all.map(\.id)
 
         XCTAssertEqual(Set(ids).count, ids.count)
     }
 
-    func testEmptyHistoryUnlocksNothingExceptStaticComingSoonStates() {
+    func testEmptyHistoryUnlocksNothingExceptStaticComingSoonStates() async {
         let result = engine.updateAll(history: [], calibrationStatus: .notStarted)
 
         XCTAssertFalse(result.snapshot.progress.contains(where: \.earned))

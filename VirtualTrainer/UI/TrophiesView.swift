@@ -35,12 +35,20 @@ struct TrophiesView: View {
             .background(Theme.Colors.background)
             .navigationTitle("Trophies")
             .navigationBarTitleDisplayMode(.inline)
-            .onAppear(perform: refreshProgress)
+            .onAppear {
+                Task {
+                    await refreshProgress()
+                }
+            }
             .onChange(of: historyStore.summaries) {
-                refreshProgress()
+                Task {
+                    await refreshProgress()
+                }
             }
             .onChange(of: calibrationStore.status) {
-                refreshProgress()
+                Task {
+                    await refreshProgress()
+                }
             }
         }
         .preferredColorScheme(.dark)
@@ -132,8 +140,8 @@ struct TrophiesView: View {
         }
     }
 
-    private func refreshProgress() {
-        trophyStore.updateAll(
+    private func refreshProgress() async {
+        await trophyStore.updateAll(
             history: historyStore.summaries,
             calibrationStatus: calibrationStore.status
         )

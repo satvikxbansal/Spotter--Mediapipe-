@@ -58,14 +58,17 @@ FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
 
 Every runtime default appends `Spotter/` under that base.
 
+JSON encode/write/remove work for the file-backed stores now routes through `PersistenceActor`, which preserves atomic writes and coalesces rapid same-file writes with a last-write-wins policy. Published state stays on the main actor; high-frequency save work is no longer coupled to UI-bound code paths where practical.
+
 | Store | Runtime file path | Persisted payload | Encoder details | Notes |
 |---|---|---|---|---|
 | `OnboardingStore` | `<Application Support>/Spotter/UserProfile.json` | `UserProfile` | pretty printed, sorted keys, ISO-8601 dates | Created by onboarding and updated by profile preferences. `resetOnboarding()` hard-deletes the file. |
 | `ThemeStore` | `<Application Support>/Spotter/Theme.json` | `ThemeEnvelope { selectedTheme }` | pretty printed, sorted keys | Also decodes legacy raw `SpotterThemeOption`. Duplicates `UserProfile.selectedTheme` for runtime theme bootstrapping. |
 | `CalibrationStore` | `<Application Support>/Spotter/CalibrationRecord.json` | `CalibrationRecord` | pretty printed, sorted keys, ISO-8601 dates | Stores only the latest calibration status/record. `resetForDebug()` hard-deletes the file. |
-| `WorkoutHistoryStore` | `<Application Support>/Spotter/WorkoutHistory.json` | `[WorkoutSessionSummary]` | pretty printed, sorted keys, ISO-8601 dates | Free Analysis and Planned Workout saves both land here. `addSummary` upserts by `id`; no delete/update/tombstone API exists. |
+| `WorkoutHistoryStore` | `<Application Support>/Spotter/WorkoutHistory.json` | `[WorkoutSessionSummary]` | pretty printed, sorted keys, ISO-8601 dates | Free Analysis and Planned Workout saves both land here. `addSummary` upserts by `id`; delete/update/tombstone APIs keep default UI queries on active summaries. |
 | `TrophyStore` | `<Application Support>/Spotter/TrophyProgress.json` | `TrophyProgressSnapshot` | pretty printed, sorted keys, ISO-8601 dates | Snapshot is derived from workout history and calibration. Persisted snapshot strips `newlyEarnedEvents`. |
 | `InsightStore` | `<Application Support>/Spotter/CoachInsights.json` | `PersistedInsightStoreSnapshot` | pretty printed, sorted keys, ISO-8601 dates | Stores recent insights, delivery cooldowns, and engagement records. |
+| `LocalWriteJournal` | `<Application Support>/Spotter/LocalWriteJournal.json` | `[LocalWriteJournalEntry]` | pretty printed, sorted keys, ISO-8601 dates | Tracks completed local operation IDs so future retry paths do not double-apply the same user action. |
 
 Preview/test-only persistence uses temporary directories, for example `ProfilePreviewStores` in `ProfileView` and test fixtures. `ShareCardRenderer` renders a local `UIImage` from aggregate heatmap data and does not write an image file.
 
@@ -390,7 +393,7 @@ Recommended first pass:
 12. Plans: decide whether generated/edited plans are persisted remotely or remain deterministic local runtime state.
 13. Server timestamps: decide which fields become server-authoritative in backend mode, especially workout end times and trophy earned times.
 14. Timezone: use `UserProfile.timezoneIdentifier` consistently for streak/weekly recap calculations across devices.
-15. Background I/O: current JSON encode/write work runs on `@MainActor`; repository actors/background persistence should come before large remote histories.
+15. Repository I/O scaling: local JSON encode/write work is actor-isolated now; repository actors should still add pagination, listener backpressure, and remote-history batching before large backend histories.
 16. PII/export/delete: create PII inventory, data export, and account deletion flows before shipping account creation.
 17. Security rules/App Check: design Firestore rules around `accountId == request.auth.uid` and add App Check before broader testing.
 18. Secrets/config: keep private keys out of source; decide dev/beta/prod Firebase config handling.
