@@ -610,6 +610,7 @@ What has been prepared:
 - Server-time readiness: workouts, calibration, insights, and trophy unlocks have fields for future server-confirmed timestamps. Stats and trends use the server-confirmed timestamp when it exists and fall back to local time while the app is offline-only.
 - Trophy history: trophy unlocks are now preserved as canonical events, not only as a recalculated progress snapshot. This gives the future backend a stable "this was earned then" record and supports retraction/correction without rewriting history.
 - Insight continuity: insight impressions, cooldowns, helpful/not-helpful feedback, and engagement records are account-scoped and have merge rules. A future multi-device user should not lose feedback learning or keep seeing the same insight card on every device.
+- Backend-scale local persistence: profile, workout history, trophies, insights, calibration, theme, and the write journal now encode and write JSON through a dedicated persistence actor instead of doing frequent save work on the UI path. Rapid repeated saves are coalesced with a last-write-wins policy, while atomic writes and rollback behavior stay intact.
 - Conflict policy: `Documentation/SyncConflictResolution.md` defines how each major record should merge when local and remote copies disagree, and when the app should mark a record as conflicted instead of guessing.
 - Firestore shape: `Documentation/FirestoreShape.md` measures a synthetic worst-case workout and chooses a compact workout document plus per-set documents. This keeps history queries light while preserving detailed rep and cue evidence safely under Firestore document limits.
 - Privacy boundary: the future backend shape still allows only derived training evidence. Raw video, camera frames, face images, raw pose streams, raw biometric face data, raw pose timelines, and secrets stay out of the upload path.
@@ -627,7 +628,7 @@ Still remaining before a backend beta:
 - Firebase/Auth wiring behind a feature flag.
 - Real account deletion and data export flows.
 - Firestore security rules, App Check, environment config, and secret scanning.
-- Background repository I/O for large histories.
+- Repository-level pagination and listener backpressure for large remote histories.
 - Backend-mode QA for account switching, tombstones, conflicts, retries, and missing config.
 
 ## Exercise Library
@@ -925,7 +926,7 @@ Documentation/FirestoreShape.md
 - Haptics: CoreHaptics and UIKit haptic fallbacks
 - Local voice: `AVSpeechSynthesizer`
 - Optional remote TTS client: ElevenLabs service shell, configured through `ELEVENLABS_API_KEY` if used later
-- Persistence: local JSON files in app support storage, with sync-ready account ownership, tombstones, sync metadata, and a local write journal
+- Persistence: local JSON files in app support storage, with sync-ready account ownership, tombstones, sync metadata, a local write journal, and actor-isolated JSON encode/write paths
 - Tests: XCTest
 
 The app uses CocoaPods for MediaPipe. Open the workspace, not just the project file.
@@ -1051,7 +1052,7 @@ Done or mostly done:
 - Phase 14: deterministic local coach insight engine
 - Phase 14 hardening: impression-based insight delivery, engagement tracking, goal-aware ranking, bootstrap signals, cue normalization, recent-window trend policy, workout recaps, weekly recaps, evidence drill-downs, and the default-off LLM rewrite seam
 - Profile heatmap hardening: 12-week intensity view, day drill-ins, collapsed month snapshot, and local share poster
-- Pre-backend readiness: account ownership, sync metadata, soft-delete tombstones, workout delete, insight invalidation, idempotent write journal, server-time fields, canonical trophy unlock event log, sync-ready insight records, conflict rules, and measured Firestore shape
+- Pre-backend readiness: account ownership, sync metadata, soft-delete tombstones, workout delete, insight invalidation, idempotent write journal, actor-isolated local persistence, server-time fields, canonical trophy unlock event log, sync-ready insight records, conflict rules, and measured Firestore shape
 
 Next work:
 
@@ -1147,6 +1148,7 @@ Use these rules when extending Spotter:
 - Use the shared cue normalizer and cluster taxonomy for cue-driven logic.
 - Keep trophies honest about unavailable data.
 - Keep local JSON backward compatible.
+- Keep JSON persistence off the UI path where practical; use the shared persistence actor for local encode/write/remove work.
 - Keep account ownership, sync metadata, tombstones, server-time fields, and operation IDs backward compatible.
 - Update sync conflict and Firestore-shape docs when backend assumptions change.
 - Keep secrets out of source.
