@@ -800,3 +800,25 @@ Updated weekly recap top-moment selection to read non-retracted canonical unlock
 Derived UI surfaces should read canonical event logs once a model has one, not transient presentation arrays. Copy helpers for backend-ready models must pass through server timestamps and metadata fields, with explicit tests for account-claim and tombstone paths.
 
 **Pattern Tags:** #persistence #sync-prep #weekly-recap #calibration #tests
+
+---
+
+### [DL-037] Move Local JSON Writes Behind Persistence Actor
+**Date:** 2026-05-09
+**Severity:** warning
+**Category:** persistence
+**File(s):** `VirtualTrainer/Models/PersistenceActor.swift`, `VirtualTrainer/Models/OnboardingStore.swift`, `VirtualTrainer/Models/WorkoutHistoryStore.swift`, `VirtualTrainer/Models/TrophyModels.swift`, `VirtualTrainer/Models/InsightStore.swift`, `VirtualTrainer/Models/CalibrationStore.swift`, `VirtualTrainer/Models/ThemeStore.swift`, `VirtualTrainer/Models/LocalWriteJournal.swift`
+
+**Error:**
+Local JSON encode/write work still lived on the same main-actor store paths that publish SwiftUI state. That was acceptable with low-frequency local saves, but it would risk visible UI stalls once repository retries and backend listeners start increasing write frequency.
+
+**Root Cause:**
+The stores had grown backend-ready metadata, tombstones, operation IDs, trophy events, and insight delivery records while still writing each file directly from store methods. One rollback path in `OnboardingStore.save(...)` also returned success after an async persist failure, which hid a write failure from callers.
+
+**Fix Applied:**
+Added `PersistenceActor` for file reads, atomic writes, removes, directory creation, JSON encoding, and coalesced same-file writes with last-write-wins behavior. Refactored onboarding, workout history, trophies, insights, calibration, theme, and the local write journal to await actor persistence before publishing successful mutations where rollback matters. Kept camera analysis, planned workouts, deterministic plan generation, stats, trends, trophies, recaps, and local AI insights intact. Added persistence actor tests and migrated store tests to await async save/selection paths.
+
+**Prevention Rule:**
+Backend-scale local stores should keep `@Published` state main-actor isolated, but encode/write/remove work should flow through the persistence actor. Failed writes must return failure and preserve the previous published state; rapid repeated writes should coalesce instead of flooding the file system.
+
+**Pattern Tags:** #persistence #concurrency #sync-prep #mainactor #tests
