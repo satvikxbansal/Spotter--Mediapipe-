@@ -37,6 +37,7 @@ Spotter can currently:
 - Track insight impressions and lightweight engagement separately, so cooldowns start when an insight is actually shown.
 - Let users open evidence sheets from insight cards and workout detail cards.
 - Show a 12-week profile heatmap with day drill-ins, workout detail links, and a local share poster.
+- Let local-mode users export their data as a human-readable JSON folder and delete their local account data from Profile before cloud accounts exist.
 - Delete saved workouts safely by hiding them from normal history while keeping a tombstone for future sync.
 - Keep local records ready for future accounts through account ownership, sync metadata, server-time placeholders, and idempotent write operation IDs.
 - Preserve trophy unlocks as a canonical event log instead of only a recalculated progress snapshot.
@@ -419,6 +420,7 @@ It shows:
 - Coach insights
 - Recent workout history
 - Workout detail sheet
+- Local account data controls for Export My Data and Delete My Account and Data
 - Debug reset tools in a lower-priority section
 
 Stats are built from real local history and trophy progress.
@@ -611,6 +613,8 @@ What has been prepared:
 - Trophy history: trophy unlocks are now preserved as canonical events, not only as a recalculated progress snapshot. This gives the future backend a stable "this was earned then" record and supports retraction/correction without rewriting history.
 - Insight continuity: insight impressions, cooldowns, helpful/not-helpful feedback, and engagement records are account-scoped and have merge rules. A future multi-device user should not lose feedback learning or keep seeing the same insight card on every device.
 - Backend-scale local persistence: profile, workout history, trophies, insights, calibration, theme, and the write journal now encode and write JSON through a dedicated persistence actor instead of doing frequent save work on the UI path. Rapid repeated saves are coalesced with a last-write-wins policy, while atomic writes and rollback behavior stay intact.
+- Local compliance controls: Profile now has Export My Data and Delete My Account and Data in local mode. Export creates a readable temporary JSON folder with profile, workouts, trophies, trophy events, insights, insight delivery, insight engagement, calibration, theme, schema versions, and a plain-English README. Delete clears the local profile, workouts, trophies, insights, calibration, theme, write journal, generated export cache, and share-image cache, then returns the app to onboarding.
+- PII registry: the app now has a simple local registry that names profile fields and health-adjacent sensitivity fields in user-readable language, including limitations, age, height, weight, timezone, reminder preference, account ID, and derived effort summaries.
 - Conflict policy: `Documentation/SyncConflictResolution.md` defines how each major record should merge when local and remote copies disagree, and when the app should mark a record as conflicted instead of guessing.
 - Firestore shape: `Documentation/FirestoreShape.md` measures a synthetic worst-case workout and chooses a compact workout document plus per-set documents. This keeps history queries light while preserving detailed rep and cue evidence safely under Firestore document limits.
 - Privacy boundary: the future backend shape still allows only derived training evidence. Raw video, camera frames, face images, raw pose streams, raw biometric face data, raw pose timelines, and secrets stay out of the upload path.
@@ -626,7 +630,7 @@ Still remaining before a backend beta:
 
 - Repository protocols and local repository implementations.
 - Firebase/Auth wiring behind a feature flag.
-- Real account deletion and data export flows.
+- Backend-mode account deletion and backend-mode data export wiring after Firebase/Auth exists.
 - Firestore security rules, App Check, environment config, and secret scanning.
 - Repository-level pagination and listener backpressure for large remote histories.
 - Backend-mode QA for account switching, tombstones, conflicts, retries, and missing config.
@@ -747,6 +751,9 @@ CueNormalizer, CueClusterTaxonomy, and TrendWindowPolicy
 AccountContext and AccountOwnership
   -> how local data is scoped to local-only mode or a future signed-in account
 
+PIIRegistry, DataExportService, and AccountDeletionService
+  -> how local-mode users can understand, export, and delete local account data before Firebase exists
+
 SyncMetadata, WriteOperation, and LocalWriteJournal
   -> how local records become retry-safe and sync-ready without adding a backend SDK yet
 
@@ -827,8 +834,10 @@ VirtualTrainer/
     UniversalRepCounter.swift
 
   Services/
+    AccountDeletionService.swift
     CueClusterTaxonomy.swift
     CueNormalizer.swift
+    DataExportService.swift
     ElevenLabsService.swift
     FeatureFlags.swift
     InsightCandidateBuilder.swift
@@ -836,6 +845,7 @@ VirtualTrainer/
     InsightNarrativeBuilder.swift
     InsightRanker.swift
     InsightRewriter.swift
+    PIIRegistry.swift
     PlanGenerator.swift
     PlanService.swift
     PlanSwapService.swift
@@ -1014,6 +1024,7 @@ Good to store locally:
 - Trend snapshots and signals
 - Heatmap day-intensity summaries
 - User-initiated heatmap share images rendered from aggregate stats
+- User-initiated local data export folders generated in temporary storage
 - Workout recaps and weekly recap dedupe records
 - Insight history, delivery records, and engagement counts
 - Derived, non-raw LLM rewrite context if a future feature-flagged rewrite layer needs it
@@ -1052,7 +1063,7 @@ Done or mostly done:
 - Phase 14: deterministic local coach insight engine
 - Phase 14 hardening: impression-based insight delivery, engagement tracking, goal-aware ranking, bootstrap signals, cue normalization, recent-window trend policy, workout recaps, weekly recaps, evidence drill-downs, and the default-off LLM rewrite seam
 - Profile heatmap hardening: 12-week intensity view, day drill-ins, collapsed month snapshot, and local share poster
-- Pre-backend readiness: account ownership, sync metadata, soft-delete tombstones, workout delete, insight invalidation, idempotent write journal, actor-isolated local persistence, server-time fields, canonical trophy unlock event log, sync-ready insight records, conflict rules, and measured Firestore shape
+- Pre-backend readiness: account ownership, sync metadata, soft-delete tombstones, workout delete, insight invalidation, idempotent write journal, actor-isolated local persistence, server-time fields, canonical trophy unlock event log, sync-ready insight records, local data export, local account/data deletion, PII registry, conflict rules, and measured Firestore shape
 
 Next work:
 

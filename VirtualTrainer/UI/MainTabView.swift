@@ -32,6 +32,7 @@ struct MainTabView: View {
 
 #Preview {
     MainTabView()
+        .environmentObject(AccountContext())
         .environmentObject(OnboardingStore())
         .environmentObject(CalibrationStore())
         .environmentObject(WorkoutHistoryStore())

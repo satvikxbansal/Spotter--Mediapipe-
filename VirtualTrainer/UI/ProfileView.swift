@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ProfileView: View {
+    @EnvironmentObject private var accountContext: AccountContext
     @EnvironmentObject private var onboardingStore: OnboardingStore
     @EnvironmentObject private var calibrationStore: CalibrationStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
@@ -17,6 +18,12 @@ struct ProfileView: View {
     @State private var isConfirmingHistoryDelete = false
     @State private var isSampleDataEnabled = false
     @State private var debugStatusMessage: String?
+    @State private var accountStatusMessage: String?
+    @State private var exportSharePayload: AccountExportPayload?
+    @State private var isExportingData = false
+    @State private var isPresentingAccountDeletion = false
+    @State private var deletionConfirmationText = ""
+    @State private var isDeletingAccountData = false
 
     var body: some View {
         NavigationStack {
@@ -40,6 +47,21 @@ struct ProfileView: View {
             .sheet(item: $selectedSummary) { summary in
                 WorkoutDetailSheetView(summary: summary)
                 .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+            .sheet(item: $exportSharePayload) { payload in
+                ShareSheet(activityItems: [payload.url])
+            }
+            .sheet(isPresented: $isPresentingAccountDeletion) {
+                AccountDeletionConfirmationSheet(
+                    confirmationText: $deletionConfirmationText,
+                    isDeleting: isDeletingAccountData,
+                    onCancel: {
+                        isPresentingAccountDeletion = false
+                    },
+                    onDelete: deleteAccountAndData
+                )
+                .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
             }
             .confirmationDialog(
@@ -206,6 +228,15 @@ struct ProfileView: View {
                         HapticsEngine.shared.buttonTap()
                         isShowingAllHistory = true
                     }
+                )
+
+                AccountDataSection(
+                    isLocalOnly: accountContext.isLocalOnly,
+                    isExporting: isExportingData,
+                    isDeleting: isDeletingAccountData,
+                    statusMessage: accountStatusMessage,
+                    onExport: exportMyData,
+                    onDelete: beginAccountDeletion
                 )
 
                 SettingsDebugSection(
@@ -449,6 +480,76 @@ struct ProfileView: View {
             HapticsEngine.shared.successRipple()
         }
     }
+
+    private func exportMyData() {
+        guard accountContext.isLocalOnly else {
+            accountStatusMessage = "Cloud account export will be wired during the Firebase phase."
+            return
+        }
+
+        guard !isExportingData else { return }
+        isExportingData = true
+        accountStatusMessage = nil
+
+        Task {
+            do {
+                let result = try await DataExportService().exportLocalData()
+                exportSharePayload = AccountExportPayload(url: result.archiveURL)
+                accountStatusMessage = "Export ready: \(result.fileNames.count) files."
+                HapticsEngine.shared.successRipple()
+            } catch {
+                accountStatusMessage = error.localizedDescription
+            }
+            isExportingData = false
+        }
+    }
+
+    private func beginAccountDeletion() {
+        guard accountContext.isLocalOnly else {
+            accountStatusMessage = "Cloud account deletion will be wired during the Firebase phase."
+            return
+        }
+
+        deletionConfirmationText = ""
+        isPresentingAccountDeletion = true
+    }
+
+    private func deleteAccountAndData() {
+        guard deletionConfirmationText == "DELETE", !isDeletingAccountData else { return }
+        isDeletingAccountData = true
+        accountStatusMessage = nil
+
+        Task {
+            do {
+                _ = try await AccountDeletionService().deleteAccountAndData(mode: .local)
+                accountContext.clearAccount()
+                await onboardingStore.resetOnboarding()
+                await calibrationStore.resetForDebug()
+                historyStore.reload()
+                trophyStore.reload()
+                themeStore.reload()
+                insightStore.reload()
+                selectedSummary = nil
+                selectedInsightEvidence = nil
+                pendingDeleteSummary = nil
+                profileInsights = []
+                weeklyRecap = nil
+                exportSharePayload = nil
+                isPresentingAccountDeletion = false
+                deletionConfirmationText = ""
+                isDeletingAccountData = false
+                HapticsEngine.shared.successRipple()
+            } catch {
+                accountStatusMessage = error.localizedDescription
+                isDeletingAccountData = false
+            }
+        }
+    }
+}
+
+private struct AccountExportPayload: Identifiable {
+    let id = UUID()
+    let url: URL
 }
 
 private struct ProfileHeaderView: View {
@@ -1322,6 +1423,161 @@ private struct ProfileWorkoutHistoryRow: View {
     }
 }
 
+private struct AccountDataSection: View {
+    let isLocalOnly: Bool
+    let isExporting: Bool
+    let isDeleting: Bool
+    let statusMessage: String?
+    let onExport: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            ProfileSectionHeader(title: "Account")
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                ProfileInfoRow(label: "Mode", value: isLocalOnly ? "Local only" : "Signed in")
+
+                HStack(spacing: Theme.Spacing.sm) {
+                    AccountActionButton(
+                        title: isExporting ? "Exporting" : "Export My Data",
+                        systemImage: "square.and.arrow.up",
+                        tint: Theme.Colors.accent,
+                        isDisabled: !isLocalOnly || isExporting || isDeleting,
+                        action: onExport
+                    )
+
+                    AccountActionButton(
+                        title: isDeleting ? "Deleting" : "Delete My Account and Data",
+                        systemImage: "trash.fill",
+                        tint: Theme.Colors.danger,
+                        isDisabled: !isLocalOnly || isExporting || isDeleting,
+                        action: onDelete
+                    )
+                }
+
+                if isExporting || isDeleting {
+                    ProgressView()
+                        .tint(isDeleting ? Theme.Colors.danger : Theme.Colors.accent)
+                }
+
+                if let statusMessage {
+                    Text(statusMessage)
+                        .caption()
+                        .foregroundStyle(statusColor(for: statusMessage))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(Theme.Spacing.md)
+            .background(Theme.Colors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        }
+    }
+
+    private func statusColor(for message: String) -> Color {
+        message.localizedCaseInsensitiveContains("could not") ||
+            message.localizedCaseInsensitiveContains("not wired") ||
+            message.localizedCaseInsensitiveContains("failed")
+            ? Theme.Colors.danger
+            : Theme.Colors.positive
+    }
+}
+
+private struct AccountActionButton: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+    let isDisabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: Theme.Spacing.xs) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .black))
+                Text(title)
+                    .font(.system(size: 11, weight: .black))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.72)
+            }
+            .foregroundStyle(tint)
+            .frame(maxWidth: .infinity, minHeight: 68)
+            .background(Theme.Colors.surfaceRaised)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .stroke(tint.opacity(0.24), lineWidth: 1)
+            )
+            .opacity(isDisabled ? 0.45 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+    }
+}
+
+private struct AccountDeletionConfirmationSheet: View {
+    @Binding var confirmationText: String
+    let isDeleting: Bool
+    let onCancel: () -> Void
+    let onDelete: () -> Void
+
+    private var canDelete: Bool {
+        confirmationText == "DELETE" && !isDeleting
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text("Delete Account and Data")
+                    .font(.system(size: 24, weight: .black, design: .rounded))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("This clears the local profile, workouts, trophies, insights, calibration, theme, write journal, and generated caches on this device.")
+                    .caption()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Text("Type DELETE")
+                    .font(.system(size: 11, weight: .black))
+                    .tracking(1.0)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+
+                TextField("DELETE", text: $confirmationText)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 18, weight: .black, design: .rounded))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .padding(Theme.Spacing.md)
+                    .background(Theme.Colors.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(Theme.Colors.divider, lineWidth: 1)
+                    )
+            }
+
+            HStack(spacing: Theme.Spacing.sm) {
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.textSecondary))
+
+                Button(isDeleting ? "Deleting" : "Delete") {
+                    onDelete()
+                }
+                .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.danger))
+                .disabled(!canDelete)
+                .opacity(canDelete ? 1 : 0.45)
+            }
+        }
+        .padding(Theme.Spacing.lg)
+        .background(Theme.Colors.background)
+        .preferredColorScheme(.dark)
+    }
+}
+
 private struct SettingsDebugSection: View {
     let profile: UserProfile
     let calibrationStatus: CalibrationStatus
@@ -1947,6 +2203,7 @@ private enum LocalUITestingSampleData {
 #Preview {
     let stores = ProfilePreviewData.makeStores()
     ProfileView()
+        .environmentObject(AccountContext())
         .environmentObject(stores.onboardingStore)
         .environmentObject(stores.calibrationStore)
         .environmentObject(stores.historyStore)

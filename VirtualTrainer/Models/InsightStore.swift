@@ -899,6 +899,10 @@ final class InsightStore: ObservableObject {
         _ = await persist()
     }
 
+    func reload() {
+        load()
+    }
+
     @discardableResult
     func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) async -> Bool {
         guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
@@ -1167,6 +1171,12 @@ private extension InsightStore {
 
     func load() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            allInsights = []
+            allDeliveryRecords = [:]
+            allEngagementRecords = [:]
+            recentInsights = []
+            deliveryRecords = [:]
+            engagementRecords = [:]
             persistenceError = nil
             return
         }

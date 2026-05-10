@@ -849,3 +849,33 @@ Restored optimistic local mutation before persistence for profile, history, them
 When adding `await` to a previously synchronous store mutation, make sure the in-memory mutation either happens before the first suspension point or is protected by an explicit serial mutation model. Coalescing file writes is safe only if later writes are built from the latest local state. Every async store refactor for append, merge, or update behavior should include a rapid concurrent mutation regression test, not only sequential awaited tests.
 
 **Pattern Tags:** #persistence #concurrency #mainactor #rollback #tests
+
+---
+
+### [DL-039] Harden Local Compliance Export And Delete Against Queued Writes
+**Date:** 2026-05-10
+**Severity:** warning
+**Category:** audit
+**File(s):** `VirtualTrainer/Models/PersistenceActor.swift`, `VirtualTrainer/Services/AccountDeletionService.swift`, `VirtualTrainer/Services/DataExportService.swift`, `VirtualTrainerTests/ComplianceServicesTests.swift`, `VirtualTrainerTests/PersistenceActorTests.swift`
+
+**Error:**
+The first local-mode compliance pass added Profile export/delete, a PII registry, and tests, but the audit found two coverage gaps. Export read local JSON directly without first waiting for coalesced `PersistenceActor` writes to settle, and deletion removed files without explicitly waiting for queued actor writes that could recreate a file after the wipe in a tight async race. The PII registry test also checked the registry's manually maintained profile-field list against registry entries, but did not compare the registry to an actually encoded `UserProfile`.
+
+**Root Cause:**
+The compliance services were added as storage-bound scaffolding around existing local JSON files, but the previous persistence phase had changed the storage contract from direct synchronous writes to actor-coalesced async writes. That means file-level export/delete services must coordinate with the persistence actor, not only with `FileManager`. The PII test treated `PIIRegistry.currentProfileFieldIDs` as the source of truth instead of using encoded profile keys as an independent check.
+
+**Why It Was Missed In The First Pass:**
+The first pass verified the steady-state product behavior: files existed, export contained the expected archive entries, JSON decoded, deletion removed expected files, deletion was idempotent, and reloaded stores returned to onboarding. That missed the narrower race where a queued write can still be in the persistence actor when export/delete begins. Context compaction also made the relationship between the new compliance services and the immediately prior actor-persistence work easier to underweight, because the compliance prompt focused on account-readiness surfaces while the hidden coupling lived in the persistence implementation.
+
+The PII coverage miss happened for a similar reason: the test proved the written registry was internally complete, but not that it stayed complete against the real encoded profile model. The safer test needed an independent encoded-profile key set.
+
+**Fix Applied:**
+Added `PersistenceActor.waitForWrites(to:)` and `removeAfterQueuedWrites(at:)`. `DataExportService` now waits for queued writes on profile, workouts, trophies, insights, calibration, and theme before reading files. `AccountDeletionService` now waits for queued writes before removing each local file/cache path and yields around write-journal deletion so late write-journal records created by just-finished store writes are also cleared. Strengthened compliance tests so a fully populated encoded `UserProfile` must match the PII registry profile-field list, and added persistence actor coverage for the queued-write-aware remove helper. Re-ran focused compliance and persistence tests after the patch.
+
+**Prevention Rule:**
+Any new file-level export, delete, migration, or audit service must be reviewed against the active persistence mechanism. If stores use a write actor, the service must flush or wait for that actor before reading or deleting local files. Registry tests should compare against the encoded model shape or another independent source of truth, not only against manually maintained registry constants.
+
+**Verification Note:**
+An initial attempt to run two `xcodebuild test` commands in parallel hit Xcode's shared DerivedData `build.db` lock. That was a test-run orchestration mistake, not an app failure. The affected focused tests were rerun sequentially.
+
+**Pattern Tags:** #audit #persistence #compliance #privacy #tests

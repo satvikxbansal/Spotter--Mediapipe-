@@ -55,6 +55,18 @@ final class PersistenceActorTests: XCTestCase {
         XCTAssertTrue(payloads.contains(reloaded))
     }
 
+    func testRemoveAfterQueuedWritesRemovesPersistedFile() async throws {
+        let actor = PersistenceActor()
+        let url = temporaryPersistenceURL()
+        let payload = Data("delete should remove persisted data".utf8)
+
+        _ = try await actor.writeLatest(payload, to: url, options: .atomic)
+
+        try await actor.removeAfterQueuedWrites(at: url)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+
     private func temporaryPersistenceURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("PersistenceActorTests-\(UUID().uuidString)", isDirectory: true)

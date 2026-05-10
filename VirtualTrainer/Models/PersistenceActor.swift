@@ -34,6 +34,17 @@ actor PersistenceActor {
         try FileManager.default.removeItem(at: url)
     }
 
+    func waitForWrites(to url: URL) async {
+        while hasQueuedWrite(for: url) {
+            await Task.yield()
+        }
+    }
+
+    func removeAfterQueuedWrites(at url: URL) async throws {
+        await waitForWrites(to: url)
+        try remove(url)
+    }
+
     func createDirectoryIfNeeded(for url: URL) throws {
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
@@ -104,6 +115,13 @@ actor PersistenceActor {
         Task {
             await self.drainLatestWrites(for: url)
         }
+    }
+
+    private func hasQueuedWrite(for url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        let hasPendingWrite = pendingWrites.keys.contains { $0.standardizedFileURL.path == path }
+        let hasActiveWrite = activeWriteURLs.contains { $0.standardizedFileURL.path == path }
+        return hasPendingWrite || hasActiveWrite
     }
 
     private func drainLatestWrites(for url: URL) async {
