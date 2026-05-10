@@ -1,0 +1,11 @@
+// Spotter Debug build configuration.
+// Do not put real third-party secrets in this file.
+
+SPOTTER_ENVIRONMENT = dev
+SPOTTER_BACKEND_MODE = local
+GOOGLE_SERVICE_INFO_PLIST = GoogleService-Info-Dev.plist
+
+// Empty by default. Debug-only local overrides may live in the ignored
+// Configurations/LocalSecrets.xcconfig file for throwaway experiments.
+ELEVENLABS_API_KEY =
+#include? "LocalSecrets.xcconfig"

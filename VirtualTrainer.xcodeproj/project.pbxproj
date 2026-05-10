@@ -23,6 +23,9 @@
 /* Begin PBXFileReference section */
 		A10000000000000000000001 /* VirtualTrainerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VirtualTrainerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A9B44F9E323DB30D7169B8F0 /* Pods-VirtualTrainer.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-VirtualTrainer.release.xcconfig"; path = "Target Support Files/Pods-VirtualTrainer/Pods-VirtualTrainer.release.xcconfig"; sourceTree = "<group>"; };
+		C0DEC0DE0000000000000001 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		C0DEC0DE0000000000000002 /* Beta.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Beta.xcconfig; sourceTree = "<group>"; };
+		C0DEC0DE0000000000000003 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		CE7600774D7F3697C35C466E /* Pods_VirtualTrainer.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_VirtualTrainer.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		D6082D702F53050000E61E1F /* VirtualTrainer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VirtualTrainer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EABDD9B45CC399C2B17D5BA1 /* Pods-VirtualTrainer.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-VirtualTrainer.debug.xcconfig"; path = "Target Support Files/Pods-VirtualTrainer/Pods-VirtualTrainer.debug.xcconfig"; sourceTree = "<group>"; };
@@ -77,11 +80,22 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
+		C0DEC0DE0000000000000004 /* Configurations */ = {
+			isa = PBXGroup;
+			children = (
+				C0DEC0DE0000000000000001 /* Debug.xcconfig */,
+				C0DEC0DE0000000000000002 /* Beta.xcconfig */,
+				C0DEC0DE0000000000000003 /* Release.xcconfig */,
+			);
+			path = Configurations;
+			sourceTree = "<group>";
+		};
 		D6082D672F53050000E61E1F = {
 			isa = PBXGroup;
 			children = (
 				D6082D722F53050000E61E1F /* VirtualTrainer */,
 				A10000000000000000000002 /* VirtualTrainerTests */,
+				C0DEC0DE0000000000000004 /* Configurations */,
 				D6082D712F53050000E61E1F /* Products */,
 				1F238F81027B869CC41FD53D /* Pods */,
 				239418FE3759DB1971B94221 /* Frameworks */,
@@ -309,6 +323,7 @@
 		};
 		D6082D792F53050200E61E1F /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0DEC0DE0000000000000001 /* Debug.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -377,6 +392,7 @@
 		};
 		D6082D7A2F53050200E61E1F /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0DEC0DE0000000000000003 /* Release.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;

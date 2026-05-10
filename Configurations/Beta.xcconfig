@@ -1,0 +1,12 @@
+// Spotter Beta build configuration.
+// Do not put real third-party secrets in this file.
+
+SPOTTER_ENVIRONMENT = beta
+SPOTTER_BACKEND_MODE = local
+
+// Until there is a dedicated staging Firebase project, beta builds stay on the
+// development client config. Switch this to GoogleService-Info-Prod.plist only
+// when the Firebase phase explicitly promotes beta traffic to production.
+GOOGLE_SERVICE_INFO_PLIST = GoogleService-Info-Dev.plist
+
+ELEVENLABS_API_KEY =

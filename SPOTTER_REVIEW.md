@@ -91,10 +91,10 @@ This is the single most user-visible bug in the app. Everything else can wait.
 
 `Services/ElevenLabsService.swift`:
 ```swift
-private let apiKey = "sk_78ebb615180b759740ad51b08e8a950b3b9dfee9e0e90935"
+private let apiKey = "REDACTED_SECRET_EXAMPLE"
 ```
 
-The comment in the same file says "never ship in source." This file is in source. The key is also live and has been since the file was committed — anyone who has cloned the repo or downloaded a build can extract it from the binary.
+The comment in the same file says "never ship in source." This file is in source. The original value should be treated as exposed if it ever reached a clone or build, because client binaries and repository history are extractable.
 
 Action items:
 

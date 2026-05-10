@@ -7,3 +7,17 @@ Pods/
 
 # MediaPipe model bundles (large binary files, download via script)
 VirtualTrainer/Models/*.task
+
+# Local-only secret/config overrides
+Configurations/LocalSecrets.xcconfig
+*.local.xcconfig
+.env
+.env.*
+!.env.example
+
+# Backend-only credentials should never be committed to the iOS repo
+*ServiceAccount*.json
+*service-account*.json
+*.p8
+*.pem
+*.key

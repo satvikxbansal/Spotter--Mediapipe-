@@ -43,6 +43,7 @@ Spotter can currently:
 - Preserve trophy unlocks as a canonical event log instead of only a recalculated progress snapshot.
 - Keep insight delivery, cooldown, and helpful/not-helpful records ready for cross-device merge.
 - Document the planned Firestore shape and sync conflict rules before adding Firebase.
+- Document the secrets policy, add environment-scoped xcconfig placeholders, and add a secret-scan config before accepting Firebase client files.
 - Keep a no-network LLM rewrite seam behind a default-off feature flag for future coach-copy experiments.
 - Keep raw camera frames, raw video, raw face images, and raw pose streams out of persistent storage.
 
@@ -617,6 +618,7 @@ What has been prepared:
 - PII registry: the app now has a simple local registry that names profile fields and health-adjacent sensitivity fields in user-readable language, including limitations, age, height, weight, timezone, reminder preference, account ID, and derived effort summaries.
 - Conflict policy: `Documentation/SyncConflictResolution.md` defines how each major record should merge when local and remote copies disagree, and when the app should mark a record as conflicted instead of guessing.
 - Firestore shape: `Documentation/FirestoreShape.md` measures a synthetic worst-case workout and chooses a compact workout document plus per-set documents. This keeps history queries light while preserving detailed rep and cue evidence safely under Firestore document limits.
+- Secrets and environment config: `Documentation/SECRETS.md` explains how Firebase client config differs from private keys, why service-role credentials do not belong in the iOS repo, and how Debug/Beta/Release builds map to environment-scoped config. `.gitleaks.toml` gives the repo a repeatable secret-scan baseline. `Configurations/Debug.xcconfig` and `Configurations/Release.xcconfig` are wired at the project level without touching the CocoaPods target configs; `Configurations/Beta.xcconfig` is ready for a future Beta build configuration.
 - Privacy boundary: the future backend shape still allows only derived training evidence. Raw video, camera frames, face images, raw pose streams, raw biometric face data, raw pose timelines, and secrets stay out of the upload path.
 
 What this means:
@@ -631,7 +633,7 @@ Still remaining before a backend beta:
 - Repository protocols and local repository implementations.
 - Firebase/Auth wiring behind a feature flag.
 - Backend-mode account deletion and backend-mode data export wiring after Firebase/Auth exists.
-- Firestore security rules, App Check, environment config, and secret scanning.
+- Firestore security rules, App Check, and Firebase client plist target membership/copy behavior when the Firebase SDK is actually added.
 - Repository-level pagination and listener backpressure for large remote histories.
 - Backend-mode QA for account switching, tombstones, conflicts, retries, and missing config.
 
@@ -922,6 +924,12 @@ Documentation/SyncConflictResolution.md
 
 Documentation/FirestoreShape.md
   Measured Firestore document-shape decision for workout summaries and set evidence.
+
+Documentation/SECRETS.md
+  Secrets policy, Firebase client config mapping, local developer setup, and secret-scan workflow.
+
+Configurations/
+  Debug, Beta, and Release xcconfig placeholders for environment-scoped client config.
 ```
 
 ## Tech Stack
@@ -937,6 +945,7 @@ Documentation/FirestoreShape.md
 - Local voice: `AVSpeechSynthesizer`
 - Optional remote TTS client: ElevenLabs service shell, configured through `ELEVENLABS_API_KEY` if used later
 - Persistence: local JSON files in app support storage, with sync-ready account ownership, tombstones, sync metadata, a local write journal, and actor-isolated JSON encode/write paths
+- Secret hygiene: `Documentation/SECRETS.md`, `.gitleaks.toml`, and environment-scoped xcconfig placeholders
 - Tests: XCTest
 
 The app uses CocoaPods for MediaPipe. Open the workspace, not just the project file.
@@ -1045,6 +1054,8 @@ The heatmap and share poster use saved workout summaries and derived daily aggre
 
 Third-party secrets must not ship in the iOS client. That includes OpenAI keys, ElevenLabs keys, Firebase private keys, Supabase service-role keys, and similar credentials. Future services that need secrets should live behind backend functions.
 
+See `Documentation/SECRETS.md` for the repo policy. In short: Firebase `GoogleService-Info` client plists are not service-role private keys, but they must still be environment-scoped. Debug maps to `GoogleService-Info-Dev.plist`, Beta currently maps to Dev until a staging/prod beta decision is made, and Release maps to `GoogleService-Info-Prod.plist`. No real API keys were added to source in this phase.
+
 ## Current Roadmap
 
 The attached product plan and the recent codebase now line up like this:
@@ -1063,7 +1074,7 @@ Done or mostly done:
 - Phase 14: deterministic local coach insight engine
 - Phase 14 hardening: impression-based insight delivery, engagement tracking, goal-aware ranking, bootstrap signals, cue normalization, recent-window trend policy, workout recaps, weekly recaps, evidence drill-downs, and the default-off LLM rewrite seam
 - Profile heatmap hardening: 12-week intensity view, day drill-ins, collapsed month snapshot, and local share poster
-- Pre-backend readiness: account ownership, sync metadata, soft-delete tombstones, workout delete, insight invalidation, idempotent write journal, actor-isolated local persistence, server-time fields, canonical trophy unlock event log, sync-ready insight records, local data export, local account/data deletion, PII registry, conflict rules, and measured Firestore shape
+- Pre-backend readiness: account ownership, sync metadata, soft-delete tombstones, workout delete, insight invalidation, idempotent write journal, actor-isolated local persistence, server-time fields, canonical trophy unlock event log, sync-ready insight records, local data export, local account/data deletion, PII registry, conflict rules, measured Firestore shape, secrets policy, environment xcconfigs, and secret-scan config
 
 Next work:
 
@@ -1097,6 +1108,7 @@ Start with:
 - Anonymous auth for internal testing
 - Firestore repositories
 - Graceful behavior when Firebase config is missing
+- Firebase client config loading that follows `Documentation/SECRETS.md` and the `Configurations/*.xcconfig` environment mapping
 - Firestore shape from `Documentation/FirestoreShape.md`: compact workout documents plus per-set evidence documents
 - Conflict behavior from `Documentation/SyncConflictResolution.md`
 
@@ -1163,6 +1175,7 @@ Use these rules when extending Spotter:
 - Keep account ownership, sync metadata, tombstones, server-time fields, and operation IDs backward compatible.
 - Update sync conflict and Firestore-shape docs when backend assumptions change.
 - Keep secrets out of source.
+- Run the secret scan before commits that touch config, docs, scripts, or service integrations.
 - Add tests when behavior changes.
 - Update this README when the product phase changes.
 

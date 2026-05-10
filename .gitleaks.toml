@@ -1,0 +1,82 @@
+title = "Spotter secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "spotter-private-key"
+description = "Private key material must not be committed."
+regex = '''-----BEGIN [A-Z ]*PRIVATE KEY-----'''
+tags = ["key", "private"]
+
+[[rules]]
+id = "spotter-firebase-service-account"
+description = "Firebase service account JSON belongs in backend infrastructure, not the iOS repo."
+regex = '''(?i)"type"\s*:\s*"service_account"|"private_key_id"\s*:|"private_key"\s*:'''
+tags = ["firebase", "service-account", "private"]
+
+[[rules]]
+id = "spotter-google-api-key"
+description = "Google/Firebase API key-shaped values require environment review."
+regex = '''AIza[0-9A-Za-z\-_]{35}'''
+tags = ["google", "firebase", "api-key"]
+
+[[rules]]
+id = "spotter-aws-access-key"
+description = "AWS access key IDs must not be committed."
+regex = '''(?:AKIA|ASIA)[0-9A-Z]{16}'''
+tags = ["aws", "api-key"]
+
+[[rules]]
+id = "spotter-openai-key"
+description = "OpenAI/LLM provider keys must live behind backend functions."
+regex = '''sk-(?:proj|svcacct)-[A-Za-z0-9_\-]{20,}|sk-[A-Za-z0-9]{32,}'''
+tags = ["openai", "llm", "api-key"]
+
+[[rules]]
+id = "spotter-elevenlabs-assignment"
+description = "ElevenLabs keys must not be committed to repo config or source."
+regex = '''(?i)(elevenlabs[_-]?api[_-]?key|xi-api-key)\s*[:=]\s*["'][A-Za-z0-9._\-]{20,}["']'''
+tags = ["elevenlabs", "api-key"]
+
+[[rules]]
+id = "spotter-github-token"
+description = "GitHub tokens must not be committed."
+regex = '''github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9_]{30,}'''
+tags = ["github", "token"]
+
+[[rules]]
+id = "spotter-slack-token"
+description = "Slack tokens must not be committed."
+regex = '''xox[baprs]-[A-Za-z0-9\-]{20,}'''
+tags = ["slack", "token"]
+
+[[rules]]
+id = "spotter-stripe-secret-key"
+description = "Stripe secret keys must not be committed."
+regex = '''sk_(?:live|test)_[A-Za-z0-9]{16,}'''
+tags = ["stripe", "api-key"]
+
+[[rules]]
+id = "spotter-jwt"
+description = "JWT-like values should not be committed unless explicitly public fixtures."
+regex = '''eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}'''
+tags = ["jwt", "token"]
+
+[[rules]]
+id = "spotter-generic-secret-assignment"
+description = "Generic secret-looking assignments must be reviewed."
+regex = '''(?i)(api[_-]?key|secret|token|authorization|bearer|client[_-]?secret)\s*[:=]\s*["'][A-Za-z0-9_./+=:\-]{24,}["']'''
+tags = ["generic", "secret"]
+
+[[rules]]
+id = "spotter-url-basic-auth"
+description = "URLs with embedded credentials must not be committed."
+regex = '''[a-zA-Z][a-zA-Z0-9+.\-]*://[^/\s:@]+:[^/\s:@]+@'''
+tags = ["url", "credential"]
+
+[[rules]]
+id = "spotter-supabase-service-role"
+description = "Supabase service-role keys belong behind backend infrastructure."
+regex = '''(?i)(supabase[_-]?)?service[_-]?role[_-]?(key|secret|token)\s*[:=]\s*["'][A-Za-z0-9._\-]{24,}["']'''
+tags = ["supabase", "service-role", "secret"]

@@ -756,7 +756,7 @@ Three deliverables:
 SCOPE
 1. Add .gitleaks.toml with rules for:
    - Generic API key patterns (32-char hex, AWS keys, Google API keys)
-   - Firebase service-account JSON (block "private_key": "-----BEGIN")
+   - Firebase service-account JSON indicators, such as private key fields and key headers
    - Apple cert / .p12 / .p8 binary blobs
    - Allowlist for the legitimate strings (e.g. iOS bundle ID, model file names).
 

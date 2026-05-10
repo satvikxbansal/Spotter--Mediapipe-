@@ -1,0 +1,8 @@
+// Spotter Release build configuration.
+// Do not put real third-party secrets in this file.
+
+SPOTTER_ENVIRONMENT = prod
+SPOTTER_BACKEND_MODE = local
+GOOGLE_SERVICE_INFO_PLIST = GoogleService-Info-Prod.plist
+
+ELEVENLABS_API_KEY =

@@ -879,3 +879,28 @@ Any new file-level export, delete, migration, or audit service must be reviewed 
 An initial attempt to run two `xcodebuild test` commands in parallel hit Xcode's shared DerivedData `build.db` lock. That was a test-run orchestration mistake, not an app failure. The affected focused tests were rerun sequentially.
 
 **Pattern Tags:** #audit #persistence #compliance #privacy #tests
+
+---
+
+### [DL-040] Audit Secret-Readiness Wiring And Historical Token Redaction
+**Date:** 2026-05-10
+**Severity:** warning
+**Category:** audit
+**File(s):** `Documentation/SECRETS.md`, `.gitleaks.toml`, `Configurations/Debug.xcconfig`, `Configurations/Beta.xcconfig`, `Configurations/Release.xcconfig`, `.gitignore`, `README.md`, `SPOTTER_REVIEW.md`, `Spotter_Pre_Backend_Readiness.md`, `VirtualTrainer.xcodeproj/project.pbxproj`
+
+**Error:**
+The first secret-readiness pass had two audit misses while adding documentation and environment config. First, the initial masked scan covered common OpenAI/GitHub/Google/AWS token shapes but did not catch an underscore-style `sk_...` token-shaped value preserved in an old review document. Second, the pass briefly treated Xcode build-setting visibility as enough evidence that custom `INFOPLIST_KEY_*` values would materialize in the generated app bundle. A direct built-app `Info.plist` check showed those custom keys were absent, so relying on that path would have created a misleading configuration story.
+
+**Root Cause:**
+The work was intentionally documentation/config scoped, but the scan and verification strategy initially mixed two different guarantees: repository hygiene and runtime configuration availability. The first scan overfit to currently common provider prefixes and did not include Stripe-style or ElevenLabs-looking underscore key shapes. The Xcode verification checked `xcodebuild -showBuildSettings` before checking the final generated `Info.plist`, even though this project generates its Info.plist and also has target-level CocoaPods base configs.
+
+**Why It Was Missed In The First Pass:**
+Context compaction happened during the broader implementation, which made it easier to focus on satisfying the requested file additions and README updates rather than revalidating every assumption from the built artifact outward. The first scan also treated false positives from prose as the main noise problem, so the pattern set was too narrow around hyphenated `sk-...` provider keys and did not include `sk_...` examples. For Xcode config, seeing `SPOTTER_ENVIRONMENT` and `GOOGLE_SERVICE_INFO_PLIST` in effective build settings looked like successful wiring, but that did not prove anything about `Bundle.main` visibility or Firebase plist copy behavior.
+
+**Fix Applied:**
+Redacted the historical token-shaped example in `SPOTTER_REVIEW.md` without printing the value again, and softened a service-account example in `Spotter_Pre_Backend_Readiness.md` so it no longer resembles private-key material. Added `.gitleaks.toml` rules for provider tokens, service-account JSON, private keys, URL credentials, generic assignments, and `sk_...` secret-key shapes. Kept Debug and Release xcconfigs wired at the project level so the app target inherits environment build settings while preserving CocoaPods target xcconfigs and MediaPipe linker behavior. Removed the misleading generated-Info.plist mapping attempt and documented that Firebase phase work must add an explicit plist target-membership/copy/load step. Verified Debug resolves to dev/`GoogleService-Info-Dev.plist`, Release resolves to prod/`GoogleService-Info-Prod.plist`, `ElevenLabsService` remains a `Bundle.main` lookup only, and Debug tests plus a Release simulator build pass.
+
+**Prevention Rule:**
+Secret-readiness work must verify both layers separately: scan the full repository with broad provider and generic patterns, and verify runtime configuration by inspecting the built product when a `Bundle.main` or plist behavior is claimed. Build-setting presence alone is not proof of bundle availability. Historical audit docs should be included in secret scans because old examples can still leak real-looking values even after source code has been corrected.
+
+**Pattern Tags:** #audit #secrets #xcconfig #firebase-readiness #docs #tests
