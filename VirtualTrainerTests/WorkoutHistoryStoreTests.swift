@@ -47,6 +47,33 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertEqual(fetched.topCue?.cueMessage, "Keep your core braced")
     }
 
+    func testRapidConcurrentSummaryWritesKeepBothSummaries() async throws {
+        let url = temporaryHistoryURL()
+        let store = WorkoutHistoryStore(fileURL: url)
+        let first = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001071") ?? UUID(),
+            title: "Rapid First",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_100)
+        )
+        let second = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001072") ?? UUID(),
+            title: "Rapid Second",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_200)
+        )
+
+        async let firstSaved = store.addSummary(first)
+        async let secondSaved = store.addSummary(second)
+
+        assertTrue(await firstSaved)
+        assertTrue(await secondSaved)
+        XCTAssertNotNil(store.fetchSummary(id: first.id))
+        XCTAssertNotNil(store.fetchSummary(id: second.id))
+
+        let reloaded = WorkoutHistoryStore(fileURL: url)
+        XCTAssertNotNil(reloaded.fetchSummary(id: first.id))
+        XCTAssertNotNil(reloaded.fetchSummary(id: second.id))
+    }
+
     func testFetchRecentHistorySortsNewestFirst() async throws {
         let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL())
         let older = makeStoredSummary(

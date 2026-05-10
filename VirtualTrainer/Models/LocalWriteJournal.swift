@@ -24,6 +24,9 @@ actor LocalWriteJournal {
     private let decoder = JSONDecoder()
     private let persistenceActor: PersistenceActor
     private var entries: [LocalWriteJournalEntry] = []
+    private var persistedEntries: [LocalWriteJournalEntry] = []
+    private var hasLoaded = false
+    private var persistenceGeneration = 0
 
     private(set) var persistenceError: String?
 
@@ -39,7 +42,7 @@ actor LocalWriteJournal {
     }
 
     func contains(operationId: UUID) async -> Bool {
-        await load()
+        await loadIfNeeded()
         return entries.contains { $0.operationId == operationId }
     }
 
@@ -49,10 +52,9 @@ actor LocalWriteJournal {
         entityKind: WriteEntityKind,
         createdAt: Date = Date()
     ) async -> Bool {
-        await load()
+        await loadIfNeeded()
         guard !entries.contains(where: { $0.operationId == operationId }) else { return true }
 
-        let previousEntries = entries
         entries.append(
             LocalWriteJournalEntry(
                 operationId: operationId,
@@ -61,32 +63,25 @@ actor LocalWriteJournal {
             )
         )
         entries = bounded(entries)
+        let generation = nextPersistenceGeneration()
 
-        guard await persist() else {
-            entries = previousEntries
-            return false
-        }
-        return true
+        return await persist(generation: generation)
     }
 
     @discardableResult
     func vacuum(olderThan cutoff: Date) async -> Int {
-        await load()
-        let previousEntries = entries
+        await loadIfNeeded()
         let retainedEntries = bounded(entries.filter { $0.createdAt >= cutoff })
         let removedCount = entries.count - retainedEntries.count
         guard removedCount > 0 else { return 0 }
 
         entries = retainedEntries
-        guard await persist() else {
-            entries = previousEntries
-            return 0
-        }
-        return removedCount
+        let generation = nextPersistenceGeneration()
+        return await persist(generation: generation) ? removedCount : 0
     }
 
     func snapshot() async -> [LocalWriteJournalEntry] {
-        await load()
+        await loadIfNeeded()
         return entries
     }
 
@@ -104,9 +99,13 @@ actor LocalWriteJournal {
             .appendingPathComponent("LocalWriteJournal.json")
     }
 
-    private func load() async {
+    private func loadIfNeeded() async {
+        guard !hasLoaded else { return }
+        hasLoaded = true
+
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             entries = []
+            persistedEntries = []
             persistenceError = nil
             return
         }
@@ -118,25 +117,39 @@ actor LocalWriteJournal {
             } else {
                 entries = bounded(try decoder.decode([LocalWriteJournalEntry].self, from: data))
             }
+            persistedEntries = entries
             persistenceError = nil
         } catch {
             entries = []
+            persistedEntries = []
             persistenceError = "Could not load local write journal: \(error.localizedDescription)"
         }
     }
 
+    private func nextPersistenceGeneration() -> Int {
+        persistenceGeneration += 1
+        return persistenceGeneration
+    }
+
     @discardableResult
-    private func persist() async -> Bool {
+    private func persist(generation: Int) async -> Bool {
         do {
-            let snapshot = LocalWriteJournalSnapshot(entries: entries)
+            let entriesToPersist = entries
+            let snapshot = LocalWriteJournalSnapshot(entries: entriesToPersist)
             let data = try await persistenceActor.encode(
                 snapshot,
                 outputFormatting: [.prettyPrinted, .sortedKeys]
             )
-            _ = try await persistenceActor.writeLatest(data, to: fileURL, options: [.atomic])
+            let outcome = try await persistenceActor.writeLatest(data, to: fileURL, options: [.atomic])
+            if outcome == .written {
+                persistedEntries = entriesToPersist
+            }
             persistenceError = nil
             return true
         } catch {
+            if generation == persistenceGeneration {
+                entries = persistedEntries
+            }
             persistenceError = "Could not save local write journal: \(error.localizedDescription)"
             return false
         }

@@ -12,6 +12,8 @@ final class CalibrationStore: ObservableObject {
     private let persistenceActor: PersistenceActor
     private var currentAccountId: String?
     private var storedRecord: CalibrationRecord?
+    private var persistedStoredRecord: CalibrationRecord?
+    private var persistenceGeneration = 0
 
     var status: CalibrationStatus {
         guard record?.isDeleted != true else { return .notStarted }
@@ -151,6 +153,7 @@ final class CalibrationStore: ObservableObject {
             }
             record = nil
             storedRecord = nil
+            persistedStoredRecord = nil
             persistenceError = nil
         } catch {
             persistenceError = "Could not reset calibration: \(error.localizedDescription)"
@@ -180,6 +183,7 @@ final class CalibrationStore: ObservableObject {
     private func loadRecord() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             storedRecord = nil
+            persistedStoredRecord = nil
             record = nil
             persistenceError = nil
             return
@@ -188,10 +192,12 @@ final class CalibrationStore: ObservableObject {
         do {
             let data = try Data(contentsOf: fileURL)
             storedRecord = try decoder.decode(CalibrationRecord.self, from: data)
+            persistedStoredRecord = storedRecord
             applyStoredRecord()
             persistenceError = nil
         } catch {
             storedRecord = nil
+            persistedStoredRecord = nil
             record = nil
             persistenceError = "Could not load calibration: \(error.localizedDescription)"
         }
@@ -204,7 +210,6 @@ final class CalibrationStore: ObservableObject {
         operationId: UUID? = nil
     ) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         let accountStampedRecord = stampWithCurrentAccount
             ? updatedRecord.withAccountId(
@@ -213,7 +218,18 @@ final class CalibrationStore: ObservableObject {
                 now: updatedRecord.completedAt
             )
             : updatedRecord
-        guard await persist(accountStampedRecord) != nil else { return false }
+        let previousStoredRecord = storedRecord
+        let previousVisibleRecord = record
+        let generation = applyLocalMutation(accountStampedRecord)
+        if await writeJournal.contains(operationId: writeOperationId) {
+            rollbackLocalMutationIfNeeded(
+                generation: generation,
+                storedRecord: previousStoredRecord,
+                visibleRecord: previousVisibleRecord
+            )
+            return true
+        }
+        guard await persist(accountStampedRecord, generation: generation) != nil else { return false }
         await recordWriteOperation(writeOperationId, createdAt: accountStampedRecord.completedAt)
         return true
     }
@@ -227,7 +243,7 @@ final class CalibrationStore: ObservableObject {
     }
 
     @discardableResult
-    private func persist(_ record: CalibrationRecord) async -> PersistenceWriteOutcome? {
+    private func persist(_ record: CalibrationRecord, generation: Int) async -> PersistenceWriteOutcome? {
         do {
             let data = try await persistenceActor.encode(
                 record,
@@ -235,15 +251,38 @@ final class CalibrationStore: ObservableObject {
             )
             let outcome = try await persistenceActor.writeLatest(data, to: fileURL, options: [.atomic])
             if outcome == .written {
-                storedRecord = record
-                applyStoredRecord()
+                persistedStoredRecord = record
             }
             persistenceError = nil
             return outcome
         } catch {
+            rollbackLatestMutationIfNeeded(generation: generation)
             persistenceError = "Could not save calibration: \(error.localizedDescription)"
             return nil
         }
+    }
+
+    private func applyLocalMutation(_ record: CalibrationRecord) -> Int {
+        persistenceGeneration += 1
+        storedRecord = record
+        applyStoredRecord()
+        return persistenceGeneration
+    }
+
+    private func rollbackLatestMutationIfNeeded(generation: Int) {
+        guard generation == persistenceGeneration else { return }
+        storedRecord = persistedStoredRecord
+        applyStoredRecord()
+    }
+
+    private func rollbackLocalMutationIfNeeded(
+        generation: Int,
+        storedRecord previousStoredRecord: CalibrationRecord?,
+        visibleRecord previousVisibleRecord: CalibrationRecord?
+    ) {
+        guard generation == persistenceGeneration else { return }
+        storedRecord = previousStoredRecord
+        record = previousVisibleRecord
     }
 
     private func applyStoredRecord() {

@@ -14,6 +14,8 @@ final class ThemeStore: ObservableObject {
     private let persistenceActor: PersistenceActor
     private var currentAccountId: String?
     private var storedEnvelope: ThemeEnvelope?
+    private var persistedEnvelope: ThemeEnvelope?
+    private var persistenceGeneration = 0
 
     init(
         fileURL: URL? = nil,
@@ -48,7 +50,6 @@ final class ThemeStore: ObservableObject {
     @discardableResult
     func updateSelectedTheme(_ theme: SpotterThemeOption, operationId: UUID? = nil) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         let shouldPersist = selectedTheme != theme ||
             persistenceError != nil ||
@@ -68,7 +69,18 @@ final class ThemeStore: ObservableObject {
                 now: writeCreatedAt
             )
         )
-        guard await persist(nextEnvelope) != nil else { return false }
+        let previousEnvelope = storedEnvelope
+        let previousTheme = selectedTheme
+        let generation = applyLocalMutation(nextEnvelope)
+        if await writeJournal.contains(operationId: writeOperationId) {
+            rollbackLocalMutationIfNeeded(
+                generation: generation,
+                envelope: previousEnvelope,
+                selectedTheme: previousTheme
+            )
+            return true
+        }
+        guard await persist(nextEnvelope, generation: generation) != nil else { return false }
         await recordWriteOperation(writeOperationId, createdAt: writeCreatedAt)
         return true
     }
@@ -92,7 +104,6 @@ final class ThemeStore: ObservableObject {
         guard let storedEnvelope, storedEnvelope.accountId == nil else { return true }
 
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         let writeCreatedAt = Date()
         let nextEnvelope = ThemeEnvelope(
@@ -104,7 +115,18 @@ final class ThemeStore: ObservableObject {
                 now: writeCreatedAt
             )
         )
-        guard await persist(nextEnvelope) != nil else { return false }
+        let previousEnvelope = self.storedEnvelope
+        let previousTheme = selectedTheme
+        let generation = applyLocalMutation(nextEnvelope)
+        if await writeJournal.contains(operationId: writeOperationId) {
+            rollbackLocalMutationIfNeeded(
+                generation: generation,
+                envelope: previousEnvelope,
+                selectedTheme: previousTheme
+            )
+            return true
+        }
+        guard await persist(nextEnvelope, generation: generation) != nil else { return false }
         await recordWriteOperation(writeOperationId, createdAt: writeCreatedAt)
         return true
     }
@@ -120,6 +142,7 @@ final class ThemeStore: ObservableObject {
     private func loadTheme() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             storedEnvelope = nil
+            persistedEnvelope = nil
             selectedTheme = defaultTheme
             persistenceError = nil
             return
@@ -134,10 +157,12 @@ final class ThemeStore: ObservableObject {
                     selectedTheme: try decoder.decode(SpotterThemeOption.self, from: data)
                 )
             }
+            persistedEnvelope = storedEnvelope
             applyStoredEnvelope()
             persistenceError = nil
         } catch {
             storedEnvelope = nil
+            persistedEnvelope = nil
             selectedTheme = defaultTheme
             persistenceError = "Could not load theme: \(error.localizedDescription)"
         }
@@ -152,7 +177,7 @@ final class ThemeStore: ObservableObject {
     }
 
     @discardableResult
-    private func persist(_ envelope: ThemeEnvelope) async -> PersistenceWriteOutcome? {
+    private func persist(_ envelope: ThemeEnvelope, generation: Int) async -> PersistenceWriteOutcome? {
         do {
             let data = try await persistenceActor.encode(
                 envelope,
@@ -160,15 +185,38 @@ final class ThemeStore: ObservableObject {
             )
             let outcome = try await persistenceActor.writeLatest(data, to: fileURL, options: [.atomic])
             if outcome == .written {
-                storedEnvelope = envelope
-                applyStoredEnvelope()
+                persistedEnvelope = envelope
             }
             persistenceError = nil
             return outcome
         } catch {
+            rollbackLatestMutationIfNeeded(generation: generation)
             persistenceError = "Could not save theme: \(error.localizedDescription)"
             return nil
         }
+    }
+
+    private func applyLocalMutation(_ envelope: ThemeEnvelope) -> Int {
+        persistenceGeneration += 1
+        storedEnvelope = envelope
+        applyStoredEnvelope()
+        return persistenceGeneration
+    }
+
+    private func rollbackLatestMutationIfNeeded(generation: Int) {
+        guard generation == persistenceGeneration else { return }
+        storedEnvelope = persistedEnvelope
+        applyStoredEnvelope()
+    }
+
+    private func rollbackLocalMutationIfNeeded(
+        generation: Int,
+        envelope previousEnvelope: ThemeEnvelope?,
+        selectedTheme previousTheme: SpotterThemeOption
+    ) {
+        guard generation == persistenceGeneration else { return }
+        storedEnvelope = previousEnvelope
+        selectedTheme = previousTheme
     }
 
     private func applyStoredEnvelope() {

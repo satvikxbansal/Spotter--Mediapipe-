@@ -816,9 +816,36 @@ Local JSON encode/write work still lived on the same main-actor store paths that
 The stores had grown backend-ready metadata, tombstones, operation IDs, trophy events, and insight delivery records while still writing each file directly from store methods. One rollback path in `OnboardingStore.save(...)` also returned success after an async persist failure, which hid a write failure from callers.
 
 **Fix Applied:**
-Added `PersistenceActor` for file reads, atomic writes, removes, directory creation, JSON encoding, and coalesced same-file writes with last-write-wins behavior. Refactored onboarding, workout history, trophies, insights, calibration, theme, and the local write journal to await actor persistence before publishing successful mutations where rollback matters. Kept camera analysis, planned workouts, deterministic plan generation, stats, trends, trophies, recaps, and local AI insights intact. Added persistence actor tests and migrated store tests to await async save/selection paths.
+Added `PersistenceActor` for file reads, atomic writes, removes, directory creation, JSON encoding, and coalesced same-file writes with last-write-wins behavior. Refactored onboarding, workout history, trophies, insights, calibration, theme, and the local write journal to route encode/write work through actor persistence while preserving main-actor published state and rollback behavior. Kept camera analysis, planned workouts, deterministic plan generation, stats, trends, trophies, recaps, and local AI insights intact. Added persistence actor tests and migrated store tests to await async save/selection paths.
 
 **Prevention Rule:**
 Backend-scale local stores should keep `@Published` state main-actor isolated, but encode/write/remove work should flow through the persistence actor. Failed writes must return failure and preserve the previous published state; rapid repeated writes should coalesce instead of flooding the file system.
 
 **Pattern Tags:** #persistence #concurrency #sync-prep #mainactor #tests
+
+---
+
+### [DL-038] Preserve Store Mutation Composition During Coalesced Async Writes
+**Date:** 2026-05-10
+**Severity:** warning
+**Category:** persistence
+**File(s):** `VirtualTrainer/Models/OnboardingStore.swift`, `VirtualTrainer/Models/WorkoutHistoryStore.swift`, `VirtualTrainer/Models/TrophyModels.swift`, `VirtualTrainer/Models/InsightStore.swift`, `VirtualTrainer/Models/CalibrationStore.swift`, `VirtualTrainer/Models/ThemeStore.swift`, `VirtualTrainer/Models/LocalWriteJournal.swift`
+
+**Error:**
+The first async persistence pass moved some stores to apply state only after actor writes completed. In bursty paths, two quick mutations could both build from the same pre-mutation state before the first write resumed, so a coalesced final write could drop one local change.
+
+**Root Cause:**
+`await writeJournal.contains(...)` introduced a suspension point before the local mutation was visible in memory. The old synchronous stores applied local state before writing and rolled back on failure; the async refactor needed to preserve that composition behavior while still moving encode/write work off the main actor.
+
+**Why It Was Missed In The First Pass:**
+The first pass validated compile safety, actor-backed file writes, atomic behavior, rollback paths, and existing sequential store tests, but it did not add enough concurrent same-store mutation coverage. Most existing tests used `await` between calls, which means each mutation finished before the next one started. That hid the real app pattern where two UI or future repository-triggered writes can be launched back-to-back before the first async write resumes.
+
+The review also focused on whether JSON encode/write work left the `MainActor`, but the deeper semantic requirement was that store mutations must still compose exactly like the old synchronous code. Context compaction made that easier to miss because the old ordering rule was implicit in the pre-refactor stores rather than written as a test: mutate local state first, then persist, then rollback if persistence fails.
+
+**Fix Applied:**
+Restored optimistic local mutation before persistence for profile, history, theme, calibration, trophy, and insight write paths, with duplicate-operation rollback and persisted-baseline rollback on write failure where needed. Updated `LocalWriteJournal` to load once per actor instance and keep in-memory pending entries so concurrent records compose before the final coalesced write. Added rapid-write regression tests for workout history, onboarding profile updates, and the local write journal.
+
+**Prevention Rule:**
+When adding `await` to a previously synchronous store mutation, make sure the in-memory mutation either happens before the first suspension point or is protected by an explicit serial mutation model. Coalescing file writes is safe only if later writes are built from the latest local state. Every async store refactor for append, merge, or update behavior should include a rapid concurrent mutation regression test, not only sequential awaited tests.
+
+**Pattern Tags:** #persistence #concurrency #mainactor #rollback #tests

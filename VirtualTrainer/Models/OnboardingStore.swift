@@ -22,6 +22,8 @@ final class OnboardingStore: ObservableObject {
     private let persistenceActor: PersistenceActor
     private var currentAccountId: String?
     private var storedProfile: UserProfile?
+    private var persistedStoredProfile: UserProfile?
+    private var persistenceGeneration = 0
 
     var hasCompletedOnboarding: Bool {
         profile != nil
@@ -235,6 +237,7 @@ final class OnboardingStore: ObservableObject {
             }
             profile = nil
             storedProfile = nil
+            persistedStoredProfile = nil
             draft = OnboardingDraft()
             persistenceError = nil
         } catch {
@@ -245,7 +248,6 @@ final class OnboardingStore: ObservableObject {
     @discardableResult
     func claimLocalDataForAccount(id accountId: String, operationId: UUID? = nil) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
         guard let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId) else {
             persistenceError = "Account id is required before local profile data can be claimed."
             return false
@@ -261,7 +263,18 @@ final class OnboardingStore: ObservableObject {
             operationId: writeOperationId,
             now: now
         )
-        guard await persist(storedProfile) == .written else { return false }
+        let previousStoredProfile = self.storedProfile
+        let previousVisibleProfile = self.profile
+        let generation = applyLocalMutation(storedProfile)
+        if await writeJournal.contains(operationId: writeOperationId) {
+            rollbackLocalMutationIfNeeded(
+                generation: generation,
+                storedProfile: previousStoredProfile,
+                visibleProfile: previousVisibleProfile
+            )
+            return true
+        }
+        guard await persist(storedProfile, generation: generation) != nil else { return false }
         await recordWriteOperation(writeOperationId, createdAt: now)
         return true
     }
@@ -361,16 +374,19 @@ final class OnboardingStore: ObservableObject {
     private func loadProfile() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             storedProfile = nil
+            persistedStoredProfile = nil
             profile = nil
             return
         }
         do {
             let data = try Data(contentsOf: fileURL)
             storedProfile = try decoder.decode(UserProfile.self, from: data)
+            persistedStoredProfile = storedProfile
             applyStoredProfile()
         } catch {
             persistenceError = "Could not load profile: \(error.localizedDescription)"
             storedProfile = nil
+            persistedStoredProfile = nil
             profile = nil
         }
     }
@@ -378,7 +394,6 @@ final class OnboardingStore: ObservableObject {
     @discardableResult
     private func save(_ profile: UserProfile, operationId: UUID? = nil) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         var accountStampedProfile = profile
         if let currentAccountId {
@@ -389,10 +404,19 @@ final class OnboardingStore: ObservableObject {
             operationId: writeOperationId,
             now: accountStampedProfile.updatedAt
         )
-        guard let outcome = await persist(accountStampedProfile) else { return false }
-        if outcome == .written {
-            await recordWriteOperation(writeOperationId, createdAt: accountStampedProfile.updatedAt)
+        let previousStoredProfile = storedProfile
+        let previousVisibleProfile = self.profile
+        let generation = applyLocalMutation(accountStampedProfile)
+        if await writeJournal.contains(operationId: writeOperationId) {
+            rollbackLocalMutationIfNeeded(
+                generation: generation,
+                storedProfile: previousStoredProfile,
+                visibleProfile: previousVisibleProfile
+            )
+            return true
         }
+        guard await persist(accountStampedProfile, generation: generation) != nil else { return false }
+        await recordWriteOperation(writeOperationId, createdAt: accountStampedProfile.updatedAt)
         return true
     }
 
@@ -405,7 +429,7 @@ final class OnboardingStore: ObservableObject {
     }
 
     @discardableResult
-    private func persist(_ profile: UserProfile) async -> PersistenceWriteOutcome? {
+    private func persist(_ profile: UserProfile, generation: Int) async -> PersistenceWriteOutcome? {
         do {
             let data = try await persistenceActor.encode(
                 profile,
@@ -413,15 +437,38 @@ final class OnboardingStore: ObservableObject {
             )
             let outcome = try await persistenceActor.writeLatest(data, to: fileURL, options: [.atomic])
             if outcome == .written {
-                storedProfile = profile
-                applyStoredProfile()
+                persistedStoredProfile = profile
             }
             persistenceError = nil
             return outcome
         } catch {
+            rollbackLatestMutationIfNeeded(generation: generation)
             persistenceError = "Could not save profile: \(error.localizedDescription)"
             return nil
         }
+    }
+
+    private func applyLocalMutation(_ profile: UserProfile) -> Int {
+        persistenceGeneration += 1
+        storedProfile = profile
+        applyStoredProfile()
+        return persistenceGeneration
+    }
+
+    private func rollbackLatestMutationIfNeeded(generation: Int) {
+        guard generation == persistenceGeneration else { return }
+        storedProfile = persistedStoredProfile
+        applyStoredProfile()
+    }
+
+    private func rollbackLocalMutationIfNeeded(
+        generation: Int,
+        storedProfile previousStoredProfile: UserProfile?,
+        visibleProfile previousVisibleProfile: UserProfile?
+    ) {
+        guard generation == persistenceGeneration else { return }
+        storedProfile = previousStoredProfile
+        profile = previousVisibleProfile
     }
 
     private func applyStoredProfile() {

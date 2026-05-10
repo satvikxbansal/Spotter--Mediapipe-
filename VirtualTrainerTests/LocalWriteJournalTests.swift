@@ -25,6 +25,33 @@ final class LocalWriteJournalTests: XCTestCase {
         assertEqual(await reloaded.snapshot().first?.createdAt, createdAt)
     }
 
+    func testRapidConcurrentRecordsKeepAllEntries() async throws {
+        let url = temporaryJournalURL()
+        let journal = LocalWriteJournal(fileURL: url)
+        let firstOperationId = UUID(uuidString: "00000000-0000-0000-0000-00000000C011") ?? UUID()
+        let secondOperationId = UUID(uuidString: "00000000-0000-0000-0000-00000000C012") ?? UUID()
+
+        async let firstRecorded = journal.record(
+            operationId: firstOperationId,
+            entityKind: .workout,
+            createdAt: Date(timeIntervalSince1970: 1_778_100_000)
+        )
+        async let secondRecorded = journal.record(
+            operationId: secondOperationId,
+            entityKind: .profile,
+            createdAt: Date(timeIntervalSince1970: 1_778_100_001)
+        )
+
+        assertTrue(await firstRecorded)
+        assertTrue(await secondRecorded)
+        assertTrue(await journal.contains(operationId: firstOperationId))
+        assertTrue(await journal.contains(operationId: secondOperationId))
+
+        let reloaded = LocalWriteJournal(fileURL: url)
+        assertTrue(await reloaded.contains(operationId: firstOperationId))
+        assertTrue(await reloaded.contains(operationId: secondOperationId))
+    }
+
     func testJournalVacuumRemovesOlderEntries() async throws {
         let url = temporaryJournalURL()
         let oldOperationId = UUID(uuidString: "00000000-0000-0000-0000-00000000C002") ?? UUID()

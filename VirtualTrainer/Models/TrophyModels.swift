@@ -1616,6 +1616,12 @@ final class TrophyStore: ObservableObject {
     private var allProgress: [TrophyProgress] = []
     private var eventLog: [TrophyUnlockEvent] = []
 
+    private enum TrophyApplyOutcome {
+        case applied
+        case duplicate
+        case failed
+    }
+
     init(
         fileURL: URL? = nil,
         calendar: Calendar = .current,
@@ -1673,7 +1679,6 @@ final class TrophyStore: ObservableObject {
         operationId: UUID? = nil
     ) async -> [TrophyUnlockEvent] {
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return [] }
 
         let result = engine.update(
             after: summary,
@@ -1683,7 +1688,7 @@ final class TrophyStore: ObservableObject {
             canonicalUnlockEvents: visibleUnlockEvents(),
             now: now
         )
-        return await apply(result, operationId: writeOperationId, createdAt: now)
+        return await apply(result, operationId: writeOperationId, createdAt: now) == .applied
             ? latestUnlockEvents
             : []
     }
@@ -1696,7 +1701,6 @@ final class TrophyStore: ObservableObject {
         operationId: UUID? = nil
     ) async -> [TrophyUnlockEvent] {
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return [] }
 
         let result = engine.updateAll(
             history: history,
@@ -1705,7 +1709,7 @@ final class TrophyStore: ObservableObject {
             canonicalUnlockEvents: visibleUnlockEvents(),
             now: now
         )
-        return await apply(result, operationId: writeOperationId, createdAt: now)
+        return await apply(result, operationId: writeOperationId, createdAt: now) == .applied
             ? latestUnlockEvents
             : []
     }
@@ -1718,7 +1722,6 @@ final class TrophyStore: ObservableObject {
         operationId: UUID? = nil
     ) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         let previousSnapshot = snapshot
         let previousUnlockEvents = latestUnlockEvents
@@ -1768,6 +1771,14 @@ final class TrophyStore: ObservableObject {
         mergeCurrentProgressIntoAll(stampedProgress)
         latestUnlockEvents = newEvents
 
+        if await writeJournal.contains(operationId: writeOperationId) {
+            allProgress = previousAllProgress
+            eventLog = previousEventLog
+            snapshot = previousSnapshot
+            latestUnlockEvents = previousUnlockEvents
+            return true
+        }
+
         guard await persist() != nil else {
             allProgress = previousAllProgress
             eventLog = previousEventLog
@@ -1786,7 +1797,6 @@ final class TrophyStore: ObservableObject {
         operationId: UUID? = nil
     ) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         let activeEvents = visibleUnlockEvents()
             .filter { $0.trophyId == trophyId && !$0.isRetracted }
@@ -1807,6 +1817,13 @@ final class TrophyStore: ObservableObject {
         )
         latestUnlockEvents.removeAll { $0.trophyId == trophyId }
         applyVisibleSnapshot(generatedAt: retractedAt, events: latestUnlockEvents)
+
+        if await writeJournal.contains(operationId: writeOperationId) {
+            eventLog = previousEventLog
+            snapshot = previousSnapshot
+            latestUnlockEvents = previousUnlockEvents
+            return true
+        }
 
         guard await persist() != nil else {
             eventLog = previousEventLog
@@ -1845,7 +1862,6 @@ final class TrophyStore: ObservableObject {
         else { return true }
 
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         let writeCreatedAt = Date()
         let previousAllProgress = allProgress
@@ -1874,6 +1890,13 @@ final class TrophyStore: ObservableObject {
         )
         applyVisibleSnapshot()
 
+        if await writeJournal.contains(operationId: writeOperationId) {
+            allProgress = previousAllProgress
+            eventLog = previousEventLog
+            applyVisibleSnapshot()
+            return true
+        }
+
         guard await persist() != nil else {
             allProgress = previousAllProgress
             eventLog = previousEventLog
@@ -1889,7 +1912,7 @@ final class TrophyStore: ObservableObject {
         _ result: TrophyEngineResult,
         operationId: UUID,
         createdAt: Date
-    ) async -> Bool {
+    ) async -> TrophyApplyOutcome {
         let previousSnapshot = snapshot
         let previousUnlockEvents = latestUnlockEvents
         let previousAllProgress = allProgress
@@ -1911,15 +1934,22 @@ final class TrophyStore: ObservableObject {
             newlyEarnedEvents: canonicalNewEvents
         )
         latestUnlockEvents = canonicalNewEvents
+        if await writeJournal.contains(operationId: operationId) {
+            allProgress = previousAllProgress
+            eventLog = previousEventLog
+            snapshot = previousSnapshot
+            latestUnlockEvents = previousUnlockEvents
+            return .duplicate
+        }
         guard await persist() != nil else {
             allProgress = previousAllProgress
             eventLog = previousEventLog
             snapshot = previousSnapshot
             latestUnlockEvents = previousUnlockEvents
-            return false
+            return .failed
         }
         await recordWriteOperation(operationId, createdAt: createdAt)
-        return true
+        return .applied
     }
 
     private func recordWriteOperation(_ operationId: UUID, createdAt: Date) async {

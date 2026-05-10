@@ -55,6 +55,8 @@ final class WorkoutHistoryStore: ObservableObject {
     private let persistenceActor: PersistenceActor
     private var currentAccountId: String?
     private var allSummaries: [WorkoutSessionSummary] = []
+    private var persistedAllSummaries: [WorkoutSessionSummary] = []
+    private var persistenceGeneration = 0
 
     init(
         fileURL: URL? = nil,
@@ -98,20 +100,25 @@ final class WorkoutHistoryStore: ObservableObject {
     @discardableResult
     func deleteSummary(id: UUID, deletedAt: Date = Date(), operationId: UUID? = nil) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
         guard let existingIndex = allSummaries.firstIndex(where: {
             $0.id == id && isVisible($0)
         }) else {
             return false
         }
 
+        let previousAllSummaries = allSummaries
         var updatedSummaries = allSummaries
         updatedSummaries[existingIndex] = updatedSummaries[existingIndex].markedDeleted(
             at: deletedAt,
             operationId: writeOperationId
         )
 
-        guard await persist(updatedSummaries) != nil else { return false }
+        let generation = applyLocalMutation(updatedSummaries)
+        if await writeJournal.contains(operationId: writeOperationId) {
+            rollbackLocalMutationIfNeeded(generation: generation, allSummaries: previousAllSummaries)
+            return true
+        }
+        guard await persist(generation: generation) != nil else { return false }
         await recordWriteOperation(writeOperationId, entityKind: .workout, createdAt: deletedAt)
         return true
     }
@@ -119,7 +126,6 @@ final class WorkoutHistoryStore: ObservableObject {
     @discardableResult
     func restoreSummary(id: UUID, operationId: UUID? = nil) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
         guard let existingIndex = allSummaries.firstIndex(where: {
             $0.id == id && isVisible($0)
         }) else {
@@ -127,12 +133,18 @@ final class WorkoutHistoryStore: ObservableObject {
         }
 
         let writeCreatedAt = Date()
+        let previousAllSummaries = allSummaries
         var updatedSummaries = allSummaries
         updatedSummaries[existingIndex] = updatedSummaries[existingIndex].restored(
             operationId: writeOperationId
         )
 
-        guard await persist(updatedSummaries) != nil else { return false }
+        let generation = applyLocalMutation(updatedSummaries)
+        if await writeJournal.contains(operationId: writeOperationId) {
+            rollbackLocalMutationIfNeeded(generation: generation, allSummaries: previousAllSummaries)
+            return true
+        }
+        guard await persist(generation: generation) != nil else { return false }
         await recordWriteOperation(writeOperationId, entityKind: .workout, createdAt: writeCreatedAt)
         return true
     }
@@ -146,7 +158,8 @@ final class WorkoutHistoryStore: ObservableObject {
         let purgedCount = allSummaries.count - updatedSummaries.count
         guard purgedCount > 0 else { return 0 }
 
-        guard await persist(updatedSummaries) != nil else { return 0 }
+        let generation = applyLocalMutation(updatedSummaries)
+        guard await persist(generation: generation) != nil else { return 0 }
         return purgedCount
     }
 
@@ -157,7 +170,8 @@ final class WorkoutHistoryStore: ObservableObject {
         let updatedSummaries = allSummaries.filter { !ids.contains($0.id) }
         guard updatedSummaries.count != allSummaries.count else { return true }
 
-        return await persist(updatedSummaries) != nil
+        let generation = applyLocalMutation(updatedSummaries)
+        return await persist(generation: generation) != nil
     }
 
     func fetchRecentSummaries(limit: Int = 10) -> [WorkoutSessionSummary] {
@@ -257,9 +271,9 @@ final class WorkoutHistoryStore: ObservableObject {
         guard allSummaries.contains(where: { $0.accountId == nil }) else { return true }
 
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         let writeCreatedAt = Date()
+        let previousAllSummaries = allSummaries
         let updatedSummaries = allSummaries.map { summary in
             summary.accountId == nil
                 ? summary.withAccountId(
@@ -270,7 +284,12 @@ final class WorkoutHistoryStore: ObservableObject {
                 : summary
         }
 
-        guard await persist(updatedSummaries) != nil else { return false }
+        let generation = applyLocalMutation(updatedSummaries)
+        if await writeJournal.contains(operationId: writeOperationId) {
+            rollbackLocalMutationIfNeeded(generation: generation, allSummaries: previousAllSummaries)
+            return true
+        }
+        guard await persist(generation: generation) != nil else { return false }
         await recordWriteOperation(writeOperationId, entityKind: .workout, createdAt: writeCreatedAt)
         return true
     }
@@ -279,6 +298,7 @@ final class WorkoutHistoryStore: ObservableObject {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             allSummaries = []
             summaries = []
+            persistedAllSummaries = []
             persistenceError = nil
             return
         }
@@ -286,10 +306,12 @@ final class WorkoutHistoryStore: ObservableObject {
         do {
             let data = try Data(contentsOf: fileURL)
             applyAllSummaries(try decoder.decode([WorkoutSessionSummary].self, from: data))
+            persistedAllSummaries = allSummaries
             persistenceError = nil
         } catch {
             allSummaries = []
             summaries = []
+            persistedAllSummaries = []
             persistenceError = "Could not load workout history: \(error.localizedDescription)"
         }
     }
@@ -297,9 +319,9 @@ final class WorkoutHistoryStore: ObservableObject {
     @discardableResult
     private func upsert(_ summary: WorkoutSessionSummary, operationId: UUID? = nil) async -> Bool {
         let writeOperationId = operationId ?? UUID()
-        guard !(await writeJournal.contains(operationId: writeOperationId)) else { return true }
 
         let writeCreatedAt = Date()
+        let previousAllSummaries = allSummaries
         var updatedSummaries = allSummaries
         let accountStampedSummary = summary.withAccountId(
             currentAccountId,
@@ -312,7 +334,12 @@ final class WorkoutHistoryStore: ObservableObject {
             updatedSummaries.append(accountStampedSummary)
         }
 
-        guard await persist(updatedSummaries) != nil else { return false }
+        let generation = applyLocalMutation(updatedSummaries)
+        if await writeJournal.contains(operationId: writeOperationId) {
+            rollbackLocalMutationIfNeeded(generation: generation, allSummaries: previousAllSummaries)
+            return true
+        }
+        guard await persist(generation: generation) != nil else { return false }
         await recordWriteOperation(writeOperationId, entityKind: .workout, createdAt: writeCreatedAt)
         return true
     }
@@ -330,23 +357,43 @@ final class WorkoutHistoryStore: ObservableObject {
     }
 
     @discardableResult
-    private func persist(_ summariesToPersist: [WorkoutSessionSummary]) async -> PersistenceWriteOutcome? {
+    private func persist(generation: Int) async -> PersistenceWriteOutcome? {
         do {
-            let sortedSummaries = sortedSummaries(summariesToPersist)
+            let sortedSummaries = sortedSummaries(allSummaries)
             let data = try await persistenceActor.encode(
                 sortedSummaries,
                 outputFormatting: [.prettyPrinted, .sortedKeys]
             )
             let outcome = try await persistenceActor.writeLatest(data, to: fileURL, options: [.atomic])
             if outcome == .written {
-                applyAllSummaries(sortedSummaries)
+                persistedAllSummaries = sortedSummaries
             }
             persistenceError = nil
             return outcome
         } catch {
+            rollbackLatestMutationIfNeeded(generation: generation)
             persistenceError = "Could not save workout history: \(error.localizedDescription)"
             return nil
         }
+    }
+
+    private func applyLocalMutation(_ updatedSummaries: [WorkoutSessionSummary]) -> Int {
+        persistenceGeneration += 1
+        applyAllSummaries(updatedSummaries)
+        return persistenceGeneration
+    }
+
+    private func rollbackLatestMutationIfNeeded(generation: Int) {
+        guard generation == persistenceGeneration else { return }
+        applyAllSummaries(persistedAllSummaries)
+    }
+
+    private func rollbackLocalMutationIfNeeded(
+        generation: Int,
+        allSummaries previousAllSummaries: [WorkoutSessionSummary]
+    ) {
+        guard generation == persistenceGeneration else { return }
+        applyAllSummaries(previousAllSummaries)
     }
 
     private func applyAllSummaries(_ updatedSummaries: [WorkoutSessionSummary]) {

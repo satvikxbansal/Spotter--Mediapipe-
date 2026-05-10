@@ -121,6 +121,25 @@ final class OnboardingModelTests: XCTestCase {
         XCTAssertEqual(reloadedStore.profile?.avatarStyle, .longevity)
     }
 
+    func testRapidConcurrentProfileUpdatesComposeBeforePersistence() async {
+        let url = temporaryProfileURL()
+        let store = OnboardingStore(fileURL: url)
+        store.draft = validDraft()
+        await store.completeOnboarding()
+
+        async let goalUpdated = store.updatePrimaryGoal(.longevity)
+        async let coachUpdated = store.updatePreferredCoach(.fletcher)
+
+        assertTrue(await goalUpdated)
+        assertTrue(await coachUpdated)
+        XCTAssertEqual(store.profile?.primaryGoal, .longevity)
+        XCTAssertEqual(store.profile?.preferredCoach, .fletcher)
+
+        let reloadedStore = OnboardingStore(fileURL: url)
+        XCTAssertEqual(reloadedStore.profile?.primaryGoal, .longevity)
+        XCTAssertEqual(reloadedStore.profile?.preferredCoach, .fletcher)
+    }
+
     func testChangingGoalUpdatesProfileAndNextGeneratedPlan() async {
         let store = OnboardingStore(fileURL: temporaryProfileURL())
         store.draft = validDraft()
