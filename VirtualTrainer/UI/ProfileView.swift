@@ -8,6 +8,7 @@ struct ProfileView: View {
     @EnvironmentObject private var trophyStore: TrophyStore
     @EnvironmentObject private var themeStore: ThemeStore
     @EnvironmentObject private var insightStore: InsightStore
+    @EnvironmentObject private var appDependencies: AppDependencies
 
     @State private var selectedSummary: WorkoutSessionSummary?
     @State private var isShowingAllHistory = false
@@ -242,6 +243,7 @@ struct ProfileView: View {
                 SettingsDebugSection(
                     profile: profile,
                     calibrationStatus: calibrationStore.status,
+                    backendMode: appDependencies.backendMode,
                     isSampleDataEnabled: isSampleDataEnabled,
                     debugStatusMessage: debugStatusMessage,
                     onSampleDataToggle: setSampleDataEnabledForTesting,
@@ -1581,6 +1583,7 @@ private struct AccountDeletionConfirmationSheet: View {
 private struct SettingsDebugSection: View {
     let profile: UserProfile
     let calibrationStatus: CalibrationStatus
+    let backendMode: BackendMode
     let isSampleDataEnabled: Bool
     let debugStatusMessage: String?
     let onSampleDataToggle: (Bool) -> Void
@@ -1594,6 +1597,7 @@ private struct SettingsDebugSection: View {
                 ProfileInfoRow(label: "Fitness level", value: profile.fitnessLevel.displayName)
                 ProfileInfoRow(label: "Equipment", value: profile.equipment.map(\.displayName).joined(separator: ", "))
                 ProfileInfoRow(label: "Calibration", value: calibrationStatus.displayName)
+                ProfileInfoRow(label: "Backend", value: "BackendMode.\(backendMode.rawValue)")
 
                 Toggle(
                     isOn: Binding(
@@ -2202,6 +2206,7 @@ private enum LocalUITestingSampleData {
 
 #Preview {
     let stores = ProfilePreviewData.makeStores()
+    let dependencies = AppDependencies.local()
     ProfileView()
         .environmentObject(AccountContext())
         .environmentObject(stores.onboardingStore)
@@ -2210,6 +2215,8 @@ private enum LocalUITestingSampleData {
         .environmentObject(stores.trophyStore)
         .environmentObject(stores.themeStore)
         .environmentObject(stores.insightStore)
+        .environmentObject(dependencies)
+        .environmentObject(SyncOrchestrator(dependencies: dependencies))
 }
 
 @MainActor

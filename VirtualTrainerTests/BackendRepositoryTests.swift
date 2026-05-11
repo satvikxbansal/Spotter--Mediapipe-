@@ -48,9 +48,10 @@ final class BackendRepositoryTests: XCTestCase {
         let repository = LocalProfileRepository(fileURL: urls.profile, accountId: accountId)
         let profile = makeProfile()
 
-        try await repository.saveProfile(profile, operationId: fixedUUID("1001"))
+        let savedProfile = try await repository.saveProfile(profile, operationId: fixedUUID("1001"))
         let loadedProfile = try await repository.loadProfile(accountId: accountId)
 
+        XCTAssertEqual(savedProfile.accountId, accountId)
         XCTAssertEqual(loadedProfile?.displayName, profile.displayName)
         XCTAssertEqual(loadedProfile?.accountId, accountId)
         XCTAssertEqual(loadedProfile?.selectedTheme, .hyper)
@@ -61,7 +62,7 @@ final class BackendRepositoryTests: XCTestCase {
         let repository = LocalWorkoutRepository(fileURL: urls.workouts, accountId: accountId)
         let summary = makeSummary(id: fixedUUID("2001"))
 
-        try await repository.saveWorkoutSummary(summary, operationId: fixedUUID("2002"))
+        let savedSummary = try await repository.saveWorkoutSummary(summary, operationId: fixedUUID("2002"))
 
         let loadedSummary = try await repository.loadWorkout(accountId: accountId, id: summary.id)
         let recentSummaries = try await repository.loadRecentWorkouts(
@@ -70,6 +71,7 @@ final class BackendRepositoryTests: XCTestCase {
             since: now.addingTimeInterval(-60)
         )
 
+        XCTAssertEqual(savedSummary.accountId, accountId)
         XCTAssertEqual(loadedSummary?.id, summary.id)
         XCTAssertEqual(loadedSummary?.accountId, accountId)
         XCTAssertEqual(recentSummaries.map(\.id), [summary.id])
@@ -110,7 +112,7 @@ final class BackendRepositoryTests: XCTestCase {
             celebrationStyle: .standard
         )
 
-        try await repository.saveTrophyEvent(event, operationId: fixedUUID("3001"))
+        let savedEvent = try await repository.saveTrophyEvent(event, operationId: fixedUUID("3001"))
 
         let events = try await repository.loadTrophyEvents(
             accountId: accountId,
@@ -118,6 +120,7 @@ final class BackendRepositoryTests: XCTestCase {
         )
         let progress = try await repository.loadTrophyProgress(accountId: accountId)
 
+        XCTAssertEqual(savedEvent.accountId, accountId)
         XCTAssertEqual(events.map(\.trophyId), [TrophyDefinitionCatalog.ID.spark])
         XCTAssertTrue(progress.first { $0.trophyId == TrophyDefinitionCatalog.ID.spark }?.earned ?? false)
     }
@@ -182,14 +185,17 @@ final class BackendRepositoryTests: XCTestCase {
         var engagementRecord = InsightEngagementRecord(dedupeKey: insight.dedupeKey)
         engagementRecord.record(.helpful, at: now.addingTimeInterval(10))
 
-        try await repository.saveInsights([insight], operationId: fixedUUID("4001"))
-        try await repository.saveDeliveryRecord(deliveryRecord, operationId: fixedUUID("4002"))
-        try await repository.saveEngagementRecord(engagementRecord, operationId: fixedUUID("4003"))
+        let savedInsights = try await repository.saveInsights([insight], operationId: fixedUUID("4001"))
+        let savedDeliveryRecord = try await repository.saveDeliveryRecord(deliveryRecord, operationId: fixedUUID("4002"))
+        let savedEngagementRecord = try await repository.saveEngagementRecord(engagementRecord, operationId: fixedUUID("4003"))
 
         let insights = try await repository.loadRecentInsights(accountId: accountId, limit: 5)
         let deliveryRecords = try await repository.loadDeliveryRecords(accountId: accountId)
         let engagementRecords = try await repository.loadEngagementRecords(accountId: accountId)
 
+        XCTAssertEqual(savedInsights.first?.accountId, accountId)
+        XCTAssertEqual(savedDeliveryRecord.accountId, accountId)
+        XCTAssertEqual(savedEngagementRecord.accountId, accountId)
         XCTAssertEqual(insights.map(\.dedupeKey), [insight.dedupeKey])
         XCTAssertEqual(insights.first?.accountId, accountId)
         XCTAssertEqual(deliveryRecords.first?.dedupeKey, insight.dedupeKey)
@@ -242,9 +248,10 @@ final class BackendRepositoryTests: XCTestCase {
             averageFormScore: 91
         )
 
-        try await repository.saveCalibrationRecord(record, operationId: fixedUUID("6001"))
+        let savedRecord = try await repository.saveCalibrationRecord(record, operationId: fixedUUID("6001"))
         let loadedRecord = try await repository.loadCalibrationRecord(accountId: accountId)
 
+        XCTAssertEqual(savedRecord.accountId, accountId)
         XCTAssertEqual(loadedRecord?.status, .completed)
         XCTAssertEqual(loadedRecord?.accountId, accountId)
         XCTAssertTrue(loadedRecord?.isSuccessfulCalibration ?? false)
@@ -256,12 +263,17 @@ final class BackendRepositoryTests: XCTestCase {
         let firstPlan = makePlan(id: fixedUUID("7001"), title: "Repository Strength")
         let secondPlan = makePlan(id: fixedUUID("7002"), title: "Repository Mobility")
 
-        try await repository.saveActivePlan(firstPlan, accountId: accountId, operationId: fixedUUID("7003"))
-        try await repository.saveActivePlan(secondPlan, accountId: accountId, operationId: fixedUUID("7004"))
+        _ = try await repository.saveActivePlan(firstPlan, accountId: accountId, operationId: fixedUUID("7003"))
+        let savedSecondPlan = try await repository.saveActivePlan(
+            secondPlan,
+            accountId: accountId,
+            operationId: fixedUUID("7004")
+        )
 
         let activePlan = try await repository.loadActivePlan(accountId: accountId)
         let history = try await repository.loadPlanHistory(accountId: accountId, limit: 5)
 
+        XCTAssertEqual(savedSecondPlan.id, secondPlan.id)
         XCTAssertEqual(activePlan?.id, secondPlan.id)
         XCTAssertEqual(history.map(\.id), [secondPlan.id, firstPlan.id])
     }
@@ -272,12 +284,12 @@ final class BackendRepositoryTests: XCTestCase {
         let firstPlan = makePlan(id: fixedUUID("7011"), title: "Repository Strength Burst")
         let secondPlan = makePlan(id: fixedUUID("7012"), title: "Repository Mobility Burst")
 
-        async let firstSave: Void = repository.saveActivePlan(
+        async let firstSave = repository.saveActivePlan(
             firstPlan,
             accountId: accountId,
             operationId: fixedUUID("7013")
         )
-        async let secondSave: Void = repository.saveActivePlan(
+        async let secondSave = repository.saveActivePlan(
             secondPlan,
             accountId: accountId,
             operationId: fixedUUID("7014")

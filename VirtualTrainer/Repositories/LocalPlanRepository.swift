@@ -67,7 +67,8 @@ final class LocalPlanRepository: PlanRepository {
 
     nonisolated deinit {}
 
-    func saveActivePlan(_ plan: WorkoutPlanV2, accountId: String, operationId: UUID) async throws {
+    @discardableResult
+    func saveActivePlan(_ plan: WorkoutPlanV2, accountId: String, operationId: UUID) async throws -> WorkoutPlanV2 {
         if let loadError {
             throw RepositoryError.invalidPayload(loadError)
         }
@@ -97,7 +98,7 @@ final class LocalPlanRepository: PlanRepository {
 
         if await writeJournal.contains(operationId: operationId) {
             rollbackIfNeeded(generation: generation, to: previousSnapshot)
-            return
+            return try await loadActivePlan(accountId: normalizedAccountId) ?? plan
         }
 
         try await persist(generation: generation)
@@ -106,6 +107,7 @@ final class LocalPlanRepository: PlanRepository {
             entityKind: .plan,
             createdAt: savedAt
         )
+        return try await loadActivePlan(accountId: normalizedAccountId) ?? plan
     }
 
     func loadActivePlan(accountId: String) async throws -> WorkoutPlanV2? {

@@ -31,6 +31,7 @@ struct MainTabView: View {
 }
 
 #Preview {
+    let dependencies = AppDependencies.local()
     MainTabView()
         .environmentObject(AccountContext())
         .environmentObject(OnboardingStore())
@@ -39,4 +40,6 @@ struct MainTabView: View {
         .environmentObject(TrophyStore())
         .environmentObject(ThemeStore())
         .environmentObject(InsightStore())
+        .environmentObject(dependencies)
+        .environmentObject(SyncOrchestrator(dependencies: dependencies))
 }

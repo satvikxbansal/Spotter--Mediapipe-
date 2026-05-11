@@ -14,13 +14,15 @@ protocol AuthRepository: AnyObject {
 @MainActor
 protocol ProfileRepository: AnyObject {
     func loadProfile(accountId: String) async throws -> UserProfile?
-    func saveProfile(_ profile: UserProfile, operationId: UUID) async throws
+    @discardableResult
+    func saveProfile(_ profile: UserProfile, operationId: UUID) async throws -> UserProfile
     func observeProfile(accountId: String) async throws -> AsyncStream<UserProfile?>
 }
 
 @MainActor
 protocol WorkoutRepository: AnyObject {
-    func saveWorkoutSummary(_ summary: WorkoutSessionSummary, operationId: UUID) async throws
+    @discardableResult
+    func saveWorkoutSummary(_ summary: WorkoutSessionSummary, operationId: UUID) async throws -> WorkoutSessionSummary
     func loadRecentWorkouts(accountId: String, limit: Int, since: Date?) async throws -> [WorkoutSessionSummary]
     func loadWorkout(accountId: String, id: UUID) async throws -> WorkoutSessionSummary?
     func deleteWorkout(accountId: String, id: UUID, operationId: UUID) async throws
@@ -31,18 +33,22 @@ protocol WorkoutRepository: AnyObject {
 protocol TrophyRepository: AnyObject {
     func loadTrophyDefinitions() async throws -> [TrophyDefinition]
     func loadTrophyEvents(accountId: String, since: Date?) async throws -> [TrophyUnlockEvent]
-    func saveTrophyEvent(_ event: TrophyUnlockEvent, operationId: UUID) async throws
+    @discardableResult
+    func saveTrophyEvent(_ event: TrophyUnlockEvent, operationId: UUID) async throws -> TrophyUnlockEvent
     func loadTrophyProgress(accountId: String) async throws -> [TrophyProgress]
     func observeTrophyEvents(accountId: String) async throws -> AsyncStream<[TrophyUnlockEvent]>
 }
 
 @MainActor
 protocol InsightRepository: AnyObject {
-    func saveInsights(_ insights: [AIInsight], operationId: UUID) async throws
+    @discardableResult
+    func saveInsights(_ insights: [AIInsight], operationId: UUID) async throws -> [AIInsight]
     func loadRecentInsights(accountId: String, limit: Int) async throws -> [AIInsight]
-    func saveDeliveryRecord(_ record: InsightDeliveryRecord, operationId: UUID) async throws
+    @discardableResult
+    func saveDeliveryRecord(_ record: InsightDeliveryRecord, operationId: UUID) async throws -> InsightDeliveryRecord
     func loadDeliveryRecords(accountId: String) async throws -> [InsightDeliveryRecord]
-    func saveEngagementRecord(_ record: InsightEngagementRecord, operationId: UUID) async throws
+    @discardableResult
+    func saveEngagementRecord(_ record: InsightEngagementRecord, operationId: UUID) async throws -> InsightEngagementRecord
     func loadEngagementRecords(accountId: String) async throws -> [InsightEngagementRecord]
     func invalidateInsight(accountId: String, dedupeKey: String, operationId: UUID) async throws
 }
@@ -56,12 +62,14 @@ protocol ThemeRepository: AnyObject {
 @MainActor
 protocol CalibrationRepository: AnyObject {
     func loadCalibrationRecord(accountId: String) async throws -> CalibrationRecord?
-    func saveCalibrationRecord(_ record: CalibrationRecord, operationId: UUID) async throws
+    @discardableResult
+    func saveCalibrationRecord(_ record: CalibrationRecord, operationId: UUID) async throws -> CalibrationRecord
 }
 
 @MainActor
 protocol PlanRepository: AnyObject {
-    func saveActivePlan(_ plan: WorkoutPlanV2, accountId: String, operationId: UUID) async throws
+    @discardableResult
+    func saveActivePlan(_ plan: WorkoutPlanV2, accountId: String, operationId: UUID) async throws -> WorkoutPlanV2
     func loadActivePlan(accountId: String) async throws -> WorkoutPlanV2?
     func loadPlanHistory(accountId: String, limit: Int) async throws -> [WorkoutPlanV2]
 }

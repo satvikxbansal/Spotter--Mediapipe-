@@ -8,7 +8,8 @@ import SwiftUI
 
 @main
 struct VirtualTrainerApp: App {
-    @StateObject private var appDependencies = AppDependencies.local()
+    @StateObject private var appDependencies: AppDependencies
+    @StateObject private var syncOrchestrator: SyncOrchestrator
     @StateObject private var accountContext = AccountContext()
     @StateObject private var onboardingStore = OnboardingStore()
     @StateObject private var calibrationStore = CalibrationStore()
@@ -16,6 +17,12 @@ struct VirtualTrainerApp: App {
     @StateObject private var trophyStore = TrophyStore()
     @StateObject private var themeStore = ThemeStore()
     @StateObject private var insightStore = InsightStore()
+
+    init() {
+        let dependencies = AppDependencies.local()
+        _appDependencies = StateObject(wrappedValue: dependencies)
+        _syncOrchestrator = StateObject(wrappedValue: SyncOrchestrator(dependencies: dependencies))
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -36,6 +43,7 @@ struct VirtualTrainerApp: App {
             .environmentObject(themeStore)
             .environmentObject(insightStore)
             .environmentObject(appDependencies)
+            .environmentObject(syncOrchestrator)
             .onAppear {
                 syncStoresWithAccount()
                 Task {

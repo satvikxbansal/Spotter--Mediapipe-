@@ -27,12 +27,14 @@ final class LocalProfileRepository: ProfileRepository {
         return store.profile
     }
 
-    func saveProfile(_ profile: UserProfile, operationId: UUID) async throws {
+    @discardableResult
+    func saveProfile(_ profile: UserProfile, operationId: UUID) async throws -> UserProfile {
         store.setCurrentAccountId(profile.accountId ?? defaultAccountId)
         guard await store.saveProfile(profile, operationId: operationId) else {
             throw localSaveError(store.persistenceError, fallback: "Could not save local profile.")
         }
         notifyProfileObservers()
+        return store.profile ?? profile
     }
 
     func observeProfile(accountId: String) async throws -> AsyncStream<UserProfile?> {
@@ -87,12 +89,14 @@ final class LocalWorkoutRepository: WorkoutRepository {
         )
     }
 
-    func saveWorkoutSummary(_ summary: WorkoutSessionSummary, operationId: UUID) async throws {
+    @discardableResult
+    func saveWorkoutSummary(_ summary: WorkoutSessionSummary, operationId: UUID) async throws -> WorkoutSessionSummary {
         store.setCurrentAccountId(summary.accountId ?? defaultAccountId)
         guard await store.addSummary(summary, operationId: operationId) else {
             throw localSaveError(store.persistenceError, fallback: "Could not save local workout summary.")
         }
         notifyWorkoutObservers()
+        return store.fetchSummaryIncludingDeleted(id: summary.id) ?? summary
     }
 
     func loadRecentWorkouts(
@@ -197,12 +201,14 @@ final class LocalTrophyRepository: TrophyRepository {
         }
     }
 
-    func saveTrophyEvent(_ event: TrophyUnlockEvent, operationId: UUID) async throws {
+    @discardableResult
+    func saveTrophyEvent(_ event: TrophyUnlockEvent, operationId: UUID) async throws -> TrophyUnlockEvent {
         store.setCurrentAccountId(event.accountId ?? defaultAccountId)
         guard await store.saveUnlockEvent(event, operationId: operationId) else {
             throw localSaveError(store.persistenceError, fallback: "Could not save local trophy event.")
         }
         notifyTrophyObservers()
+        return store.allUnlockEvents().first { $0.id == event.id } ?? event
     }
 
     func loadTrophyProgress(accountId: String) async throws -> [TrophyProgress] {
@@ -262,11 +268,14 @@ final class LocalInsightRepository: InsightRepository {
         )
     }
 
-    func saveInsights(_ insights: [AIInsight], operationId: UUID) async throws {
+    @discardableResult
+    func saveInsights(_ insights: [AIInsight], operationId: UUID) async throws -> [AIInsight] {
         store.setCurrentAccountId(firstAccountId(in: insights) ?? defaultAccountId)
         guard await store.saveInsights(insights, operationId: operationId) else {
             throw localSaveError(store.persistenceError, fallback: "Could not save local insights.")
         }
+        let savedDedupeKeys = Set(insights.map(\.dedupeKey))
+        return store.recentInsights.filter { savedDedupeKeys.contains($0.dedupeKey) }
     }
 
     func loadRecentInsights(accountId: String, limit: Int) async throws -> [AIInsight] {
@@ -274,11 +283,15 @@ final class LocalInsightRepository: InsightRepository {
         return Array(store.recentInsights.filter { !$0.isDeleted }.prefix(max(limit, 0)))
     }
 
-    func saveDeliveryRecord(_ record: InsightDeliveryRecord, operationId: UUID) async throws {
+    @discardableResult
+    func saveDeliveryRecord(_ record: InsightDeliveryRecord, operationId: UUID) async throws -> InsightDeliveryRecord {
         store.setCurrentAccountId(record.accountId ?? defaultAccountId)
         guard await store.saveDeliveryRecord(record, operationId: operationId) else {
             throw localSaveError(store.persistenceError, fallback: "Could not save local insight delivery record.")
         }
+        return store
+            .allDeliveryRecordsIncludingTombstones()
+            .first { $0.dedupeKey == record.dedupeKey } ?? record
     }
 
     func loadDeliveryRecords(accountId: String) async throws -> [InsightDeliveryRecord] {
@@ -286,11 +299,15 @@ final class LocalInsightRepository: InsightRepository {
         return store.allDeliveryRecordsIncludingTombstones()
     }
 
-    func saveEngagementRecord(_ record: InsightEngagementRecord, operationId: UUID) async throws {
+    @discardableResult
+    func saveEngagementRecord(_ record: InsightEngagementRecord, operationId: UUID) async throws -> InsightEngagementRecord {
         store.setCurrentAccountId(record.accountId ?? defaultAccountId)
         guard await store.saveEngagementRecord(record, operationId: operationId) else {
             throw localSaveError(store.persistenceError, fallback: "Could not save local insight engagement record.")
         }
+        return store
+            .allEngagementRecordsIncludingTombstones()
+            .first { $0.dedupeKey == record.dedupeKey } ?? record
     }
 
     func loadEngagementRecords(accountId: String) async throws -> [InsightEngagementRecord] {
@@ -369,11 +386,13 @@ final class LocalCalibrationRepository: CalibrationRepository {
         return store.record
     }
 
-    func saveCalibrationRecord(_ record: CalibrationRecord, operationId: UUID) async throws {
+    @discardableResult
+    func saveCalibrationRecord(_ record: CalibrationRecord, operationId: UUID) async throws -> CalibrationRecord {
         store.setCurrentAccountId(record.accountId ?? defaultAccountId)
         guard await store.saveCalibrationRecord(record, operationId: operationId) else {
             throw localSaveError(store.persistenceError, fallback: "Could not save local calibration record.")
         }
+        return store.record ?? record
     }
 }
 
