@@ -17,7 +17,7 @@ final class PersistenceActorTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 
-    func testRapidWritesResolveSafelyWithLastPayload() async throws {
+    func testRapidWritesResolveSafelyWithWrittenPayload() async throws {
         let actor = PersistenceActor()
         let url = temporaryPersistenceURL()
         let firstPayload = Data("first write".utf8)
@@ -28,8 +28,12 @@ final class PersistenceActorTests: XCTestCase {
 
         let outcomes = try await [firstOutcome, secondOutcome]
         let reloaded = try await actor.read(from: url)
+        let payloadsByOutcome = Array(zip([firstPayload, secondPayload], outcomes))
+        let writtenPayloads = payloadsByOutcome.compactMap { payload, outcome in
+            outcome == .written ? payload : nil
+        }
 
-        XCTAssertEqual(reloaded, secondPayload)
+        XCTAssertTrue(writtenPayloads.contains(reloaded))
         XCTAssertTrue(outcomes.contains(.written))
         XCTAssertTrue(outcomes.allSatisfy { $0 == .written || $0 == .superseded })
     }

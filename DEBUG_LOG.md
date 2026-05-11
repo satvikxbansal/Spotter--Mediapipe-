@@ -904,3 +904,103 @@ Redacted the historical token-shaped example in `SPOTTER_REVIEW.md` without prin
 Secret-readiness work must verify both layers separately: scan the full repository with broad provider and generic patterns, and verify runtime configuration by inspecting the built product when a `Bundle.main` or plist behavior is claimed. Build-setting presence alone is not proof of bundle availability. Historical audit docs should be included in secret scans because old examples can still leak real-looking values even after source code has been corrected.
 
 **Pattern Tags:** #audit #secrets #xcconfig #firebase-readiness #docs #tests
+
+---
+
+### [DL-041] Add Local Repository Abstraction Before Backend SDKs
+**Date:** 2026-05-10
+**Severity:** warning
+**Category:** backend-readiness
+**File(s):** `VirtualTrainer/Repositories/BackendMode.swift`, `VirtualTrainer/Repositories/RepositoryError.swift`, `VirtualTrainer/Repositories/RepositoryProtocols.swift`, `VirtualTrainer/Repositories/LocalAuthRepository.swift`, `VirtualTrainer/Repositories/LocalStoreRepositories.swift`, `VirtualTrainer/Repositories/LocalPlanRepository.swift`, `VirtualTrainer/Repositories/AppDependencies.swift`, `VirtualTrainer/Repositories/SyncOrchestrator.swift`, `VirtualTrainer/Models/OnboardingStore.swift`, `VirtualTrainer/Models/TrophyModels.swift`, `VirtualTrainer/Models/InsightStore.swift`, `VirtualTrainer/Models/CalibrationStore.swift`, `VirtualTrainer/VirtualTrainerApp.swift`, `VirtualTrainerTests/BackendRepositoryTests.swift`, `README.md`
+
+**Error:**
+The app had backend-ready model fields, tombstones, write operations, event logs, and local compliance scaffolding, but it still lacked the repository contract layer that future Firebase or Supabase code must implement. Adding a backend SDK directly at this point would have mixed remote concerns into stores that also drive live camera, planned workouts, trophies, stats, trends, recaps, and insights.
+
+**Root Cause:**
+The pre-backend phases prepared the data shape first, but the product was still wired around concrete local stores. Without protocols and local repository implementations, there was no safe way to prove that backend-shaped reads and writes could preserve existing local JSON behavior before adding cloud dependencies.
+
+**Fix Applied:**
+Added `BackendMode`, typed `RepositoryError`, repository protocols for auth, profile, workouts, trophies, insights, theme, calibration, and plans, plus local implementations backed by the existing stores and local JSON files. Added a stable local anonymous account repository, `AppDependencies.local()`, and a `SyncOrchestrator` scaffold whose local-mode sync methods succeed as no-ops. Exposed narrow store save helpers where needed instead of rewriting the live product stores. Kept Firebase and Supabase SDKs out of the repo and left raw video, camera frames, face images, raw pose streams, raw biometric face data, and raw pose timelines outside all repository contracts.
+
+**Prevention Rule:**
+Backend phases should implement the repository protocols instead of reaching directly into SwiftUI stores or camera services. Local JSON decoding must remain backwards-compatible, write operations should continue to be idempotent, and theme sync should treat `UserProfile.selectedTheme` as the future remote source of truth while `Theme.json` remains a local cache.
+
+**Pattern Tags:** #backend-readiness #repositories #local-first #sync-prep #privacy #tests
+
+---
+
+### [DL-042] Audit Phase 15 Repository Edge Cases After Context Compaction
+**Date:** 2026-05-11
+**Severity:** warning
+**Category:** audit
+**File(s):** `VirtualTrainer/Repositories/RepositoryProtocols.swift`, `VirtualTrainer/Repositories/LocalStoreRepositories.swift`, `VirtualTrainer/Repositories/LocalPlanRepository.swift`, `VirtualTrainer/Models/WorkoutHistoryStore.swift`, `VirtualTrainer/Models/InsightStore.swift`, `VirtualTrainerTests/BackendRepositoryTests.swift`, `README.md`
+
+**Error:**
+The Phase 15 repository layer compiled and passed its first happy-path tests, but the follow-up audit found several contract-edge misses. The observe methods existed but were not all declared `async throws` even though the phase required every repository method to use that shape. Retrying a workout delete or insight invalidation with the same completed operation ID could be reported as missing because the store checked for a currently visible record before accepting the write journal's idempotency record. The local plan repository's first draft also mixed file reload/write work with suspension points in a way that could lose rapid plan saves under MainActor reentrancy. Finally, `LocalInsightRepository.loadRecentInsights` exposed invalidated insight tombstones through a normal product-facing read.
+
+**Root Cause:**
+The implementation intentionally wrapped existing local stores instead of rewriting the product model, which was the right architectural choice for Phase 15. The miss was assuming that stores with tombstones and a write journal were automatically repository-idempotent at every boundary. A few older store methods were written from the UI projection point of view: if the record was no longer visible, they returned "not found" before checking whether the operation had already succeeded. The insight store also keeps deleted insight tombstones in its internal ranking/suppression state, but the repository read contract needed to return active recent insights, not internal tombstone records.
+
+**Why It Was Missed In The First Pass:**
+Context compaction happened in the middle of the broader backend-readiness work, so the first verification over-weighted file presence, compile safety, and sequential round-trip behavior. The initial tests proved that each repository could save and load the main record type once, but they did not retry tombstoning operations after the record disappeared from visible state, did not stress rapid plan saves, and did not assert that product-facing reads hide invalidated insight tombstones. The protocol-shape miss came from adding observer methods last and treating them like stream factories instead of applying the "all methods are async throws" rule uniformly.
+
+**Fix Applied:**
+Made all repository observer methods `async throws`, made local profile/workout/trophy observer streams emit again after repository-owned local writes, rewrote the local plan repository around an in-memory snapshot that mutates before the first suspension point, made retried workout deletes and insight invalidations honor completed operation IDs after tombstoning, and filtered deleted insights out of `LocalInsightRepository.loadRecentInsights`. Added regression tests for local auth Apple-link unsupported behavior and sign-out data preservation, observer updates after local writes, retried workout deletes, retried insight invalidation, rapid concurrent plan saves, and duplicate plan operation IDs. The README now states that normal repository reads hide deleted workouts and invalidated insights while local tombstones remain available for future sync.
+
+**Prevention Rule:**
+Repository audits must test the contract, not only the wrapped store's happy path. Every tombstone-producing write needs a same-operation retry test after the record has disappeared from normal reads, every async local repository that appends or replaces records needs a rapid-save test, and every product-facing repository load should explicitly decide whether it returns active records or tombstones. After context compaction, re-run the acceptance checklist against signatures, semantics, and tests instead of trusting memory of the pre-compaction pass.
+
+**Pattern Tags:** #audit #repositories #idempotency #tombstones #concurrency #tests
+
+---
+
+### [DL-043] Stabilize Persistence Actor Rapid-Write Verification
+**Date:** 2026-05-11
+**Severity:** warning
+**Category:** tests
+**File(s):** `VirtualTrainerTests/PersistenceActorTests.swift`
+
+**Error:**
+The full verification run exposed a flaky persistence actor test. `testRapidWritesResolveSafelyWithLastPayload` used two `async let` writes and assumed the second source-code line would always be the actor's last enqueued write. Under a different scheduler interleaving, the first payload could be the write that actually completed last, causing the test to fail even though the actor still wrote one complete payload and reported valid `.written` / `.superseded` outcomes.
+
+**Root Cause:**
+`async let` starts child work concurrently, so lexical order is not a reliable proxy for actor enqueue order. The test was validating a stronger ordering guarantee than the production actor promises for two simultaneously-started writes.
+
+**Why It Was Missed In The First Pass:**
+The test usually passed because the scheduler often started the first `async let` before the second, making the second payload the final file content. The broader repository work made us rerun the full suite enough times to hit the opposite interleaving.
+
+**Fix Applied:**
+Updated the test to assert the actual contract: the final file content must match a payload whose write outcome was `.written`, at least one write must be `.written`, and every rapid-write outcome must be `.written` or `.superseded`. This keeps the safety check without depending on scheduler order.
+
+**Prevention Rule:**
+Concurrency tests should not infer actor enqueue order from source-code order when work is deliberately launched concurrently. If a test needs strict last-write semantics, it must create a deterministic ordering; otherwise it should assert the contract that is guaranteed across valid interleavings.
+
+**Pattern Tags:** #tests #concurrency #persistence #flaky-test
+
+---
+
+### [DL-044] Re-Audit Phase 15 Repository Integration After Compaction
+**Date:** 2026-05-11
+**Severity:** note
+**Category:** audit
+**File(s):** `VirtualTrainer/Repositories/*`, `VirtualTrainer/Models/OnboardingStore.swift`, `VirtualTrainer/Models/WorkoutHistoryStore.swift`, `VirtualTrainer/Models/TrophyModels.swift`, `VirtualTrainer/Models/InsightStore.swift`, `VirtualTrainer/Models/CalibrationStore.swift`, `VirtualTrainer/VirtualTrainerApp.swift`, `VirtualTrainerTests/BackendRepositoryTests.swift`, `VirtualTrainerTests/PersistenceActorTests.swift`, `README.md`, `DEBUG_LOG.md`
+
+**Error:**
+A second audit was requested because the repository phase had gone through a context compaction and earlier review already found subtle misses. The risk was that a file could exist without fully satisfying the contract, a local repository could expose tombstones through normal reads, a retry path could regress idempotency, a protected camera/live-analysis service could have been touched accidentally, or verification could have passed before the final test adjustment.
+
+**Root Cause:**
+The earlier misses were caused by validating the first repository pass too much from file presence and simple save/load round trips. The compacted context made it easier to lose the original acceptance checklist details, especially the uniform `async throws` method shape, same-operation retry behavior after tombstoning, and the difference between internal tombstone state and product-facing repository reads.
+
+**Why It Was Missed In The First Pass:**
+The first pass proved that local repositories could compile and perform happy-path writes, but it did not initially stress all contract edges. Observer methods were added late and reviewed like stream factories instead of normal repository methods. Delete/invalidation retry behavior inherited UI-store assumptions where invisible records look missing. The plan repository initially had suspension points around file persistence that needed a separate concurrency stress test. The persistence actor test also assumed concurrent `async let` lexical order matched actor enqueue order, which only failed under a less common scheduler interleaving.
+
+**Fix Applied:**
+Re-ran the full Phase 15 audit from the current filesystem state. Confirmed all repository protocol functions are `async throws`, local implementations exist for Auth/Profile/Workout/Trophy/Insight/Theme/Calibration/Plan, local auth keeps a stable anonymous ID, Apple linking is intentionally unsupported in local mode, sign-out does not erase local data, local sync no-ops succeed, normal workout and insight reads hide tombstoned records, and theme remains documented as `UserProfile.selectedTheme` for future remote source of truth with `Theme.json` as local cache. Confirmed the diff does not touch `CameraManager`, `PoseEstimator`, `UniversalRepCounter`, `FormFeedbackEngine`, `HandGestureDetector`, `ExertionAnalyzer`, MediaPipe setup, or the live camera pipeline. Confirmed no Firebase or Supabase imports/dependencies and no repository upload/storage path for raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.
+
+**Verification:**
+`git diff --check` passed. Static scans found no Firebase/Supabase imports or dependency references, no protected live-pipeline file changes, and no raw camera/pose/face upload path in repositories. `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` passed with 335 tests, 0 failures, and 0 skipped. `xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` passed. Simulator smoke installed and launched `satvik.VirtualTrainer`; the process stayed alive after startup.
+
+**Prevention Rule:**
+After any future context compaction, re-run the acceptance checklist from the actual tree: inspect changed and untracked files, verify protocol signatures, verify idempotent tombstone retries, verify product-facing reads versus internal tombstone state, run the full test suite after the last edit, and record the audit result in the debug log.
+
+**Pattern Tags:** #audit #repositories #context-compaction #verification #local-first #tests

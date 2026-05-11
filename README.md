@@ -10,7 +10,7 @@ Do not just count reps. Understand the session.
 
 That means Spotter should know what exercise you are doing, what the camera can see, whether the rep was clean, where form started to break, how hard the session felt, what you have done recently, and what workout makes sense next.
 
-This repo is the SwiftUI and MediaPipe version of Spotter. It has grown from a camera demo into a local-first training product with onboarding, calibration, live form analysis, generated plans, editable workout previews, planned workout sessions, rest flow, workout summaries, history, trophies, profile stats, training heatmaps, trends, workout recaps, weekly recaps, evidence drill-downs, evidence-backed coach insights, and a backend-ready local data foundation.
+This repo is the SwiftUI and MediaPipe version of Spotter. It has grown from a camera demo into a local-first training product with onboarding, calibration, live form analysis, generated plans, editable workout previews, planned workout sessions, rest flow, workout summaries, history, trophies, profile stats, training heatmaps, trends, workout recaps, weekly recaps, evidence drill-downs, evidence-backed coach insights, a backend-ready local data foundation, and a local repository abstraction layer.
 
 ## The Short Version
 
@@ -42,12 +42,14 @@ Spotter can currently:
 - Keep local records ready for future accounts through account ownership, sync metadata, server-time placeholders, and idempotent write operation IDs.
 - Preserve trophy unlocks as a canonical event log instead of only a recalculated progress snapshot.
 - Keep insight delivery, cooldown, and helpful/not-helpful records ready for cross-device merge.
+- Route backend-shaped reads and writes through local repository contracts for auth, profile, plans, workouts, trophies, insights, theme, and calibration while still using the existing local JSON stores.
+- Provide a local-only sync orchestrator scaffold, so sync can be turned on later without changing the live camera product flow.
 - Document the planned Firestore shape and sync conflict rules before adding Firebase.
 - Document the secrets policy, add environment-scoped xcconfig placeholders, and add a secret-scan config before accepting Firebase client files.
 - Keep a no-network LLM rewrite seam behind a default-off feature flag for future coach-copy experiments.
 - Keep raw camera frames, raw video, raw face images, and raw pose streams out of persistent storage.
 
-The product is still not finished. The pre-backend local data foundation is now mostly in place, but the next big work is repository abstraction, optional Firebase sync, the final design-system revamp, beta hardening, and a careful Running Analysis research phase.
+The product is still not finished. The pre-backend local data foundation and local repository layer are now in place, but the next big work is optional Firebase sync, the final design-system revamp, beta hardening, and a careful Running Analysis research phase.
 
 ## Why Spotter Exists
 
@@ -600,7 +602,7 @@ If the week had no saved sessions, the recap still returns an honest recovery-we
 
 ## Pre-Backend Readiness
 
-Spotter is still local-first. There is no Firebase SDK, no auth flow, no remote repository, and no upload path in the app yet.
+Spotter is still local-first. There is no Firebase SDK, no cloud auth flow, no remote repository implementation, and no upload path in the app yet.
 
 The recent pre-backend work makes the local product safer to connect to a backend later. In product terms, the app now has the boring but important foundations that prevent painful sync bugs after launch.
 
@@ -614,6 +616,10 @@ What has been prepared:
 - Trophy history: trophy unlocks are now preserved as canonical events, not only as a recalculated progress snapshot. This gives the future backend a stable "this was earned then" record and supports retraction/correction without rewriting history.
 - Insight continuity: insight impressions, cooldowns, helpful/not-helpful feedback, and engagement records are account-scoped and have merge rules. A future multi-device user should not lose feedback learning or keep seeing the same insight card on every device.
 - Backend-scale local persistence: profile, workout history, trophies, insights, calibration, theme, and the write journal now encode and write JSON through a dedicated persistence actor instead of doing frequent save work on the UI path. Rapid repeated saves are coalesced with a last-write-wins policy, while atomic writes and rollback behavior stay intact.
+- Local repository layer: the app now has backend-shaped protocols and local implementations for Auth, Profile, Plans, Workouts, Trophies, Insights, Theme, and Calibration. In plain terms, the app can keep behaving like an offline app today while future Firebase or Supabase code plugs into the same product contract later. Normal repository reads stay product-facing, so deleted workouts and invalidated insights stay hidden while their tombstones remain in local storage for future sync.
+- Local account identity: local mode now has a stable anonymous account ID that can be reused across launches. Signing out clears the current local account context, but it does not erase local data unless the user uses the deletion flow.
+- Sync orchestrator scaffold: `SyncOrchestrator` has the statuses and entry points needed for future sync, but in local mode its full sync, remote observation, and dirty-write enqueue steps intentionally succeed as no-ops.
+- Theme source-of-truth decision: local `Theme.json` remains a fast boot/cache path. When backend sync arrives, the remote source of truth should be `UserProfile.selectedTheme`, not a second competing remote theme document.
 - Local compliance controls: Profile now has Export My Data and Delete My Account and Data in local mode. Export creates a readable temporary JSON folder with profile, workouts, trophies, trophy events, insights, insight delivery, insight engagement, calibration, theme, schema versions, and a plain-English README. Delete clears the local profile, workouts, trophies, insights, calibration, theme, write journal, generated export cache, and share-image cache, then returns the app to onboarding.
 - PII registry: the app now has a simple local registry that names profile fields and health-adjacent sensitivity fields in user-readable language, including limitations, age, height, weight, timezone, reminder preference, account ID, and derived effort summaries.
 - Conflict policy: `Documentation/SyncConflictResolution.md` defines how each major record should merge when local and remote copies disagree, and when the app should mark a record as conflicted instead of guessing.
@@ -625,13 +631,12 @@ What this means:
 
 ```text
 The app is not synced yet.
-The local data is now shaped so sync can be added without rewriting the product model.
+The local data is now shaped and wrapped so sync can be added without rewriting the product model.
 ```
 
 Still remaining before a backend beta:
 
-- Repository protocols and local repository implementations.
-- Firebase/Auth wiring behind a feature flag.
+- Firebase/Auth repository implementations behind a feature flag.
 - Backend-mode account deletion and backend-mode data export wiring after Firebase/Auth exists.
 - Firestore security rules, App Check, and Firebase client plist target membership/copy behavior when the Firebase SDK is actually added.
 - Repository-level pagination and listener backpressure for large remote histories.
@@ -1075,27 +1080,9 @@ Done or mostly done:
 - Phase 14 hardening: impression-based insight delivery, engagement tracking, goal-aware ranking, bootstrap signals, cue normalization, recent-window trend policy, workout recaps, weekly recaps, evidence drill-downs, and the default-off LLM rewrite seam
 - Profile heatmap hardening: 12-week intensity view, day drill-ins, collapsed month snapshot, and local share poster
 - Pre-backend readiness: account ownership, sync metadata, soft-delete tombstones, workout delete, insight invalidation, idempotent write journal, actor-isolated local persistence, server-time fields, canonical trophy unlock event log, sync-ready insight records, local data export, local account/data deletion, PII registry, conflict rules, measured Firestore shape, secrets policy, environment xcconfigs, and secret-scan config
+- Phase 15: backend abstraction protocols, local repositories, local anonymous account identity, app dependency container, and a local-mode no-op sync orchestrator
 
 Next work:
-
-### Phase 15: Backend Abstraction
-
-Add repository protocols and local implementations before integrating any backend SDK. The model/store prerequisites are already prepared, so this phase should wrap the existing local behavior rather than invent a second product model.
-
-The repository layer should use the existing account IDs, sync metadata, tombstones, operation IDs, trophy event log, and insight delivery/engagement records.
-
-Planned repositories:
-
-- Auth
-- Profile
-- Plans
-- Workouts
-- Trophies
-- Insights
-- Themes
-- Calibration
-
-The app should still work fully offline in local mode.
 
 ### Phase 16: Firebase Behind A Feature Flag
 

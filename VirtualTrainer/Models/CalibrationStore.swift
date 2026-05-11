@@ -146,6 +146,11 @@ final class CalibrationStore: ObservableObject {
         )
     }
 
+    @discardableResult
+    func saveCalibrationRecord(_ record: CalibrationRecord, operationId: UUID? = nil) async -> Bool {
+        await save(record, operationId: operationId)
+    }
+
     func resetForDebug() async {
         do {
             if FileManager.default.fileExists(atPath: fileURL.path) {

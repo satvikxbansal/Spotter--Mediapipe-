@@ -8,6 +8,7 @@ import SwiftUI
 
 @main
 struct VirtualTrainerApp: App {
+    @StateObject private var appDependencies = AppDependencies.local()
     @StateObject private var accountContext = AccountContext()
     @StateObject private var onboardingStore = OnboardingStore()
     @StateObject private var calibrationStore = CalibrationStore()
@@ -34,6 +35,7 @@ struct VirtualTrainerApp: App {
             .environmentObject(trophyStore)
             .environmentObject(themeStore)
             .environmentObject(insightStore)
+            .environmentObject(appDependencies)
             .onAppear {
                 syncStoresWithAccount()
                 Task {

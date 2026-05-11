@@ -603,6 +603,129 @@ final class InsightStore: ObservableObject {
     }
 
     @discardableResult
+    func saveInsights(_ insights: [AIInsight], operationId: UUID? = nil) async -> Bool {
+        guard !insights.isEmpty else { return true }
+
+        let writeOperationId = operationId ?? UUID()
+        let writeCreatedAt = insights.map(\.createdAt).max() ?? Date()
+        let previousAllInsights = allInsights
+        let previousAllDeliveryRecords = allDeliveryRecords
+        let previousAllEngagementRecords = allEngagementRecords
+
+        ingest(insights, now: writeCreatedAt, operationId: writeOperationId)
+        expireStale(now: writeCreatedAt)
+
+        if await writeJournal.contains(operationId: writeOperationId) {
+            restoreState(
+                insights: previousAllInsights,
+                deliveryRecords: previousAllDeliveryRecords,
+                engagementRecords: previousAllEngagementRecords
+            )
+            return true
+        }
+
+        guard await persist() != nil else {
+            restoreState(
+                insights: previousAllInsights,
+                deliveryRecords: previousAllDeliveryRecords,
+                engagementRecords: previousAllEngagementRecords
+            )
+            return false
+        }
+        await recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: writeCreatedAt)
+        return true
+    }
+
+    @discardableResult
+    func saveDeliveryRecord(_ record: InsightDeliveryRecord, operationId: UUID? = nil) async -> Bool {
+        let writeOperationId = operationId ?? UUID()
+        let writeCreatedAt = maxOptionalDate(record.deletedAt, record.lastPresentedAt) ?? record.lastPresentedAt
+        let previousAllInsights = allInsights
+        let previousAllDeliveryRecords = allDeliveryRecords
+        let previousAllEngagementRecords = allEngagementRecords
+        let stampedRecord = record.withAccountId(
+            currentAccountId ?? record.accountId,
+            operationId: writeOperationId,
+            now: writeCreatedAt
+        )
+        let key = storageKey(accountId: stampedRecord.accountId, dedupeKey: stampedRecord.dedupeKey)
+
+        if let existingRecord = allDeliveryRecords[key] {
+            allDeliveryRecords[key] = InsightDeliveryRecord.merged(
+                local: existingRecord,
+                remote: stampedRecord
+            )
+        } else {
+            allDeliveryRecords[key] = stampedRecord
+        }
+        allDeliveryRecords = bestDeliveryRecordsByStorageKey(Array(allDeliveryRecords.values))
+        applyVisibleState()
+
+        if await writeJournal.contains(operationId: writeOperationId) {
+            restoreState(
+                insights: previousAllInsights,
+                deliveryRecords: previousAllDeliveryRecords,
+                engagementRecords: previousAllEngagementRecords
+            )
+            return true
+        }
+
+        guard await persist() != nil else {
+            restoreState(
+                insights: previousAllInsights,
+                deliveryRecords: previousAllDeliveryRecords,
+                engagementRecords: previousAllEngagementRecords
+            )
+            return false
+        }
+        await recordWriteOperation(writeOperationId, entityKind: .insightDelivery, createdAt: writeCreatedAt)
+        return true
+    }
+
+    @discardableResult
+    func saveEngagementRecord(_ record: InsightEngagementRecord, operationId: UUID? = nil) async -> Bool {
+        let writeOperationId = operationId ?? UUID()
+        let writeCreatedAt = maxOptionalDate(record.deletedAt, record.latestEngagedAt()) ?? Date()
+        let previousAllInsights = allInsights
+        let previousAllDeliveryRecords = allDeliveryRecords
+        let previousAllEngagementRecords = allEngagementRecords
+        let stampedRecord = record.withAccountId(
+            currentAccountId ?? record.accountId,
+            operationId: writeOperationId,
+            now: writeCreatedAt
+        )
+        let key = storageKey(accountId: stampedRecord.accountId, dedupeKey: stampedRecord.dedupeKey)
+
+        if let existingRecord = allEngagementRecords[key] {
+            allEngagementRecords[key] = existingRecord.merged(with: stampedRecord)
+        } else {
+            allEngagementRecords[key] = stampedRecord
+        }
+        allEngagementRecords = bestEngagementRecordsByStorageKey(Array(allEngagementRecords.values))
+        applyVisibleState()
+
+        if await writeJournal.contains(operationId: writeOperationId) {
+            restoreState(
+                insights: previousAllInsights,
+                deliveryRecords: previousAllDeliveryRecords,
+                engagementRecords: previousAllEngagementRecords
+            )
+            return true
+        }
+
+        guard await persist() != nil else {
+            restoreState(
+                insights: previousAllInsights,
+                deliveryRecords: previousAllDeliveryRecords,
+                engagementRecords: previousAllEngagementRecords
+            )
+            return false
+        }
+        await recordWriteOperation(writeOperationId, entityKind: .insightEngagement, createdAt: writeCreatedAt)
+        return true
+    }
+
+    @discardableResult
     func applyRemoteDeliveryRecords(_ remoteRecords: [InsightDeliveryRecord]) async -> Bool {
         let incomingRecords = remoteRecords.filter(isVisible)
         guard !incomingRecords.isEmpty else { return true }
@@ -840,7 +963,9 @@ final class InsightStore: ObservableObject {
             return insight.markedDeleted(at: deletedAt, operationId: writeOperationId)
         }
 
-        guard didInvalidate else { return false }
+        guard didInvalidate else {
+            return await writeJournal.contains(operationId: writeOperationId)
+        }
         applyVisibleState()
         if await writeJournal.contains(operationId: writeOperationId) {
             allInsights = previousAllInsights

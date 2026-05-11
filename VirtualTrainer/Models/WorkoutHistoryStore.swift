@@ -103,7 +103,7 @@ final class WorkoutHistoryStore: ObservableObject {
         guard let existingIndex = allSummaries.firstIndex(where: {
             $0.id == id && isVisible($0)
         }) else {
-            return false
+            return await writeJournal.contains(operationId: writeOperationId)
         }
 
         let previousAllSummaries = allSummaries

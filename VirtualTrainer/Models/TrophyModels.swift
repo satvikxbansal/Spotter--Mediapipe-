@@ -1671,6 +1671,42 @@ final class TrophyStore: ObservableObject {
     }
 
     @discardableResult
+    func saveUnlockEvent(_ event: TrophyUnlockEvent, operationId: UUID? = nil) async -> Bool {
+        let writeOperationId = operationId ?? UUID()
+        let writeCreatedAt = event.earnedAt
+        let previousSnapshot = snapshot
+        let previousUnlockEvents = latestUnlockEvents
+        let previousEventLog = eventLog
+        let stampedEvent = event.withAccountId(
+            currentAccountId ?? event.accountId,
+            operationId: writeOperationId,
+            now: writeCreatedAt
+        )
+
+        _ = mergeUnlockEventsIntoLog([stampedEvent])
+        applyVisibleSnapshot(
+            generatedAt: writeCreatedAt,
+            events: stampedEvent.isRetracted || !isVisible(stampedEvent) ? [] : [stampedEvent]
+        )
+
+        if await writeJournal.contains(operationId: writeOperationId) {
+            eventLog = previousEventLog
+            snapshot = previousSnapshot
+            latestUnlockEvents = previousUnlockEvents
+            return true
+        }
+
+        guard await persist() != nil else {
+            eventLog = previousEventLog
+            snapshot = previousSnapshot
+            latestUnlockEvents = previousUnlockEvents
+            return false
+        }
+        await recordWriteOperation(writeOperationId, createdAt: writeCreatedAt)
+        return true
+    }
+
+    @discardableResult
     func update(
         after summary: WorkoutSessionSummary,
         history: [WorkoutSessionSummary],

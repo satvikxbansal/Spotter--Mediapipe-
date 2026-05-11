@@ -339,6 +339,15 @@ final class OnboardingStore: ObservableObject {
         return await save(profile, operationId: operationId)
     }
 
+    @discardableResult
+    func saveProfile(_ profile: UserProfile, operationId: UUID? = nil) async -> Bool {
+        await save(profile, operationId: operationId)
+    }
+
+    func reload() {
+        loadProfile()
+    }
+
     private var canCompleteProfile: Bool {
         canContinue(from: .identity)
             && canContinue(from: .stats)
