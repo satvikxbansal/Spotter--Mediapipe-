@@ -3,7 +3,7 @@
 Structured incident log for build failures, crashes, and bug fixes. **Format and categories:** `.cursor/rules/debugging.mdc` (section A).
 
 - Append only — do not delete or rewrite past entries.
-- Next entry ID: **DL-001** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
+- Next entry ID: **DL-047** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
 
 ---
 
@@ -1004,3 +1004,254 @@ Re-ran the full Phase 15 audit from the current filesystem state. Confirmed all 
 After any future context compaction, re-run the acceptance checklist from the actual tree: inspect changed and untracked files, verify protocol signatures, verify idempotent tombstone retries, verify product-facing reads versus internal tombstone state, run the full test suite after the last edit, and record the audit result in the debug log.
 
 **Pattern Tags:** #audit #repositories #context-compaction #verification #local-first #tests
+
+---
+
+### [DL-045] Fix Firebase/gRPC IDE Build Crash From Custom Swift Toolchain
+**Date:** 2026-05-14
+**Severity:** build-breaking
+**Category:** xcode-config
+**File(s):** Xcode IDE toolchain selection, `VirtualTrainer.xcworkspace/xcshareddata/swiftpm/Package.resolved`, `VirtualTrainer.xcodeproj/project.pbxproj`
+
+**Error:**
+After Firebase was added through Swift Package Manager, Xcode's Issue Navigator showed seven clang errors under the `VirtualTrainer` scheme:
+
+`clang frontend command failed with exit code 134 (use -v to see invocation)`
+
+`unable to execute command: Abort trap: 6`
+
+Several follow-on errors reported missing temporary object files such as:
+
+`no such file or directory: '/private/var/folders/75/nndfzddd11b8kv28kpwdjlh40000gp/T/swbuild.tmp.<random>/Data.noindex/arm64-apple.o'`
+
+Changing the selected simulator device to `iPhone 17 Pro` did not change the failure.
+
+**What Made This Tricky:**
+The first command-line build with an explicit DerivedData path succeeded:
+
+`xcodebuild -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -derivedDataPath /tmp/VirtualTrainerDerivedData build`
+
+The normal command-line DerivedData build also succeeded:
+
+`xcodebuild -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' build`
+
+But pressing Build inside the Xcode UI still failed. This proved the Firebase package graph and project sources were buildable, and the remaining difference was Xcode IDE state, not simulator selection or Swift source.
+
+**Root Cause:**
+The Xcode UI was using the custom **Swift 6.2 Release** toolchain:
+
+`/Users/satvik.bansal/Library/Developer/Toolchains/swift-6.2-RELEASE.xctoolchain`
+
+The terminal `xcodebuild` path used Xcode's default toolchain:
+
+`/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`
+
+Firebase `12.13.0` brought in binary Swift Package artifacts, including `grpc-binary` and `openssl_grpc.framework`. During the app build, Xcode copies some codeless binary frameworks into the app bundle and injects a stub binary. In the failing IDE build log, the stub injection step invoked the custom toolchain clang:
+
+`/Users/satvik.bansal/Library/Developer/Toolchains/swift-6.2-RELEASE.xctoolchain/usr/bin/clang -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.2.sdk -x c -c /dev/null -target arm64-apple-ios100.0-simulator -o /private/var/folders/.../swbuild.tmp.../Data.noindex/arm64-apple.o`
+
+That custom clang crashed on the generated `ios100.0-simulator` target with:
+
+`Assertion failed: (OsVersion < VersionTuple(100) && "Invalid version!"), function getDarwinDefines, file OSTargets.cpp, line 92.`
+
+Once clang aborted, Xcode tried to link/lipo the stub file that was never produced, causing the misleading missing-file cascade:
+
+`lipo: can't open input file: .../Data.noindex/arm64-apple (No such file or directory)`
+
+The visible `Data.noindex/arm64-apple.o` messages were therefore symptoms. The actual issue was the selected custom Swift toolchain's clang crashing during Firebase/gRPC binary-framework stub injection.
+
+**Why The Simulator Change Did Not Help:**
+The failure happened before app launch and before simulator-specific runtime behavior. Xcode was constructing framework stubs for the simulator build product. Any iOS simulator destination using the same IDE-selected Swift 6.2 toolchain could hit the same `ios100.0-simulator` clang assertion, so switching to `iPhone 17 Pro` only changed the destination name, not the bad compiler path.
+
+**Fix Applied:**
+Opened Xcode's Toolchains selector from the toolbar and changed the active toolchain from **Swift 6.2 Release** back to **Xcode 26.3**.
+
+After switching, Xcode's UI build used:
+
+`/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang`
+
+The Xcode UI build then succeeded at `2026-05-14 10:21 IST`, and the Issue Navigator cleared.
+
+No source files, project files, pod files, package pins, or build settings were changed for this fix. `git status --short` was clean before this debug-log entry was added.
+
+**Diagnostic Steps That Found It:**
+1. Confirmed the workspace contains CocoaPods for MediaPipe and Swift Package Manager for Firebase.
+2. Confirmed Firebase package resolution is valid: `firebase-ios-sdk` `12.13.0`, plus `grpc-binary`, `GoogleUtilities`, `GoogleAppMeasurement`, `leveldb`, `nanopb`, and related dependencies.
+3. Confirmed available destinations include `iPhone 17 Pro`, so the device itself was not missing or misconfigured.
+4. Built from the terminal with an explicit clean DerivedData path; build succeeded.
+5. Built from the terminal using normal Xcode DerivedData; build succeeded.
+6. Triggered a build from the Xcode UI; build failed again with fresh `swbuild.tmp` paths.
+7. Decompressed the latest `.xcactivitylog` from:
+   `~/Library/Developer/Xcode/DerivedData/VirtualTrainer-ezszqygydeoqrdhconliqskhqxfl/Logs/Build/`
+8. Found the failing IDE log contained `swift-6.2-RELEASE.xctoolchain`, `target arm64-apple-ios100.0-simulator`, and the `OsVersion < VersionTuple(100)` clang assertion.
+9. Switched Xcode's active toolchain to Xcode 26.3.
+10. Rebuilt in Xcode UI; build succeeded and errors disappeared.
+
+**Verification:**
+Terminal clean build passed:
+
+`xcodebuild -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -derivedDataPath /tmp/VirtualTrainerDerivedData build`
+
+Terminal normal DerivedData build passed:
+
+`xcodebuild -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' build`
+
+Xcode UI build passed after selecting **Xcode 26.3** in the Toolchains window. The successful Xcode activity log no longer contained `swift-6.2-RELEASE`, `clang frontend command failed`, or `error:`.
+
+`xcrun --find clang` after the fix resolved to:
+
+`/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang`
+
+**Prevention Rule:**
+When Firebase, gRPC, or another binary Swift Package starts failing in Xcode with `clang frontend command failed`, `Abort trap: 6`, and missing `swbuild.tmp/.../Data.noindex/*.o` files, check Xcode's active toolchain before editing code. In Xcode, open the Toolchains selector and prefer the bundled **Xcode** toolchain for app builds unless a custom Swift toolchain is explicitly required.
+
+If terminal `xcodebuild` succeeds but the Xcode UI fails, compare the compiler paths in the `.xcactivitylog`. A mismatch between `XcodeDefault.xctoolchain` and `~/Library/Developer/Toolchains/swift-*.xctoolchain` is a high-signal clue.
+
+Do not treat the random `swbuild.tmp` object-file paths as the root cause. They are temporary outputs that disappear because the earlier compiler command crashed.
+
+**Pattern Tags:** #xcode-config #toolchain #firebase #swiftpm #grpc #clang #ide-only #deriveddata
+
+---
+
+### [DL-046] Add Firebase Bootstrap And DEBUG Smoke Verification; Block Phase 16 On Firestore TLS
+**Date:** 2026-05-14
+**Severity:** integration-blocking
+**Category:** firebase-integration
+**File(s):** `VirtualTrainer/VirtualTrainerApp.swift`, `VirtualTrainer/Services/FirebaseBootstrap.swift`, `VirtualTrainer/Services/FirebaseSmokeVerifier.swift`, `VirtualTrainerTests/WorkoutSummarySizeAuditTests.swift`, simulator trust/network state
+
+**Context:**
+Firebase packages were installed in the Xcode workspace:
+
+- `FirebaseAuth`
+- `FirebaseCore`
+- `FirebaseFirestore`
+- existing CocoaPods app framework linkage through `Pods_VirtualTrainer.framework`
+
+Firebase Console has anonymous authentication enabled. There is no login UI yet, so the correct integration proof at this phase is a gated debug-only anonymous sign-in plus a Firestore write/read smoke check, not a product-facing auth screen.
+
+**Errors / Findings:**
+1. Firebase packages were present, but the app had no explicit Firebase runtime bootstrap path yet. Installing packages alone does not configure Firebase; the app must call `FirebaseApp.configure(...)` with the bundled `GoogleService-Info.plist`.
+2. After adding the smoke verifier, the first compile attempt failed because `FirebaseSmokeVerifier.swift` referenced `FirebaseApp` without importing `FirebaseCore`.
+3. The Phase 15 audit test correctly failed after Firebase write code appeared, because the test was intentionally guarding against accidental production Firestore uploads before Phase 16. The test needed a narrow allowlist for bootstrap and DEBUG-only smoke verification, not a broad disable.
+4. The initial smoke verifier used a structured task-group timeout. Firestore/gRPC can keep retrying while the callback never returns under this network failure mode, so the task-group implementation could fail to write a deterministic smoke-result file.
+5. Live Firebase Auth initially failed in the simulator with network/trust errors. After adding the local corporate simulator certificates, anonymous Auth progressed and returned an anonymous user.
+6. Firestore live write still failed on the simulator. Simulator logs repeatedly showed Firebase Firestore gRPC handshake failures:
+
+`WriteStream ... Stream error: 'Unavailable: failed to connect to all addresses; last error: UNKNOWN: ... Ssl handshake failed (TSI_PROTOCOL_FAILURE): SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain'`
+
+7. Network comparison showed host macOS curl can reach Google APIs, while simulator curl cannot verify the same HTTPS endpoint:
+
+Host:
+
+`curl -I --max-time 10 https://www.googleapis.com` returned HTTP/2 404, proving basic host reachability.
+
+Simulator:
+
+`xcrun simctl spawn 0442BD6F-881D-451A-B764-815DCAD3F78A /usr/bin/curl -I --max-time 10 https://www.googleapis.com` failed with:
+
+`curl: (60) SSL certificate problem: self signed certificate in certificate chain`
+
+**Root Cause:**
+There were two separate issues:
+
+1. **App integration gap:** Firebase SDK dependencies were added, but the app needed explicit runtime configuration and a safe verification path.
+2. **Environment/network blocker:** The current simulator network is behind TLS inspection. Firebase Auth can now complete after simulator trust changes, but Firestore uses gRPC/BoringSSL and is still rejecting the intercepted certificate chain. This is not fixed by switching simulator devices and should not be bypassed in app code.
+
+The current Firestore failure is environmental, not a missing package, missing plist, bundle-id mismatch, or Phase 16 repository implementation bug.
+
+**Fix Applied:**
+1. Added `FirebaseBootstrap.configureIfNeeded()` to configure Firebase once from the bundled `GoogleService-Info.plist`.
+2. Called `FirebaseBootstrap.configureIfNeeded()` during `VirtualTrainerApp.init()`.
+3. Added `FirebaseSmokeVerifier` behind `#if DEBUG`.
+4. Gated the smoke verifier so it only runs with `--firebase-smoke-test` or `VIRTUALTRAINER_FIREBASE_SMOKE_TEST=1`; normal app launch does not sign in or write Firestore.
+5. Smoke verifier now:
+   - configures Firebase if needed,
+   - signs in anonymously,
+   - verifies the user is anonymous,
+   - writes a debug Firestore document under `debugFirebaseSmoke/{uid}`,
+   - reads the document back,
+   - verifies a nonce round-trip,
+   - writes `Library/Caches/FirebaseSmokeResult.json`,
+   - redacts Google API keys from error output.
+6. Replaced the smoke timeout helper with an unstructured continuation gate so blocked Auth/Firestore callbacks produce a deterministic failure result instead of hanging indefinitely.
+7. Updated `WorkoutSummarySizeAuditTests.testNoProductionFirebaseUploadCodeExistsYet()` to allow only:
+   - app bootstrap,
+   - DEBUG smoke verifier imports and calls,
+   - smoke-only Firestore `setData`.
+   The audit still blocks accidental production Firestore writes before Phase 16.
+8. Added simulator-local corporate certificates as a diagnostic step. This helped Auth progress, but did not clear Firestore gRPC. This is local simulator state, not a repo change.
+
+**Verification:**
+Build passed on the target simulator:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2'`
+
+Full test suite passed after the last code change:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2'`
+
+Latest test summary:
+
+- Result: `Passed`
+- Total tests: `335`
+- Passed: `335`
+- Failed: `0`
+- Skipped: `0`
+- Device: `iPhone 17 Pro`
+- Simulator ID: `0442BD6F-881D-451A-B764-815DCAD3F78A`
+- Result bundle: `~/Library/Developer/Xcode/DerivedData/VirtualTrainer-ezszqygydeoqrdhconliqskhqxfl/Logs/Test/Test-VirtualTrainer-2026.05.14_10-54-57-+0530.xcresult`
+
+Bundled app config was verified:
+
+- App bundle id: `satvik.VirtualTrainer`
+- Firebase plist `BUNDLE_ID`: `satvik.VirtualTrainer`
+- Firebase `PROJECT_ID`: `spotter-42ffe`
+- Firebase `GOOGLE_APP_ID`: present and matching the app
+
+Normal app launch passed the guard check:
+
+`xcrun simctl launch 0442BD6F-881D-451A-B764-815DCAD3F78A satvik.VirtualTrainer`
+
+No `FirebaseSmokeResult.json` was created during normal launch, proving the verifier does not accidentally run in product startup.
+
+Explicit smoke launch:
+
+`SIMCTL_CHILD_VIRTUALTRAINER_FIREBASE_SMOKE_TEST=1 xcrun simctl launch --terminate-running-process 0442BD6F-881D-451A-B764-815DCAD3F78A satvik.VirtualTrainer --firebase-smoke-test`
+
+Smoke result:
+
+```json
+{
+  "bundleID" : "satvik.VirtualTrainer",
+  "googleAppID" : "1:75737325492:ios:a4298df0aac33c20425ce1",
+  "isAnonymous" : true,
+  "message" : "Firestore smoke write did not complete within 25 seconds.",
+  "projectID" : "spotter-42ffe",
+  "status" : "fail"
+}
+```
+
+This proves Firebase Core configuration and anonymous Auth are working, but Firestore live write/read is not green on this simulator/network.
+
+**Phase 16 Gate:**
+Do not proceed to Phase 16 as fully green yet. Proceeding would hide an external Firestore connectivity problem behind new repository code.
+
+Green:
+
+- Xcode/Firebase package build
+- Firebase plist bundled with matching bundle id
+- Firebase Core configure path
+- anonymous Auth smoke path
+- full local test suite
+- normal app launch without accidental Firestore writes
+
+Red:
+
+- Firestore live write/read from the iOS simulator on this network
+
+**Prevention Rule:**
+Before implementing Phase 16 production Firestore repositories, rerun the DEBUG smoke verifier on a network that does not intercept Firebase TLS traffic, or have IT/network policy bypass SSL inspection for Firebase/Google endpoints used by this app, including Firestore/gRPC traffic. Do not disable TLS verification or add app-level certificate bypasses.
+
+Keep the audit test active. Any new production Firestore write path should be introduced deliberately in Phase 16 and should come with tests that prove the intended Firestore shape and local-first behavior.
+
+**Pattern Tags:** #firebase #firebase-auth #firestore #grpc #tls #simulator #debug-smoke #phase-16-gate #anonymous-auth

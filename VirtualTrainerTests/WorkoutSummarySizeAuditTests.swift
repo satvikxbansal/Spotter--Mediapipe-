@@ -94,13 +94,34 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
         )
     }
 
-    func testNoFirebaseUploadCodeExistsYet() throws {
+    func testNoProductionFirebaseUploadCodeExistsYet() throws {
         let sourceURL = Self.repositoryRootURL().appendingPathComponent("VirtualTrainer")
         let swiftFiles = try Self.swiftFiles(in: sourceURL)
-        let forbiddenNeedles = [
-            "import Firebase",
+        let allowedNeedlesByFile: [String: Set<String>] = [
+            "VirtualTrainerApp.swift": [
+                "FirebaseBootstrap.configureIfNeeded",
+                "FirebaseSmokeVerifier.runIfRequested"
+            ],
+            "FirebaseBootstrap.swift": [
+                "import FirebaseCore",
+                "FirebaseApp.configure"
+            ],
+            "FirebaseSmokeVerifier.swift": [
+                "import FirebaseAuth",
+                "import FirebaseCore",
+                "import FirebaseFirestore",
+                "FirebaseBootstrap.configureIfNeeded",
+                "Firestore.firestore",
+                ".setData("
+            ]
+        ]
+        let trackedNeedles = [
+            "import FirebaseCore",
+            "import FirebaseAuth",
             "import FirebaseFirestore",
             "FirebaseApp.configure",
+            "FirebaseBootstrap.configureIfNeeded",
+            "FirebaseSmokeVerifier.runIfRequested",
             "Firestore.firestore",
             ".setData(",
             ".updateData(",
@@ -109,14 +130,18 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
 
         let matches = try swiftFiles.flatMap { fileURL in
             let source = try String(contentsOf: fileURL)
-            return forbiddenNeedles.compactMap { needle in
-                source.contains(needle) ? "\(fileURL.lastPathComponent): \(needle)" : nil
+            let fileName = fileURL.lastPathComponent
+            let allowedNeedles = allowedNeedlesByFile[fileName] ?? []
+            return trackedNeedles.compactMap { needle in
+                source.contains(needle) && !allowedNeedles.contains(needle)
+                    ? "\(fileName): \(needle)"
+                    : nil
             }
         }
 
         XCTAssertTrue(
             matches.isEmpty,
-            "This phase should document the Firestore shape without adding upload code: \(matches.joined(separator: ", "))"
+            "Firebase usage must remain limited to app bootstrap and the explicit DEBUG smoke verifier until Phase 16: \(matches.joined(separator: ", "))"
         )
     }
 }

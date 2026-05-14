@@ -19,6 +19,11 @@ struct VirtualTrainerApp: App {
     @StateObject private var insightStore = InsightStore()
 
     init() {
+        FirebaseBootstrap.configureIfNeeded()
+#if DEBUG
+        FirebaseSmokeVerifier.runIfRequested()
+#endif
+
         let dependencies = AppDependencies.local()
         _appDependencies = StateObject(wrappedValue: dependencies)
         _syncOrchestrator = StateObject(wrappedValue: SyncOrchestrator(dependencies: dependencies))
