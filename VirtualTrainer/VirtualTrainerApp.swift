@@ -55,6 +55,7 @@ struct VirtualTrainerApp: App {
             .environmentObject(appDependencies)
             .environmentObject(syncOrchestrator)
             .onAppear {
+                configureStoreRemoteSync()
                 syncStoresWithAccount()
                 Task {
                     await themeStore.sync(with: onboardingStore.profile)
@@ -118,5 +119,20 @@ struct VirtualTrainerApp: App {
         trophyStore.setCurrentAccountId(accountId)
         themeStore.setCurrentAccountId(accountId)
         insightStore.setCurrentAccountId(accountId)
+    }
+
+    private func configureStoreRemoteSync() {
+        onboardingStore.configureRemoteSync(
+            backendMode: appDependencies.backendMode,
+            profileRepository: appDependencies.profile
+        )
+        themeStore.configureRemoteSync(
+            backendMode: appDependencies.backendMode,
+            themeRepository: appDependencies.theme
+        )
+        calibrationStore.configureRemoteSync(
+            backendMode: appDependencies.backendMode,
+            calibrationRepository: appDependencies.calibration
+        )
     }
 }

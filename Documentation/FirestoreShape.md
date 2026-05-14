@@ -193,6 +193,8 @@ If a future product chooses to re-embed sets into the workout document, run the 
 
 - Add repository protocols and local implementations before importing Firebase SDKs.
 - Use idempotent writes with operation ids.
+- In Firebase mode, `UserProfile`, `UserProfile.selectedTheme`, `CalibrationRecord`, and active/history plans are remote-owned durable records. The existing local JSON files remain a fast launch/cache path only; local mode still treats those JSON files as the durable source of truth.
+- Theme has no standalone remote document in Phase 16D. `UserProfile.selectedTheme` is the remote source of truth, and `Theme.json` is only the local fast-cache used for immediate UI bootstrapping.
 - Treat synced `WorkoutSessionSummary` bodies as immutable; corrections should tombstone and create a replacement summary.
 - Write workout and set documents as one logical save.
 - Prefer recomputing stats, trends, recaps, and AI insights locally from synced summaries rather than storing derived caches as source of truth.

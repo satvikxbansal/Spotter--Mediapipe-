@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct WorkoutPreviewView: View {
+    @EnvironmentObject private var accountContext: AccountContext
+    @EnvironmentObject private var appDependencies: AppDependencies
     @EnvironmentObject private var onboardingStore: OnboardingStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
     @EnvironmentObject private var trophyStore: TrophyStore
@@ -331,7 +333,23 @@ struct WorkoutPreviewView: View {
             statusMessage = "This plan has no trackable exercise yet."
             return
         }
+        cacheActivePlanIfNeeded(previewState.displayPlan)
         activePlan = previewState.displayPlan
+    }
+
+    private func cacheActivePlanIfNeeded(_ plan: WorkoutPlanV2) {
+        guard appDependencies.backendMode == .firebase,
+              let accountId = accountContext.currentAccountId else {
+            return
+        }
+
+        Task {
+            _ = try? await appDependencies.plans.saveActivePlan(
+                plan,
+                accountId: accountId,
+                operationId: UUID()
+            )
+        }
     }
 
     private func refreshPlanInsight() async {

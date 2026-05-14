@@ -28,6 +28,8 @@ struct ProfileView: View {
     @State private var isDeletingAccountData = false
     @State private var isRunningFirebaseAuthAction = false
     @State private var firebaseAuthMessage: String?
+    @State private var isRunningFirestoreSyncAction = false
+    @State private var firestoreSyncMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -250,11 +252,16 @@ struct ProfileView: View {
                     currentAccountId: accountContext.currentAccountId,
                     isFirebaseAuthActionRunning: isRunningFirebaseAuthAction,
                     firebaseAuthMessage: firebaseAuthMessage,
+                    isFirestoreSyncActionRunning: isRunningFirestoreSyncAction,
+                    firestoreSyncMessage: firestoreSyncMessage,
                     isSampleDataEnabled: isSampleDataEnabled,
                     debugStatusMessage: debugStatusMessage,
                     onFirebaseSignIn: signInAnonymouslyWithFirebase,
                     onAuthSignOut: signOutOfAuthRepository,
                     onForceReclaim: forceReclaimLocalData,
+                    onTestProfileSync: testProfileSync,
+                    onTestCalibrationSync: testCalibrationSync,
+                    onTestPlanSync: testPlanSync,
                     onSampleDataToggle: setSampleDataEnabledForTesting,
                     onResetOnboarding: {
                         Task {
@@ -360,7 +367,7 @@ struct ProfileView: View {
         HapticsEngine.shared.buttonTap()
         Task {
             guard await onboardingStore.updateSelectedTheme(theme) else { return }
-            await themeStore.updateSelectedTheme(theme)
+            await themeStore.sync(with: onboardingStore.profile)
         }
     }
 
@@ -644,6 +651,112 @@ struct ProfileView: View {
             }
             isRunningFirebaseAuthAction = false
         }
+    }
+
+    private func testProfileSync() {
+        runFirestoreSyncTest {
+            let uid = try await ensureFirebaseAccountForDebug()
+            let nextLength: PlanSessionLength = onboardingStore.profile?.preferredSessionLength == .fifteen
+                ? .twentyFive
+                : .fifteen
+            let operationId = UUID()
+            guard await onboardingStore.updatePreferredSessionLength(nextLength, operationId: operationId) else {
+                throw RepositoryError.invalidPayload(onboardingStore.persistenceError ?? "Profile save failed.")
+            }
+            let loadedProfile = try await appDependencies.profile.loadProfile(accountId: uid)
+            guard loadedProfile?.preferredSessionLength == nextLength else {
+                throw RepositoryError.invalidPayload("Profile read-back did not match the saved session length.")
+            }
+            return "Profile sync passed for \(redactedAccountId(uid)); session length is \(nextLength.displayName)."
+        }
+    }
+
+    private func testCalibrationSync() {
+        runFirestoreSyncTest {
+            let uid = try await ensureFirebaseAccountForDebug()
+            let now = Date()
+            let operationId = UUID()
+            let record = CalibrationRecord.completed(
+                accountId: uid,
+                completedReps: CalibrationDefaults.targetReps,
+                startedAt: now.addingTimeInterval(-30),
+                completedAt: now,
+                visibilityPassed: true,
+                averageFormScore: 90,
+                notes: "DEBUG sync verification."
+            )
+            guard await calibrationStore.saveCompleted(record, operationId: operationId) else {
+                throw RepositoryError.invalidPayload(calibrationStore.persistenceError ?? "Calibration save failed.")
+            }
+            let loadedRecord = try await appDependencies.calibration.loadCalibrationRecord(accountId: uid)
+            guard loadedRecord?.status == .completed,
+                  loadedRecord?.completedReps == CalibrationDefaults.targetReps else {
+                throw RepositoryError.invalidPayload("Calibration read-back did not match the saved record.")
+            }
+            return "Calibration sync passed for \(redactedAccountId(uid)); completed \(CalibrationDefaults.targetReps) reps."
+        }
+    }
+
+    private func testPlanSync() {
+        runFirestoreSyncTest {
+            let uid = try await ensureFirebaseAccountForDebug()
+            guard let profile = onboardingStore.profile else {
+                throw RepositoryError.accountMissing
+            }
+            let plan = PlanService().generateSmartStart(profile: profile)
+            let savedPlan = try await appDependencies.plans.saveActivePlan(
+                plan,
+                accountId: uid,
+                operationId: UUID()
+            )
+            let loadedPlan = try await appDependencies.plans.loadActivePlan(accountId: uid)
+            guard loadedPlan?.id == savedPlan.id else {
+                throw RepositoryError.invalidPayload("Plan read-back did not return the saved active plan.")
+            }
+            return "Plan sync passed for \(redactedAccountId(uid)); active plan is \(savedPlan.title)."
+        }
+    }
+
+    private func runFirestoreSyncTest(_ action: @escaping () async throws -> String) {
+        guard backendStatusStore.activeBackendMode == .firebase else {
+            firestoreSyncMessage = "Firebase mode is not active for this launch."
+            return
+        }
+        guard !isRunningFirestoreSyncAction else { return }
+
+        isRunningFirestoreSyncAction = true
+        firestoreSyncMessage = nil
+
+        Task { @MainActor in
+            do {
+                firestoreSyncMessage = try await action()
+                HapticsEngine.shared.successRipple()
+            } catch {
+                firestoreSyncMessage = "Sync test failed: \(sanitizedDebugMessage(for: error))"
+                HapticsEngine.shared.warningPulse()
+            }
+            isRunningFirestoreSyncAction = false
+        }
+    }
+
+    private func ensureFirebaseAccountForDebug() async throws -> String {
+        if let accountId = accountContext.currentAccountId {
+            return accountId
+        }
+        let uid = try await appDependencies.auth.signInAnonymously()
+        accountContext.setAccount(uid)
+        syncStoresWithAccount()
+        return uid
+    }
+
+    private func syncStoresWithAccount() {
+        let accountId = accountContext.currentAccountId
+        onboardingStore.setCurrentAccountId(accountId)
+        calibrationStore.setCurrentAccountId(accountId)
+        historyStore.setCurrentAccountId(accountId)
+        trophyStore.setCurrentAccountId(accountId)
+        themeStore.setCurrentAccountId(accountId)
+        insightStore.setCurrentAccountId(accountId)
     }
 
     private func redactedAccountId(_ accountId: String?) -> String {
@@ -1709,11 +1822,16 @@ private struct SettingsDebugSection: View {
     let currentAccountId: String?
     let isFirebaseAuthActionRunning: Bool
     let firebaseAuthMessage: String?
+    let isFirestoreSyncActionRunning: Bool
+    let firestoreSyncMessage: String?
     let isSampleDataEnabled: Bool
     let debugStatusMessage: String?
     let onFirebaseSignIn: () -> Void
     let onAuthSignOut: () -> Void
     let onForceReclaim: () -> Void
+    let onTestProfileSync: () -> Void
+    let onTestCalibrationSync: () -> Void
+    let onTestPlanSync: () -> Void
     let onSampleDataToggle: (Bool) -> Void
     let onResetOnboarding: () -> Void
     let onResetCalibration: () -> Void
@@ -1890,6 +2008,41 @@ private struct SettingsDebugSection: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    Text("Firestore Repositories")
+                        .font(.system(size: 11, weight: .black))
+                        .tracking(0.9)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Button("Test profile sync", action: onTestProfileSync)
+                            .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.accent))
+                        Button("Test calibration sync", action: onTestCalibrationSync)
+                            .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.accent))
+                    }
+                    Button("Test plan sync", action: onTestPlanSync)
+                        .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.accent))
+
+                    if isFirestoreSyncActionRunning {
+                        ProgressView()
+                            .tint(Theme.Colors.accent)
+                    }
+
+                    if let firestoreSyncMessage {
+                        Text(firestoreSyncMessage)
+                            .caption()
+                            .foregroundStyle(statusColor(for: firestoreSyncMessage))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .disabled(isFirestoreSyncActionRunning || backendStatusStore.activeBackendMode != .firebase)
+                .opacity(
+                    isFirestoreSyncActionRunning || backendStatusStore.activeBackendMode == .firebase
+                        ? 1
+                        : 0.45
+                )
             }
             .padding(.top, Theme.Spacing.sm)
         } label: {

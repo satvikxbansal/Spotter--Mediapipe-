@@ -16,6 +16,9 @@ final class ThemeStore: ObservableObject {
     private var storedEnvelope: ThemeEnvelope?
     private var persistedEnvelope: ThemeEnvelope?
     private var persistenceGeneration = 0
+    private var backendMode: BackendMode = .local
+    private var themeRepository: (any ThemeRepository)?
+    private var themeObservationTask: Task<Void, Never>?
 
     init(
         fileURL: URL? = nil,
@@ -40,15 +43,30 @@ final class ThemeStore: ObservableObject {
 
     nonisolated deinit {}
 
+    func configureRemoteSync(
+        backendMode: BackendMode,
+        themeRepository: (any ThemeRepository)?
+    ) {
+        self.backendMode = backendMode
+        self.themeRepository = backendMode == .firebase ? themeRepository : nil
+        restartThemeObservationIfNeeded()
+    }
+
     func setCurrentAccountId(_ accountId: String?) {
         let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         guard currentAccountId != normalizedAccountId else { return }
         currentAccountId = normalizedAccountId
         applyStoredEnvelope()
+        restartThemeObservationIfNeeded()
     }
 
     @discardableResult
-    func updateSelectedTheme(_ theme: SpotterThemeOption, operationId: UUID? = nil) async -> Bool {
+    func updateSelectedTheme(
+        _ theme: SpotterThemeOption,
+        operationId: UUID? = nil,
+        saveRemote: Bool = true,
+        recordJournal: Bool = true
+    ) async -> Bool {
         let writeOperationId = operationId ?? UUID()
 
         let shouldPersist = selectedTheme != theme ||
@@ -72,7 +90,7 @@ final class ThemeStore: ObservableObject {
         let previousEnvelope = storedEnvelope
         let previousTheme = selectedTheme
         let generation = applyLocalMutation(nextEnvelope)
-        if await writeJournal.contains(operationId: writeOperationId) {
+        if recordJournal, await writeJournal.contains(operationId: writeOperationId) {
             rollbackLocalMutationIfNeeded(
                 generation: generation,
                 envelope: previousEnvelope,
@@ -81,13 +99,23 @@ final class ThemeStore: ObservableObject {
             return true
         }
         guard await persist(nextEnvelope, generation: generation) != nil else { return false }
-        await recordWriteOperation(writeOperationId, createdAt: writeCreatedAt)
+        if saveRemote {
+            guard await saveThemeRemotelyIfNeeded(theme, operationId: writeOperationId) else {
+                return false
+            }
+        }
+        if recordJournal {
+            await recordWriteOperation(writeOperationId, createdAt: writeCreatedAt)
+        }
         return true
     }
 
     @discardableResult
     func sync(with profile: UserProfile?) async -> Bool {
         guard let profile else { return true }
+        if backendMode == .firebase {
+            return await applyThemeCache(profile.selectedTheme, accountId: profile.accountId)
+        }
         return await updateSelectedTheme(profile.selectedTheme)
     }
 
@@ -137,6 +165,78 @@ final class ThemeStore: ObservableObject {
             entityKind: .theme,
             createdAt: createdAt
         )
+    }
+
+    private func restartThemeObservationIfNeeded() {
+        themeObservationTask?.cancel()
+        themeObservationTask = nil
+
+        guard backendMode == .firebase,
+              let themeRepository,
+              let currentAccountId else {
+            return
+        }
+
+        themeObservationTask = Task { [weak self, themeRepository, currentAccountId] in
+            do {
+                let loadedTheme = try await themeRepository.loadTheme(accountId: currentAccountId)
+                _ = await self?.applyThemeCache(loadedTheme, accountId: currentAccountId)
+
+                let stream = try await themeRepository.observeTheme(accountId: currentAccountId)
+                for await remoteTheme in stream {
+                    _ = await self?.applyThemeCache(remoteTheme, accountId: currentAccountId)
+                }
+            } catch {
+                await self?.setRemoteThemeError(error)
+            }
+        }
+    }
+
+    private func saveThemeRemotelyIfNeeded(
+        _ theme: SpotterThemeOption,
+        operationId: UUID
+    ) async -> Bool {
+        guard backendMode == .firebase,
+              let themeRepository,
+              let currentAccountId else {
+            return true
+        }
+
+        do {
+            try await themeRepository.saveTheme(
+                theme,
+                accountId: currentAccountId,
+                operationId: operationId
+            )
+            return await applyThemeCache(theme, accountId: currentAccountId)
+        } catch {
+            persistenceError = "Could not sync theme: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    @discardableResult
+    private func applyThemeCache(
+        _ theme: SpotterThemeOption,
+        accountId: String?
+    ) async -> Bool {
+        let envelope = ThemeEnvelope(
+            selectedTheme: theme,
+            accountId: accountId,
+            syncMetadata: SyncMetadata(
+                localUpdatedAt: Date(),
+                lastSyncedAt: Date(),
+                serverVersion: nil,
+                syncState: .synced,
+                pendingOperationId: nil
+            )
+        )
+        let generation = applyLocalMutation(envelope)
+        return await persist(envelope, generation: generation) != nil
+    }
+
+    private func setRemoteThemeError(_ error: Error) {
+        persistenceError = "Could not observe theme sync: \(error.localizedDescription)"
     }
 
     private func loadTheme() {

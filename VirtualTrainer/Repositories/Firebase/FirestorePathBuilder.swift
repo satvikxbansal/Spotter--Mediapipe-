@@ -61,6 +61,10 @@ nonisolated enum FirestorePathBuilder {
         try plan(uid: uid, planId: planId.uuidString.lowercased())
     }
 
+    static func plansCollection(uid: String) throws -> String {
+        "\(try users(uid))/plans"
+    }
+
     private static func pathComponent(_ value: String, label: String) throws -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {

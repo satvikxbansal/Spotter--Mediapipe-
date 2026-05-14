@@ -57,6 +57,7 @@ protocol InsightRepository: AnyObject {
 protocol ThemeRepository: AnyObject {
     func loadTheme(accountId: String) async throws -> SpotterThemeOption
     func saveTheme(_ theme: SpotterThemeOption, accountId: String, operationId: UUID) async throws
+    func observeTheme(accountId: String) async throws -> AsyncStream<SpotterThemeOption>
 }
 
 @MainActor
@@ -64,6 +65,7 @@ protocol CalibrationRepository: AnyObject {
     func loadCalibrationRecord(accountId: String) async throws -> CalibrationRecord?
     @discardableResult
     func saveCalibrationRecord(_ record: CalibrationRecord, operationId: UUID) async throws -> CalibrationRecord
+    func observeCalibrationRecord(accountId: String) async throws -> AsyncStream<CalibrationRecord?>
 }
 
 @MainActor

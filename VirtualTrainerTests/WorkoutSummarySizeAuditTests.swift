@@ -115,6 +115,27 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
             "FirestoreEncodingHelpers.swift": [
                 "import FirebaseFirestore"
             ],
+            "FirestoreDocumentDatabase.swift": [
+                "import FirebaseCore",
+                "import FirebaseFirestore",
+                "Firestore.firestore",
+                ".setData(",
+                ".updateData("
+            ],
+            "FirestoreThemeRepository.swift": [
+                "import FirebaseFirestore",
+                ".setData("
+            ],
+            "FirestoreProfileRepository.swift": [
+                ".setData("
+            ],
+            "FirestoreCalibrationRepository.swift": [
+                ".setData("
+            ],
+            "FirestorePlanRepository.swift": [
+                ".setData(",
+                ".updateData("
+            ],
             "FirebaseSmokeVerifier.swift": [
                 "import FirebaseAuth",
                 "import FirebaseCore",
@@ -150,7 +171,7 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
 
         XCTAssertTrue(
             matches.isEmpty,
-            "Firebase usage must remain limited to app bootstrap and the explicit DEBUG smoke verifier until Phase 16: \(matches.joined(separator: ", "))"
+            "Firebase usage must remain limited to app bootstrap, the explicit DEBUG smoke verifier, and intentional Phase 16D Firestore repository APIs: \(matches.joined(separator: ", "))"
         )
     }
 }

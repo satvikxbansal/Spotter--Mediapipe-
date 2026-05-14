@@ -1,6 +1,6 @@
 import Foundation
 
-func mapToProfileDocument(_ profile: UserProfile) -> FirestoreProfileDocument {
+nonisolated func mapToProfileDocument(_ profile: UserProfile) -> FirestoreProfileDocument {
     let operationId = profile.syncMetadata.pendingOperationId ?? UUID()
     return FirestoreProfileDocument(
         schemaVersion: FirestoreDTOSchema.currentVersion,
@@ -36,7 +36,7 @@ func mapToProfileDocument(_ profile: UserProfile) -> FirestoreProfileDocument {
     )
 }
 
-func mapFromProfileDocument(_ doc: FirestoreProfileDocument) -> UserProfile {
+nonisolated func mapFromProfileDocument(_ doc: FirestoreProfileDocument) -> UserProfile {
     let updatedAt = doc.updatedAt
     return UserProfile(
         id: uuid(from: doc.profileId),
@@ -73,7 +73,7 @@ func mapFromProfileDocument(_ doc: FirestoreProfileDocument) -> UserProfile {
     )
 }
 
-func mapToWorkoutDocument(_ summary: WorkoutSessionSummary) -> FirestoreWorkoutDocument {
+nonisolated func mapToWorkoutDocument(_ summary: WorkoutSessionSummary) -> FirestoreWorkoutDocument {
     FirestoreWorkoutDocument(
         schemaVersion: FirestoreDTOSchema.currentVersion,
         accountId: normalizedAccountId(summary.accountId),
@@ -111,11 +111,11 @@ func mapToWorkoutDocument(_ summary: WorkoutSessionSummary) -> FirestoreWorkoutD
     )
 }
 
-func mapFromWorkoutDocument(_ doc: FirestoreWorkoutDocument) -> WorkoutSessionSummary {
+nonisolated func mapFromWorkoutDocument(_ doc: FirestoreWorkoutDocument) -> WorkoutSessionSummary {
     mapFromWorkoutDocument(doc, sets: [])
 }
 
-func mapFromWorkoutDocument(
+nonisolated func mapFromWorkoutDocument(
     _ doc: FirestoreWorkoutDocument,
     sets: [FirestoreWorkoutSetDocument]
 ) -> WorkoutSessionSummary {
@@ -162,7 +162,7 @@ func mapFromWorkoutDocument(
     )
 }
 
-func mapToWorkoutSetDocument(
+nonisolated func mapToWorkoutSetDocument(
     _ setSummary: ExerciseSetSummary,
     accountId: String,
     workoutId: UUID,
@@ -200,7 +200,7 @@ func mapToWorkoutSetDocument(
     )
 }
 
-func mapFromWorkoutSetDocument(_ doc: FirestoreWorkoutSetDocument) -> ExerciseSetSummary {
+nonisolated func mapFromWorkoutSetDocument(_ doc: FirestoreWorkoutSetDocument) -> ExerciseSetSummary {
     ExerciseSetSummary(
         exerciseType: ExerciseType(rawValue: doc.exerciseType) ?? .squat,
         setIndex: doc.setIndex,
@@ -222,7 +222,7 @@ func mapFromWorkoutSetDocument(_ doc: FirestoreWorkoutSetDocument) -> ExerciseSe
     )
 }
 
-func mapToTrophyEventDocument(_ event: TrophyUnlockEvent) -> FirestoreTrophyEventDocument {
+nonisolated func mapToTrophyEventDocument(_ event: TrophyUnlockEvent) -> FirestoreTrophyEventDocument {
     FirestoreTrophyEventDocument(
         schemaVersion: FirestoreDTOSchema.currentVersion,
         accountId: normalizedAccountId(event.accountId),
@@ -242,7 +242,7 @@ func mapToTrophyEventDocument(_ event: TrophyUnlockEvent) -> FirestoreTrophyEven
     )
 }
 
-func mapFromTrophyEventDocument(_ doc: FirestoreTrophyEventDocument) -> TrophyUnlockEvent {
+nonisolated func mapFromTrophyEventDocument(_ doc: FirestoreTrophyEventDocument) -> TrophyUnlockEvent {
     TrophyUnlockEvent(
         id: uuid(from: doc.eventId),
         accountId: doc.accountId,
@@ -263,7 +263,7 @@ func mapFromTrophyEventDocument(_ doc: FirestoreTrophyEventDocument) -> TrophyUn
     )
 }
 
-func mapToTrophyProgressCacheDocument(_ snapshot: TrophyProgressSnapshot) -> FirestoreTrophyProgressCacheDocument {
+nonisolated func mapToTrophyProgressCacheDocument(_ snapshot: TrophyProgressSnapshot) -> FirestoreTrophyProgressCacheDocument {
     let operationId = snapshot.progress.compactMap(\.syncMetadata.pendingOperationId).first ?? UUID()
     return FirestoreTrophyProgressCacheDocument(
         schemaVersion: FirestoreDTOSchema.currentVersion,
@@ -281,7 +281,7 @@ func mapToTrophyProgressCacheDocument(_ snapshot: TrophyProgressSnapshot) -> Fir
     )
 }
 
-func mapFromTrophyProgressCacheDocument(_ doc: FirestoreTrophyProgressCacheDocument) -> TrophyProgressSnapshot {
+nonisolated func mapFromTrophyProgressCacheDocument(_ doc: FirestoreTrophyProgressCacheDocument) -> TrophyProgressSnapshot {
     TrophyProgressSnapshot(
         accountId: doc.accountId,
         catalogVersion: doc.catalogVersion,
@@ -292,7 +292,7 @@ func mapFromTrophyProgressCacheDocument(_ doc: FirestoreTrophyProgressCacheDocum
     )
 }
 
-func mapToInsightDocument(_ insight: AIInsight) -> FirestoreInsightDocument {
+nonisolated func mapToInsightDocument(_ insight: AIInsight) -> FirestoreInsightDocument {
     FirestoreInsightDocument(
         schemaVersion: FirestoreDTOSchema.currentVersion,
         accountId: normalizedAccountId(insight.accountId),
@@ -321,7 +321,7 @@ func mapToInsightDocument(_ insight: AIInsight) -> FirestoreInsightDocument {
     )
 }
 
-func mapFromInsightDocument(_ doc: FirestoreInsightDocument) -> AIInsight {
+nonisolated func mapFromInsightDocument(_ doc: FirestoreInsightDocument) -> AIInsight {
     AIInsight(
         id: doc.insightId,
         accountId: doc.accountId,
@@ -352,7 +352,7 @@ func mapFromInsightDocument(_ doc: FirestoreInsightDocument) -> AIInsight {
     )
 }
 
-func mapToInsightDeliveryDocument(_ record: InsightDeliveryRecord) -> FirestoreInsightDeliveryDocument {
+nonisolated func mapToInsightDeliveryDocument(_ record: InsightDeliveryRecord) -> FirestoreInsightDeliveryDocument {
     FirestoreInsightDeliveryDocument(
         schemaVersion: FirestoreDTOSchema.currentVersion,
         accountId: normalizedAccountId(record.accountId),
@@ -368,7 +368,7 @@ func mapToInsightDeliveryDocument(_ record: InsightDeliveryRecord) -> FirestoreI
     )
 }
 
-func mapFromInsightDeliveryDocument(_ doc: FirestoreInsightDeliveryDocument) -> InsightDeliveryRecord {
+nonisolated func mapFromInsightDeliveryDocument(_ doc: FirestoreInsightDeliveryDocument) -> InsightDeliveryRecord {
     InsightDeliveryRecord(
         accountId: doc.accountId,
         dedupeKey: doc.dedupeKey,
@@ -385,7 +385,7 @@ func mapFromInsightDeliveryDocument(_ doc: FirestoreInsightDeliveryDocument) -> 
     )
 }
 
-func mapToInsightEngagementDocument(_ record: InsightEngagementRecord) -> FirestoreInsightEngagementDocument {
+nonisolated func mapToInsightEngagementDocument(_ record: InsightEngagementRecord) -> FirestoreInsightEngagementDocument {
     let counts = Dictionary(
         uniqueKeysWithValues: InsightEngagementKind.allCases.map { ($0.rawValue, record.count(for: $0)) }
     ).filter { $0.value > 0 }
@@ -407,7 +407,7 @@ func mapToInsightEngagementDocument(_ record: InsightEngagementRecord) -> Firest
     )
 }
 
-func mapFromInsightEngagementDocument(_ doc: FirestoreInsightEngagementDocument) -> InsightEngagementRecord {
+nonisolated func mapFromInsightEngagementDocument(_ doc: FirestoreInsightEngagementDocument) -> InsightEngagementRecord {
     InsightEngagementRecord(
         accountId: doc.accountId,
         dedupeKey: doc.dedupeKey,
@@ -422,7 +422,7 @@ func mapFromInsightEngagementDocument(_ doc: FirestoreInsightEngagementDocument)
     )
 }
 
-func mapToCalibrationDocument(_ record: CalibrationRecord) -> FirestoreCalibrationDocument {
+nonisolated func mapToCalibrationDocument(_ record: CalibrationRecord) -> FirestoreCalibrationDocument {
     FirestoreCalibrationDocument(
         schemaVersion: FirestoreDTOSchema.currentVersion,
         accountId: normalizedAccountId(record.accountId),
@@ -443,7 +443,7 @@ func mapToCalibrationDocument(_ record: CalibrationRecord) -> FirestoreCalibrati
     )
 }
 
-func mapFromCalibrationDocument(_ doc: FirestoreCalibrationDocument) -> CalibrationRecord {
+nonisolated func mapFromCalibrationDocument(_ doc: FirestoreCalibrationDocument) -> CalibrationRecord {
     CalibrationRecord(
         id: uuid(from: doc.calibrationId),
         accountId: doc.accountId,
@@ -466,19 +466,24 @@ func mapFromCalibrationDocument(_ doc: FirestoreCalibrationDocument) -> Calibrat
     )
 }
 
-func mapToPlanDocument(
+nonisolated func mapToPlanDocument(
     _ plan: WorkoutPlanV2,
     accountId: String,
+    active: Bool = false,
+    savedAt: Date? = nil,
     deletedAt: Date? = nil,
     syncMetadata: SyncMetadata? = nil,
     operationId: UUID = UUID()
 ) -> FirestorePlanDocument {
     let normalized = normalizedAccountId(accountId)
-    let metadata = syncMetadata ?? .initialPendingUpload(operationId: operationId, now: plan.generatedAt)
+    let resolvedSavedAt = savedAt ?? plan.generatedAt
+    let metadata = syncMetadata ?? .initialPendingUpload(operationId: operationId, now: resolvedSavedAt)
     return FirestorePlanDocument(
         schemaVersion: FirestoreDTOSchema.currentVersion,
         accountId: normalized,
         planId: lowercaseUUID(plan.id),
+        active: active,
+        savedAt: resolvedSavedAt,
         title: plan.title,
         subtitle: plan.subtitle,
         goal: plan.goal,
@@ -496,7 +501,7 @@ func mapToPlanDocument(
     )
 }
 
-func mapFromPlanDocument(_ doc: FirestorePlanDocument) -> WorkoutPlanV2 {
+nonisolated func mapFromPlanDocument(_ doc: FirestorePlanDocument) -> WorkoutPlanV2 {
     WorkoutPlanV2(
         id: uuid(from: doc.planId),
         title: doc.title,
@@ -512,7 +517,7 @@ func mapFromPlanDocument(_ doc: FirestorePlanDocument) -> WorkoutPlanV2 {
     )
 }
 
-private func mapToFirestoreSyncMetadata(_ metadata: SyncMetadata) -> FirestoreSyncMetadataFields {
+private nonisolated func mapToFirestoreSyncMetadata(_ metadata: SyncMetadata) -> FirestoreSyncMetadataFields {
     FirestoreSyncMetadataFields(
         localUpdatedAt: metadata.localUpdatedAt,
         lastSyncedAt: metadata.lastSyncedAt,
@@ -522,7 +527,7 @@ private func mapToFirestoreSyncMetadata(_ metadata: SyncMetadata) -> FirestoreSy
     )
 }
 
-private func mapFromFirestoreSyncMetadata(
+private nonisolated func mapFromFirestoreSyncMetadata(
     _ fields: FirestoreSyncMetadataFields?,
     accountId: String,
     fallbackDate: Date
@@ -547,7 +552,7 @@ private func mapFromFirestoreSyncMetadata(
     )
 }
 
-private func mapToFirestoreCueEvent(_ event: CueEvent) -> FirestoreCueEventDTO {
+private nonisolated func mapToFirestoreCueEvent(_ event: CueEvent) -> FirestoreCueEventDTO {
     FirestoreCueEventDTO(
         id: lowercaseUUID(event.id),
         timestamp: event.timestamp,
@@ -563,7 +568,7 @@ private func mapToFirestoreCueEvent(_ event: CueEvent) -> FirestoreCueEventDTO {
     )
 }
 
-private func mapFromFirestoreCueEvent(_ dto: FirestoreCueEventDTO) -> CueEvent {
+private nonisolated func mapFromFirestoreCueEvent(_ dto: FirestoreCueEventDTO) -> CueEvent {
     CueEvent(
         id: uuid(from: dto.id),
         timestamp: dto.timestamp,
@@ -579,7 +584,7 @@ private func mapFromFirestoreCueEvent(_ dto: FirestoreCueEventDTO) -> CueEvent {
     )
 }
 
-private func mapToFirestoreRepQualityEvent(_ event: RepQualityEvent) -> FirestoreRepQualityEventDTO {
+private nonisolated func mapToFirestoreRepQualityEvent(_ event: RepQualityEvent) -> FirestoreRepQualityEventDTO {
     FirestoreRepQualityEventDTO(
         id: lowercaseUUID(event.id),
         exerciseType: event.exerciseType.rawValue,
@@ -596,7 +601,7 @@ private func mapToFirestoreRepQualityEvent(_ event: RepQualityEvent) -> Firestor
     )
 }
 
-private func mapFromFirestoreRepQualityEvent(_ dto: FirestoreRepQualityEventDTO) -> RepQualityEvent {
+private nonisolated func mapFromFirestoreRepQualityEvent(_ dto: FirestoreRepQualityEventDTO) -> RepQualityEvent {
     RepQualityEvent(
         id: uuid(from: dto.id),
         exerciseType: ExerciseType(rawValue: dto.exerciseType) ?? .squat,
@@ -613,7 +618,7 @@ private func mapFromFirestoreRepQualityEvent(_ dto: FirestoreRepQualityEventDTO)
     )
 }
 
-private func mapToFirestoreSetQualitySummary(_ summary: SetQualitySummary) -> FirestoreSetQualitySummaryDTO {
+private nonisolated func mapToFirestoreSetQualitySummary(_ summary: SetQualitySummary) -> FirestoreSetQualitySummaryDTO {
     FirestoreSetQualitySummaryDTO(
         totalScoredReps: summary.totalScoredReps,
         goodFormReps: summary.goodFormReps,
@@ -631,7 +636,7 @@ private func mapToFirestoreSetQualitySummary(_ summary: SetQualitySummary) -> Fi
     )
 }
 
-private func mapFromFirestoreSetQualitySummary(_ dto: FirestoreSetQualitySummaryDTO) -> SetQualitySummary {
+private nonisolated func mapFromFirestoreSetQualitySummary(_ dto: FirestoreSetQualitySummaryDTO) -> SetQualitySummary {
     SetQualitySummary(
         totalScoredReps: dto.totalScoredReps,
         goodFormReps: dto.goodFormReps,
@@ -649,7 +654,7 @@ private func mapFromFirestoreSetQualitySummary(_ dto: FirestoreSetQualitySummary
     )
 }
 
-private func mapToFirestoreStructuredEffortSummary(
+private nonisolated func mapToFirestoreStructuredEffortSummary(
     _ summary: StructuredEffortSummary
 ) -> FirestoreStructuredEffortSummaryDTO {
     FirestoreStructuredEffortSummaryDTO(
@@ -660,7 +665,7 @@ private func mapToFirestoreStructuredEffortSummary(
     )
 }
 
-private func mapFromFirestoreStructuredEffortSummary(
+private nonisolated func mapFromFirestoreStructuredEffortSummary(
     _ dto: FirestoreStructuredEffortSummaryDTO
 ) -> StructuredEffortSummary {
     StructuredEffortSummary(
@@ -671,7 +676,7 @@ private func mapFromFirestoreStructuredEffortSummary(
     )
 }
 
-private func mapToFirestoreWorkoutTarget(_ target: WorkoutTarget) -> FirestoreWorkoutTargetDTO {
+private nonisolated func mapToFirestoreWorkoutTarget(_ target: WorkoutTarget) -> FirestoreWorkoutTargetDTO {
     switch target {
     case .reps(let count):
         FirestoreWorkoutTargetDTO(kind: "reps", value: count)
@@ -686,7 +691,7 @@ private func mapToFirestoreWorkoutTarget(_ target: WorkoutTarget) -> FirestoreWo
     }
 }
 
-private func mapFromFirestoreWorkoutTarget(_ dto: FirestoreWorkoutTargetDTO) -> WorkoutTarget {
+private nonisolated func mapFromFirestoreWorkoutTarget(_ dto: FirestoreWorkoutTargetDTO) -> WorkoutTarget {
     switch dto.kind {
     case "reps":
         .reps(dto.value ?? 0)
@@ -701,7 +706,7 @@ private func mapFromFirestoreWorkoutTarget(_ dto: FirestoreWorkoutTargetDTO) -> 
     }
 }
 
-private func mapToFirestoreTrophyProgress(_ progress: TrophyProgress) -> FirestoreTrophyProgressDTO {
+private nonisolated func mapToFirestoreTrophyProgress(_ progress: TrophyProgress) -> FirestoreTrophyProgressDTO {
     FirestoreTrophyProgressDTO(
         trophyId: progress.trophyId,
         currentValue: progress.currentValue,
@@ -716,7 +721,7 @@ private func mapToFirestoreTrophyProgress(_ progress: TrophyProgress) -> Firesto
     )
 }
 
-private func mapFromFirestoreTrophyProgress(_ dto: FirestoreTrophyProgressDTO) -> TrophyProgress {
+private nonisolated func mapFromFirestoreTrophyProgress(_ dto: FirestoreTrophyProgressDTO) -> TrophyProgress {
     TrophyProgress(
         trophyId: dto.trophyId,
         currentValue: dto.currentValue,
@@ -735,7 +740,7 @@ private func mapFromFirestoreTrophyProgress(_ dto: FirestoreTrophyProgressDTO) -
     )
 }
 
-private func mapToFirestoreInsightEvidence(_ evidence: InsightEvidence) -> FirestoreInsightEvidenceDTO {
+private nonisolated func mapToFirestoreInsightEvidence(_ evidence: InsightEvidence) -> FirestoreInsightEvidenceDTO {
     FirestoreInsightEvidenceDTO(
         id: evidence.id,
         metric: evidence.metric,
@@ -750,7 +755,7 @@ private func mapToFirestoreInsightEvidence(_ evidence: InsightEvidence) -> Fires
     )
 }
 
-private func mapFromFirestoreInsightEvidence(_ dto: FirestoreInsightEvidenceDTO) -> InsightEvidence {
+private nonisolated func mapFromFirestoreInsightEvidence(_ dto: FirestoreInsightEvidenceDTO) -> InsightEvidence {
     InsightEvidence(
         id: dto.id,
         metric: dto.metric,
@@ -765,7 +770,7 @@ private func mapFromFirestoreInsightEvidence(_ dto: FirestoreInsightEvidenceDTO)
     )
 }
 
-private func mapToFirestoreWorkoutBlock(_ block: WorkoutBlock) -> FirestoreWorkoutBlockDTO {
+private nonisolated func mapToFirestoreWorkoutBlock(_ block: WorkoutBlock) -> FirestoreWorkoutBlockDTO {
     FirestoreWorkoutBlockDTO(
         title: block.title,
         type: block.type.rawValue,
@@ -787,7 +792,7 @@ private func mapToFirestoreWorkoutBlock(_ block: WorkoutBlock) -> FirestoreWorko
     )
 }
 
-private func mapFromFirestoreWorkoutBlock(_ dto: FirestoreWorkoutBlockDTO) -> WorkoutBlock {
+private nonisolated func mapFromFirestoreWorkoutBlock(_ dto: FirestoreWorkoutBlockDTO) -> WorkoutBlock {
     WorkoutBlock(
         title: dto.title,
         type: WorkoutBlockType(rawValue: dto.type) ?? .main,
@@ -809,19 +814,19 @@ private func mapFromFirestoreWorkoutBlock(_ dto: FirestoreWorkoutBlockDTO) -> Wo
     )
 }
 
-private func defaultSetDocumentId(for setSummary: ExerciseSetSummary) -> String {
+private nonisolated func defaultSetDocumentId(for setSummary: ExerciseSetSummary) -> String {
     let index = setSummary.setIndex ?? 0
     return "\(setSummary.exerciseType.rawValue)-set-\(index)"
 }
 
-private func normalizedAccountId(_ accountId: String?) -> String {
+private nonisolated func normalizedAccountId(_ accountId: String?) -> String {
     AccountOwnership.normalizedAccountId(accountId) ?? ""
 }
 
-private func lowercaseUUID(_ uuid: UUID) -> String {
+private nonisolated func lowercaseUUID(_ uuid: UUID) -> String {
     uuid.uuidString.lowercased()
 }
 
-private func uuid(from string: String) -> UUID {
+private nonisolated func uuid(from string: String) -> UUID {
     UUID(uuidString: string) ?? UUID()
 }

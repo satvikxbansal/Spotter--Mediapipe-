@@ -320,6 +320,8 @@ nonisolated struct FirestorePlanDocument: Codable, Equatable {
     let schemaVersion: Int
     let accountId: String
     let planId: String
+    let active: Bool
+    let savedAt: Date
     let title: String
     let subtitle: String
     let goal: String

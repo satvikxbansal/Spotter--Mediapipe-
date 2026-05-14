@@ -5,6 +5,8 @@ import SwiftUI
 // ────────────────────────────────────────────────────────────────────
 
 struct HomeDashboardView: View {
+    @EnvironmentObject private var accountContext: AccountContext
+    @EnvironmentObject private var appDependencies: AppDependencies
     @EnvironmentObject private var onboardingStore: OnboardingStore
     @EnvironmentObject private var calibrationStore: CalibrationStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
@@ -245,6 +247,22 @@ struct HomeDashboardView: View {
         HapticsEngine.shared.buttonTap()
         previewPlan = plan
         isShowingPlanPreview = true
+        cacheActivePlanIfNeeded(plan)
+    }
+
+    private func cacheActivePlanIfNeeded(_ plan: WorkoutPlanV2) {
+        guard appDependencies.backendMode == .firebase,
+              let accountId = accountContext.currentAccountId else {
+            return
+        }
+
+        Task {
+            _ = try? await appDependencies.plans.saveActivePlan(
+                plan,
+                accountId: accountId,
+                operationId: UUID()
+            )
+        }
     }
 
     private func cycleSmartStartPlan() {

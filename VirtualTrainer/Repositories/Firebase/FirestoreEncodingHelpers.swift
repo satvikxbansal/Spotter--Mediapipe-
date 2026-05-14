@@ -23,6 +23,14 @@ nonisolated enum FirestoreEncodingHelpers {
         return payload
     }
 
+    static func decode<T: Decodable>(_ type: T.Type, from data: [String: Any]) throws -> T {
+        let normalized = normalizeFirestoreReadValue(data)
+        let jsonData = try JSONSerialization.data(withJSONObject: normalized)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(T.self, from: jsonData)
+    }
+
     private static func nilServerTimestampKeys(in dto: Any) -> [String] {
         Mirror(reflecting: dto).children.compactMap { child in
             guard let label = child.label, label.hasPrefix("server") else { return nil }
@@ -48,6 +56,31 @@ nonisolated enum FirestoreEncodingHelpers {
 
         if let string = value as? String, isUUIDString(string) {
             return string.lowercased()
+        }
+
+        return value
+    }
+
+    private static func normalizeFirestoreReadValue(_ value: Any) -> Any {
+        if let dictionary = value as? [String: Any] {
+            return dictionary.reduce(into: [String: Any]()) { result, pair in
+                let normalizedValue = normalizeFirestoreReadValue(pair.value)
+                if !(normalizedValue is NSNull) {
+                    result[pair.key] = normalizedValue
+                }
+            }
+        }
+
+        if let array = value as? [Any] {
+            return array.map(normalizeFirestoreReadValue).filter { !($0 is NSNull) }
+        }
+
+        if let timestamp = value as? Timestamp {
+            return FirestoreVersionStrings.string(from: timestamp.dateValue())
+        }
+
+        if value is NSNull {
+            return NSNull()
         }
 
         return value

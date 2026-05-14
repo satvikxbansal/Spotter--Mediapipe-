@@ -330,6 +330,7 @@ final class LocalInsightRepository: InsightRepository {
 @MainActor
 final class LocalThemeRepository: ThemeRepository {
     private let store: ThemeStore
+    private var themeContinuations: [UUID: AsyncStream<SpotterThemeOption>.Continuation] = [:]
 
     init(
         fileURL: URL? = nil,
@@ -357,6 +358,28 @@ final class LocalThemeRepository: ThemeRepository {
         guard await store.updateSelectedTheme(theme, operationId: operationId) else {
             throw localSaveError(store.persistenceError, fallback: "Could not save local theme.")
         }
+        notifyThemeObservers()
+    }
+
+    func observeTheme(accountId: String) async throws -> AsyncStream<SpotterThemeOption> {
+        store.setCurrentAccountId(try normalizedRequiredAccountId(accountId))
+        return AsyncStream { continuation in
+            let id = UUID()
+            themeContinuations[id] = continuation
+            continuation.yield(store.selectedTheme)
+            continuation.onTermination = { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.themeContinuations.removeValue(forKey: id)
+                }
+            }
+        }
+    }
+
+    private func notifyThemeObservers() {
+        themeContinuations.values.forEach {
+            $0.yield(store.selectedTheme)
+        }
     }
 }
 
@@ -364,6 +387,7 @@ final class LocalThemeRepository: ThemeRepository {
 final class LocalCalibrationRepository: CalibrationRepository {
     private let store: CalibrationStore
     private let defaultAccountId: String?
+    private var calibrationContinuations: [UUID: AsyncStream<CalibrationRecord?>.Continuation] = [:]
 
     init(
         fileURL: URL? = nil,
@@ -392,7 +416,29 @@ final class LocalCalibrationRepository: CalibrationRepository {
         guard await store.saveCalibrationRecord(record, operationId: operationId) else {
             throw localSaveError(store.persistenceError, fallback: "Could not save local calibration record.")
         }
+        notifyCalibrationObservers()
         return store.record ?? record
+    }
+
+    func observeCalibrationRecord(accountId: String) async throws -> AsyncStream<CalibrationRecord?> {
+        store.setCurrentAccountId(try normalizedRequiredAccountId(accountId))
+        return AsyncStream { continuation in
+            let id = UUID()
+            calibrationContinuations[id] = continuation
+            continuation.yield(store.record)
+            continuation.onTermination = { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.calibrationContinuations.removeValue(forKey: id)
+                }
+            }
+        }
+    }
+
+    private func notifyCalibrationObservers() {
+        calibrationContinuations.values.forEach {
+            $0.yield(store.record)
+        }
     }
 }
 

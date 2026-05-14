@@ -24,6 +24,9 @@ final class OnboardingStore: ObservableObject {
     private var storedProfile: UserProfile?
     private var persistedStoredProfile: UserProfile?
     private var persistenceGeneration = 0
+    private var backendMode: BackendMode = .local
+    private var profileRepository: (any ProfileRepository)?
+    private var profileObservationTask: Task<Void, Never>?
 
     var hasCompletedOnboarding: Bool {
         profile != nil
@@ -49,11 +52,21 @@ final class OnboardingStore: ObservableObject {
 
     nonisolated deinit {}
 
+    func configureRemoteSync(
+        backendMode: BackendMode,
+        profileRepository: (any ProfileRepository)?
+    ) {
+        self.backendMode = backendMode
+        self.profileRepository = backendMode == .firebase ? profileRepository : nil
+        restartProfileObservationIfNeeded()
+    }
+
     func setCurrentAccountId(_ accountId: String?) {
         let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         guard currentAccountId != normalizedAccountId else { return }
         currentAccountId = normalizedAccountId
         applyStoredProfile()
+        restartProfileObservationIfNeeded()
     }
 
     func canContinue(from step: Step) -> Bool {
@@ -275,6 +288,9 @@ final class OnboardingStore: ObservableObject {
             return true
         }
         guard await persist(storedProfile, generation: generation) != nil else { return false }
+        guard await saveProfileRemotelyIfNeeded(storedProfile, operationId: writeOperationId) else {
+            return false
+        }
         await recordWriteOperation(writeOperationId, createdAt: now)
         return true
     }
@@ -401,22 +417,30 @@ final class OnboardingStore: ObservableObject {
     }
 
     @discardableResult
-    private func save(_ profile: UserProfile, operationId: UUID? = nil) async -> Bool {
+    private func save(
+        _ profile: UserProfile,
+        operationId: UUID? = nil,
+        markLocalMutation: Bool = true,
+        saveRemote: Bool = true,
+        recordJournal: Bool = true
+    ) async -> Bool {
         let writeOperationId = operationId ?? UUID()
 
         var accountStampedProfile = profile
         if let currentAccountId {
             accountStampedProfile.accountId = currentAccountId
         }
-        accountStampedProfile.syncMetadata.markLocalMutation(
-            accountId: accountStampedProfile.accountId,
-            operationId: writeOperationId,
-            now: accountStampedProfile.updatedAt
-        )
+        if markLocalMutation {
+            accountStampedProfile.syncMetadata.markLocalMutation(
+                accountId: accountStampedProfile.accountId,
+                operationId: writeOperationId,
+                now: accountStampedProfile.updatedAt
+            )
+        }
         let previousStoredProfile = storedProfile
         let previousVisibleProfile = self.profile
         let generation = applyLocalMutation(accountStampedProfile)
-        if await writeJournal.contains(operationId: writeOperationId) {
+        if recordJournal, await writeJournal.contains(operationId: writeOperationId) {
             rollbackLocalMutationIfNeeded(
                 generation: generation,
                 storedProfile: previousStoredProfile,
@@ -425,8 +449,83 @@ final class OnboardingStore: ObservableObject {
             return true
         }
         guard await persist(accountStampedProfile, generation: generation) != nil else { return false }
-        await recordWriteOperation(writeOperationId, createdAt: accountStampedProfile.updatedAt)
+        if saveRemote {
+            guard await saveProfileRemotelyIfNeeded(
+                accountStampedProfile,
+                operationId: writeOperationId
+            ) else {
+                return false
+            }
+        }
+        if recordJournal {
+            await recordWriteOperation(writeOperationId, createdAt: accountStampedProfile.updatedAt)
+        }
         return true
+    }
+
+    private func restartProfileObservationIfNeeded() {
+        profileObservationTask?.cancel()
+        profileObservationTask = nil
+
+        guard backendMode == .firebase,
+              let profileRepository,
+              let currentAccountId else {
+            return
+        }
+
+        profileObservationTask = Task { [weak self, profileRepository, currentAccountId] in
+            do {
+                if let loadedProfile = try await profileRepository.loadProfile(accountId: currentAccountId) {
+                    _ = await self?.applyRemoteProfileCache(loadedProfile)
+                }
+
+                let stream = try await profileRepository.observeProfile(accountId: currentAccountId)
+                for await remoteProfile in stream {
+                    guard let remoteProfile else { continue }
+                    _ = await self?.applyRemoteProfileCache(remoteProfile)
+                }
+            } catch {
+                await self?.setRemoteProfileError(error)
+            }
+        }
+    }
+
+    @discardableResult
+    private func saveProfileRemotelyIfNeeded(
+        _ profile: UserProfile,
+        operationId: UUID
+    ) async -> Bool {
+        guard backendMode == .firebase,
+              let profileRepository,
+              AccountOwnership.normalizedAccountId(profile.accountId) != nil else {
+            return true
+        }
+
+        do {
+            let savedProfile = try await profileRepository.saveProfile(
+                profile,
+                operationId: operationId
+            )
+            return await applyRemoteProfileCache(savedProfile)
+        } catch {
+            persistenceError = "Could not sync profile: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    @discardableResult
+    private func applyRemoteProfileCache(_ remoteProfile: UserProfile) async -> Bool {
+        await save(
+            remoteProfile,
+            operationId: UUID(),
+            markLocalMutation: false,
+            saveRemote: false,
+            recordJournal: false
+        )
+    }
+
+    private func setRemoteProfileError(_ error: Error) {
+        persistenceError = "Could not observe profile sync: \(error.localizedDescription)"
     }
 
     private func recordWriteOperation(_ operationId: UUID, createdAt: Date) async {

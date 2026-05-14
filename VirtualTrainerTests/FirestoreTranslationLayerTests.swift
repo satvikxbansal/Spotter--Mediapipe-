@@ -58,6 +58,54 @@ final class FirestoreTranslationLayerTests: XCTestCase {
         XCTAssertEqual(roundTrip.averageFormScore, setSummary.averageFormScore)
     }
 
+    func testCalibrationDTORoundTripPreservesStatusAndSyncMetadata() {
+        let record = CalibrationRecord(
+            id: fixedUUID(5_001),
+            accountId: accountId,
+            status: .completed,
+            exerciseType: CalibrationDefaults.exerciseType,
+            targetReps: CalibrationDefaults.targetReps,
+            completedReps: 3,
+            startedAt: now,
+            completedAt: now.addingTimeInterval(30),
+            serverCompletedAt: now.addingTimeInterval(32),
+            visibilityPassed: true,
+            averageFormScore: 93,
+            notes: "Translation test.",
+            syncMetadata: syncMetadata(operationId: fixedUUID(5_002))
+        )
+
+        let document = mapToCalibrationDocument(record)
+        let roundTrip = mapFromCalibrationDocument(document)
+
+        XCTAssertEqual(document.accountId, accountId)
+        XCTAssertEqual(document.calibrationId, record.id.uuidString.lowercased())
+        XCTAssertEqual(roundTrip.status, .completed)
+        XCTAssertEqual(roundTrip.completedReps, 3)
+        XCTAssertEqual(roundTrip.serverCompletedAt, now.addingTimeInterval(32))
+        XCTAssertEqual(roundTrip.syncMetadata.pendingOperationId, record.syncMetadata.pendingOperationId)
+    }
+
+    func testPlanDTORoundTripPreservesActiveCacheFieldsAndBlocks() {
+        let plan = makePlan(id: fixedUUID(5_101), title: "Remote Cache Plan")
+        let savedAt = now.addingTimeInterval(44)
+        let document = mapToPlanDocument(
+            plan,
+            accountId: accountId,
+            active: true,
+            savedAt: savedAt,
+            operationId: fixedUUID(5_102)
+        )
+        let roundTrip = mapFromPlanDocument(document)
+
+        XCTAssertEqual(document.accountId, accountId)
+        XCTAssertEqual(document.planId, plan.id.uuidString.lowercased())
+        XCTAssertTrue(document.active)
+        XCTAssertEqual(document.savedAt, savedAt)
+        XCTAssertEqual(roundTrip.id, plan.id)
+        XCTAssertEqual(roundTrip.blocks.flatMap(\.exercises).map(\.exerciseType), [.squat])
+    }
+
     func testTrophyEventDTORoundTripPreservesEarnedAtAndServerEarnedAt() {
         let serverEarnedAt = now.addingTimeInterval(8)
         let event = TrophyUnlockEvent(
@@ -328,6 +376,37 @@ private extension FirestoreTranslationLayerTests {
             peakEffort: 0.7,
             bestCue: "Strong depth.",
             worstCue: "Knees drifted late."
+        )
+    }
+
+    func makePlan(id: UUID, title: String) -> WorkoutPlanV2 {
+        WorkoutPlanV2(
+            id: id,
+            title: title,
+            subtitle: "Translation test plan",
+            goal: "Keep sync deterministic.",
+            estimatedMinutes: 7,
+            difficulty: .beginner,
+            coach: .good,
+            blocks: [
+                WorkoutBlock(
+                    title: "Main",
+                    type: .main,
+                    exercises: [
+                        PlannedExercise(
+                            exerciseType: .squat,
+                            sets: [PlannedSet(setIndex: 1, target: .reps(12))],
+                            restSeconds: 45,
+                            coachingFocus: "Depth and control.",
+                            cameraPosition: .front,
+                            allowSwap: true
+                        )
+                    ]
+                )
+            ],
+            generatedAt: now,
+            planReason: "Stable fixture.",
+            source: .generatedLocal
         )
     }
 

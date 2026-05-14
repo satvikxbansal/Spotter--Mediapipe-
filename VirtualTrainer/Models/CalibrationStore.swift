@@ -14,6 +14,9 @@ final class CalibrationStore: ObservableObject {
     private var storedRecord: CalibrationRecord?
     private var persistedStoredRecord: CalibrationRecord?
     private var persistenceGeneration = 0
+    private var backendMode: BackendMode = .local
+    private var calibrationRepository: (any CalibrationRepository)?
+    private var calibrationObservationTask: Task<Void, Never>?
 
     var status: CalibrationStatus {
         guard record?.isDeleted != true else { return .notStarted }
@@ -48,11 +51,21 @@ final class CalibrationStore: ObservableObject {
 
     nonisolated deinit {}
 
+    func configureRemoteSync(
+        backendMode: BackendMode,
+        calibrationRepository: (any CalibrationRepository)?
+    ) {
+        self.backendMode = backendMode
+        self.calibrationRepository = backendMode == .firebase ? calibrationRepository : nil
+        restartCalibrationObservationIfNeeded()
+    }
+
     func setCurrentAccountId(_ accountId: String?) {
         let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         guard currentAccountId != normalizedAccountId else { return }
         currentAccountId = normalizedAccountId
         applyStoredRecord()
+        restartCalibrationObservationIfNeeded()
     }
 
     @discardableResult
@@ -212,11 +225,14 @@ final class CalibrationStore: ObservableObject {
     private func save(
         _ updatedRecord: CalibrationRecord,
         stampWithCurrentAccount: Bool = true,
-        operationId: UUID? = nil
+        operationId: UUID? = nil,
+        markLocalMutation: Bool = true,
+        saveRemote: Bool = true,
+        recordJournal: Bool = true
     ) async -> Bool {
         let writeOperationId = operationId ?? UUID()
 
-        let accountStampedRecord = stampWithCurrentAccount
+        let accountStampedRecord = stampWithCurrentAccount && markLocalMutation
             ? updatedRecord.withAccountId(
                 currentAccountId,
                 operationId: writeOperationId,
@@ -226,7 +242,7 @@ final class CalibrationStore: ObservableObject {
         let previousStoredRecord = storedRecord
         let previousVisibleRecord = record
         let generation = applyLocalMutation(accountStampedRecord)
-        if await writeJournal.contains(operationId: writeOperationId) {
+        if recordJournal, await writeJournal.contains(operationId: writeOperationId) {
             rollbackLocalMutationIfNeeded(
                 generation: generation,
                 storedRecord: previousStoredRecord,
@@ -235,7 +251,17 @@ final class CalibrationStore: ObservableObject {
             return true
         }
         guard await persist(accountStampedRecord, generation: generation) != nil else { return false }
-        await recordWriteOperation(writeOperationId, createdAt: accountStampedRecord.completedAt)
+        if saveRemote {
+            guard await saveCalibrationRemotelyIfNeeded(
+                accountStampedRecord,
+                operationId: writeOperationId
+            ) else {
+                return false
+            }
+        }
+        if recordJournal {
+            await recordWriteOperation(writeOperationId, createdAt: accountStampedRecord.completedAt)
+        }
         return true
     }
 
@@ -245,6 +271,71 @@ final class CalibrationStore: ObservableObject {
             entityKind: .calibration,
             createdAt: createdAt
         )
+    }
+
+    private func restartCalibrationObservationIfNeeded() {
+        calibrationObservationTask?.cancel()
+        calibrationObservationTask = nil
+
+        guard backendMode == .firebase,
+              let calibrationRepository,
+              let currentAccountId else {
+            return
+        }
+
+        calibrationObservationTask = Task { [weak self, calibrationRepository, currentAccountId] in
+            do {
+                if let loadedRecord = try await calibrationRepository.loadCalibrationRecord(accountId: currentAccountId) {
+                    _ = await self?.applyRemoteCalibrationCache(loadedRecord)
+                }
+
+                let stream = try await calibrationRepository.observeCalibrationRecord(accountId: currentAccountId)
+                for await remoteRecord in stream {
+                    guard let remoteRecord else { continue }
+                    _ = await self?.applyRemoteCalibrationCache(remoteRecord)
+                }
+            } catch {
+                await self?.setRemoteCalibrationError(error)
+            }
+        }
+    }
+
+    private func saveCalibrationRemotelyIfNeeded(
+        _ record: CalibrationRecord,
+        operationId: UUID
+    ) async -> Bool {
+        guard backendMode == .firebase,
+              let calibrationRepository,
+              AccountOwnership.normalizedAccountId(record.accountId) != nil else {
+            return true
+        }
+
+        do {
+            let savedRecord = try await calibrationRepository.saveCalibrationRecord(
+                record,
+                operationId: operationId
+            )
+            return await applyRemoteCalibrationCache(savedRecord)
+        } catch {
+            persistenceError = "Could not sync calibration: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    @discardableResult
+    private func applyRemoteCalibrationCache(_ remoteRecord: CalibrationRecord) async -> Bool {
+        await save(
+            remoteRecord,
+            stampWithCurrentAccount: false,
+            operationId: UUID(),
+            markLocalMutation: false,
+            saveRemote: false,
+            recordJournal: false
+        )
+    }
+
+    private func setRemoteCalibrationError(_ error: Error) {
+        persistenceError = "Could not observe calibration sync: \(error.localizedDescription)"
     }
 
     @discardableResult

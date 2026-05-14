@@ -3,7 +3,7 @@
 Structured incident log for build failures, crashes, and bug fixes. **Format and categories:** `.cursor/rules/debugging.mdc` (section A).
 
 - Append only — do not delete or rewrite past entries.
-- Next entry ID: **DL-051** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
+- Next entry ID: **DL-052** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
 
 ---
 
@@ -1434,3 +1434,54 @@ Focused `FirestoreTranslationLayerTests` passed with 10 new test methods. `Worko
 Future Firestore repositories should consume these DTOs and helpers instead of encoding app models or constructing paths ad hoc. Any new Firestore write path must keep workout sets split from compact workout summaries, call the privacy validator before writing, avoid raw camera/video/pose/face payloads, and update the audit allowlist only for intentional write APIs with tests.
 
 **Pattern Tags:** #firebase #firestore #backend-readiness #dto-mapping #privacy #local-first #tests
+
+---
+
+### [DL-051] Wire Lowest-Risk Firestore Repositories For Phase 16D
+**Date:** 2026-05-14
+**Severity:** warning
+**Category:** firestore-sync
+**File(s):** `VirtualTrainer/Repositories/Firebase/FirestoreDocumentDatabase.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreProfileRepository.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreThemeRepository.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreCalibrationRepository.swift`, `VirtualTrainer/Repositories/Firebase/FirestorePlanRepository.swift`, `VirtualTrainer/Repositories/AppDependencies.swift`, `VirtualTrainer/Models/OnboardingStore.swift`, `VirtualTrainer/Models/ThemeStore.swift`, `VirtualTrainer/Models/CalibrationStore.swift`, `VirtualTrainer/UI/ProfileView.swift`, `VirtualTrainer/UI/HomeDashboardView.swift`, `VirtualTrainer/UI/WorkoutPreviewView.swift`, `Documentation/FirestoreShape.md`, `VirtualTrainerTests/FirestoreRepositoryTests.swift`, `VirtualTrainerTests/FirestoreTranslationLayerTests.swift`, `VirtualTrainerTests/BackendRepositoryTests.swift`, `VirtualTrainerTests/WorkoutSummarySizeAuditTests.swift`
+
+**Error:**
+Phase 16D needed Firebase mode to sync profile, theme, calibration, and active-plan cache through Firestore, while keeping workouts, trophies, insights, and the live camera/session stack local and non-blocking. The app also still had to build, test, and run in `BackendMode.local` with no Firebase client plist.
+
+**Root Cause:**
+Phase 16C intentionally stopped at DTOs, mapping, path construction, and privacy validation. There was no Firestore document adapter, no transactional repository layer, and no reverse wiring from SwiftUI stores back to the remote repositories. Theme persistence also needed to avoid a competing remote document because `UserProfile.selectedTheme` is the documented future source of truth.
+
+**Fix Applied:**
+Added a small Firestore document database adapter plus repositories for `users/{uid}/profile/current`, profile-backed theme sync, `users/{uid}/calibration/status`, and `users/{uid}/plans/{planId}`. Added transaction conflict/idempotency handling, 250 ms debounced document observers, Firestore payload normalization, partial plan-cache writes that never gate camera/session flow, and `AppDependencies.firebasePartial()` so Firebase mode uses Firebase Auth plus these four Firestore repositories while workouts, trophies, and insights remain local. Wired `OnboardingStore`, `ThemeStore`, and `CalibrationStore` to load/observe/save remotely in Firebase mode, with local JSON kept only as a fast cache there. Added DEBUG Profile sync buttons for profile, calibration, and plan checks.
+
+**Verification:**
+Toolchain paths resolve under XcodeDefault:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Required build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required test suite passed:
+
+- Passed: 364
+- Failed: 0
+- Skipped: 0
+
+The required test command was:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Local-only no-plist build passed after temporarily moving the ignored local Firebase client plist out of the repo and restoring it immediately afterward:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerNoFirebaseDerivedData16D`
+
+Focused Firestore repository tests covered profile conflict, idempotent retry, observer emission, and Firebase partial dependency composition. Mapper tests covered profile, calibration, and plan round trips. Local repository tests stayed green.
+
+`git diff --check` passed. `gitleaks` was not installed. The fallback scanner initially found only intentional test fixtures for fake auth tokens and the privacy-validator fake private-key rejection payload; the changed/untracked non-ignored files scan passed after allowlisting those exact fixtures.
+
+**Prevention Rule:**
+Keep Firestore adoption explicit and partial by repository. Profile, theme, calibration, and plan cache may sync in Firebase mode, but workout summaries, trophies, insights, raw camera frames, raw pose streams, raw face data, and any secret-like values must not be uploaded by Phase 16D code. Remote plan cache must never be required to start or finish camera sessions.
+
+**Pattern Tags:** #firebase #firestore #sync #local-first #privacy #debug-ui #tests
