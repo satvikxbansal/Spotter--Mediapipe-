@@ -3,7 +3,7 @@
 Structured incident log for build failures, crashes, and bug fixes. **Format and categories:** `.cursor/rules/debugging.mdc` (section A).
 
 - Append only — do not delete or rewrite past entries.
-- Next entry ID: **DL-049** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
+- Next entry ID: **DL-051** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
 
 ---
 
@@ -1393,3 +1393,44 @@ The no-plist app build installed and launched on the `iPhone 17 Pro` simulator w
 Keep Firebase auth adoption separate from Firestore repository adoption. Do not attach future remote listeners until `AccountClaimCoordinator` has claimed local records for the emitted UID. Do not reuse the parent account-claim operation ID directly for all store writes unless `LocalWriteJournal` is redesigned to support multi-entity operation records.
 
 **Pattern Tags:** #firebase-auth #anonymous-auth #account-claim #local-first #write-journal #debug-ui #tests
+
+---
+
+### [DL-050] Add Isolated Firestore Translation Layer For Phase 16C
+**Date:** 2026-05-14
+**Severity:** warning
+**Category:** backend-readiness
+**File(s):** `VirtualTrainer/Repositories/Firebase/FirestoreDTOs.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreMapper.swift`, `VirtualTrainer/Repositories/Firebase/FirestorePathBuilder.swift`, `VirtualTrainer/Repositories/Firebase/FirestorePrivacyValidator.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreEncodingHelpers.swift`, `VirtualTrainerTests/FirestoreTranslationLayerTests.swift`, `VirtualTrainerTests/WorkoutSummarySizeAuditTests.swift`
+
+**Error:**
+Phase 16C needed the Firestore document translation boundary before any repository writes were wired. The app already had Firebase Auth scaffolding and local sync-ready models, but it did not yet have isolated DTOs, mappers, path construction, Firestore-safe encoding, or a privacy validator for rejecting raw camera/pose/face payloads and secret-like values.
+
+**Root Cause:**
+Previous phases stopped at local repositories, backend-mode selection, Firebase bootstrap, and anonymous auth. Without a separate translation layer, future Firestore repositories would have been tempted to encode app models directly, risk embedding oversized workout evidence, leak Firestore-specific timestamp behavior into product models, or miss the documented compact-workout-plus-sets shape from `Documentation/FirestoreShape.md`.
+
+**Fix Applied:**
+Added Firestore DTOs for profile, compact workouts, workout sets, trophy events, trophy progress cache, insights, insight delivery, insight engagement, calibration, and plans. Added symmetric mapper functions that normalize account IDs, keep UUID document fields as lowercase strings, store enum raw values, sort set-backed arrays such as profile limitations, and keep Firestore DTOs out of app models. Added path builders for the documented `users/{uid}/...` shape with empty/invalid path component rejection. Added a privacy validator for forbidden raw-media/pose/face/secret fields, large binary blobs, and secret-like strings. Added a single encoding helper that converts DTOs through `JSONEncoder` and `JSONSerialization`, lowercases UUID-shaped strings, injects `FieldValue.serverTimestamp()` for nil server timestamp placeholders, and validates the payload before it can be handed to a future `setData` call. No production Firestore writes were added.
+
+**Verification:**
+Toolchain paths resolved under XcodeDefault:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Required build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required test suite passed:
+
+- Passed: 358
+- Failed: 0
+- Skipped: 0
+
+Focused `FirestoreTranslationLayerTests` passed with 10 new test methods. `WorkoutSummarySizeAuditTests.testNoProductionFirebaseUploadCodeExistsYet()` still allows only the debug smoke verifier to call Firestore write APIs. `git diff --check` passed. `gitleaks` was not installed, so the fallback `.gitleaks.toml` pattern scan over changed and new non-ignored files found no secret-like values. Static write scan found no new `.setData`, `.updateData`, or `.addDocument` calls outside the existing debug smoke verifier.
+
+**Prevention Rule:**
+Future Firestore repositories should consume these DTOs and helpers instead of encoding app models or constructing paths ad hoc. Any new Firestore write path must keep workout sets split from compact workout summaries, call the privacy validator before writing, avoid raw camera/video/pose/face payloads, and update the audit allowlist only for intentional write APIs with tests.
+
+**Pattern Tags:** #firebase #firestore #backend-readiness #dto-mapping #privacy #local-first #tests

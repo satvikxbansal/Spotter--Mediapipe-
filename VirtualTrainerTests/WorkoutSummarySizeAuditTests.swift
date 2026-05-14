@@ -112,6 +112,9 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
                 "import FirebaseAuth",
                 "import FirebaseCore"
             ],
+            "FirestoreEncodingHelpers.swift": [
+                "import FirebaseFirestore"
+            ],
             "FirebaseSmokeVerifier.swift": [
                 "import FirebaseAuth",
                 "import FirebaseCore",
