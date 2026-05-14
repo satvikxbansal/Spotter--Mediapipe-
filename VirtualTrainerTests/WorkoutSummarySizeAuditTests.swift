@@ -99,18 +99,24 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
         let swiftFiles = try Self.swiftFiles(in: sourceURL)
         let allowedNeedlesByFile: [String: Set<String>] = [
             "VirtualTrainerApp.swift": [
-                "FirebaseBootstrap.configureIfNeeded",
                 "FirebaseSmokeVerifier.runIfRequested"
             ],
             "FirebaseBootstrap.swift": [
                 "import FirebaseCore",
                 "FirebaseApp.configure"
             ],
+            "BackendStatusStore.swift": [
+                "FirebaseBootstrap.configureIfAvailable"
+            ],
+            "FirebaseAuthRepository.swift": [
+                "import FirebaseAuth",
+                "import FirebaseCore"
+            ],
             "FirebaseSmokeVerifier.swift": [
                 "import FirebaseAuth",
                 "import FirebaseCore",
                 "import FirebaseFirestore",
-                "FirebaseBootstrap.configureIfNeeded",
+                "FirebaseBootstrap.configureIfAvailable",
                 "Firestore.firestore",
                 ".setData("
             ]
@@ -120,7 +126,7 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
             "import FirebaseAuth",
             "import FirebaseFirestore",
             "FirebaseApp.configure",
-            "FirebaseBootstrap.configureIfNeeded",
+            "FirebaseBootstrap.configureIfAvailable",
             "FirebaseSmokeVerifier.runIfRequested",
             "Firestore.firestore",
             ".setData(",

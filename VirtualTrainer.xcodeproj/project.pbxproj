@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		D602ED0A2FB1AE21001756A5 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = D602ED092FB1AE21001756A5 /* GoogleService-Info.plist */; };
 		D602ED1B2FB1B302001756A5 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = D602ED1A2FB1B302001756A5 /* FirebaseAuth */; };
 		D602ED1F2FB1B302001756A5 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = D602ED1E2FB1B302001756A5 /* FirebaseCore */; };
 		D602ED252FB1B302001756A5 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = D602ED242FB1B302001756A5 /* FirebaseFirestore */; };
@@ -31,7 +30,6 @@
 		C0DEC0DE0000000000000002 /* Beta.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Beta.xcconfig; sourceTree = "<group>"; };
 		C0DEC0DE0000000000000003 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		CE7600774D7F3697C35C466E /* Pods_VirtualTrainer.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_VirtualTrainer.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		D602ED092FB1AE21001756A5 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		D6082D702F53050000E61E1F /* VirtualTrainer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VirtualTrainer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EABDD9B45CC399C2B17D5BA1 /* Pods-VirtualTrainer.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-VirtualTrainer.debug.xcconfig"; path = "Target Support Files/Pods-VirtualTrainer/Pods-VirtualTrainer.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -101,7 +99,6 @@
 		D6082D672F53050000E61E1F = {
 			isa = PBXGroup;
 			children = (
-				D602ED092FB1AE21001756A5 /* GoogleService-Info.plist */,
 				D6082D722F53050000E61E1F /* VirtualTrainer */,
 				A10000000000000000000002 /* VirtualTrainerTests */,
 				C0DEC0DE0000000000000004 /* Configurations */,
@@ -151,6 +148,7 @@
 				F7A883401DB67F0F10677480 /* [CP] Check Pods Manifest.lock */,
 				D6082D6C2F53050000E61E1F /* Sources */,
 				D6082D6D2F53050000E61E1F /* Frameworks */,
+				D602ED302FB1C92001756A5 /* Copy Firebase Client Config If Present */,
 				D6082D6E2F53050000E61E1F /* Resources */,
 			);
 			buildRules = (
@@ -219,13 +217,32 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D602ED0A2FB1AE21001756A5 /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		D602ED302FB1C92001756A5 /* Copy Firebase Client Config If Present */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Firebase Client Config If Present";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -e\nPLIST_NAME=\"${GOOGLE_SERVICE_INFO_PLIST:-GoogleService-Info.plist}\"\nCANDIDATES=(\n    \"${SRCROOT}/${PLIST_NAME}\"\n    \"${SRCROOT}/${PLIST_NAME%.plist}-Dev.plist\"\n    \"${SRCROOT}/GoogleService-Info.plist\"\n)\nFOUND_PATH=\"\"\nfor path in \"${CANDIDATES[@]}\"; do\n    if [ -f \"$path\" ]; then\n        FOUND_PATH=\"$path\"\n        break\n    fi\ndone\nDEST=\"${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleService-Info.plist\"\nif [ -n \"$FOUND_PATH\" ]; then\n    install -m 0644 \"$FOUND_PATH\" \"$DEST\"\n    echo \"warning: Copied Firebase client config from $FOUND_PATH\"\nelse\n    echo \"warning: No Firebase client config found; building in local-only mode.\"\nfi\n";
+			showEnvVarsInLog = 0;
+		};
 		F7A883401DB67F0F10677480 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -491,6 +508,7 @@
 				GCC_INSTRUMENT_PROGRAM_FLOW_ARCS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Spotter needs camera access for on-device body tracking and rep counting. Camera frames are not stored or uploaded.";
+				INFOPLIST_KEY_SPOTTER_BACKEND_MODE = "$(SPOTTER_BACKEND_MODE)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -544,6 +562,7 @@
 				GCC_INSTRUMENT_PROGRAM_FLOW_ARCS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Spotter needs camera access for on-device body tracking and rep counting. Camera frames are not stored or uploaded.";
+				INFOPLIST_KEY_SPOTTER_BACKEND_MODE = "$(SPOTTER_BACKEND_MODE)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

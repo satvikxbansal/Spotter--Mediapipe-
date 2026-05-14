@@ -8,6 +8,7 @@ import SwiftUI
 
 @main
 struct VirtualTrainerApp: App {
+    @StateObject private var backendStatusStore: BackendStatusStore
     @StateObject private var appDependencies: AppDependencies
     @StateObject private var syncOrchestrator: SyncOrchestrator
     @StateObject private var accountContext = AccountContext()
@@ -19,12 +20,15 @@ struct VirtualTrainerApp: App {
     @StateObject private var insightStore = InsightStore()
 
     init() {
-        FirebaseBootstrap.configureIfNeeded()
+        let statusStore = BackendStatusStore()
 #if DEBUG
-        FirebaseSmokeVerifier.runIfRequested()
+        if statusStore.activeBackendMode == .firebase {
+            FirebaseSmokeVerifier.runIfRequested()
+        }
 #endif
 
-        let dependencies = AppDependencies.local()
+        let dependencies = AppDependencies.from(statusStore)
+        _backendStatusStore = StateObject(wrappedValue: statusStore)
         _appDependencies = StateObject(wrappedValue: dependencies)
         _syncOrchestrator = StateObject(wrappedValue: SyncOrchestrator(dependencies: dependencies))
     }
@@ -47,6 +51,7 @@ struct VirtualTrainerApp: App {
             .environmentObject(trophyStore)
             .environmentObject(themeStore)
             .environmentObject(insightStore)
+            .environmentObject(backendStatusStore)
             .environmentObject(appDependencies)
             .environmentObject(syncOrchestrator)
             .onAppear {
@@ -66,7 +71,43 @@ struct VirtualTrainerApp: App {
                     await themeStore.sync(with: onboardingStore.profile)
                 }
             }
+            .task(id: backendStatusStore.activeBackendMode) {
+                await observeFirebaseAuthChangesIfNeeded()
+            }
         }
+    }
+
+    @MainActor
+    private func observeFirebaseAuthChangesIfNeeded() async {
+        guard backendStatusStore.activeBackendMode == .firebase else { return }
+
+        let coordinator = AccountClaimCoordinator(
+            accountContext: accountContext,
+            stores: accountAwareStores(),
+            writeJournal: LocalWriteJournal()
+        )
+
+        do {
+            let authChanges = try await appDependencies.auth.observeAuthChanges()
+            for await uid in authChanges {
+                await coordinator.handleAuthChange(uid)
+            }
+        } catch {
+            accountContext.clearAccount()
+            syncStoresWithAccount()
+        }
+    }
+
+    @MainActor
+    private func accountAwareStores() -> AccountAwareStores {
+        AccountAwareStores(
+            onboardingStore: onboardingStore,
+            workoutHistoryStore: workoutHistoryStore,
+            trophyStore: trophyStore,
+            insightStore: insightStore,
+            calibrationStore: calibrationStore,
+            themeStore: themeStore
+        )
     }
 
     private func syncStoresWithAccount() {

@@ -3,7 +3,7 @@
 Structured incident log for build failures, crashes, and bug fixes. **Format and categories:** `.cursor/rules/debugging.mdc` (section A).
 
 - Append only — do not delete or rewrite past entries.
-- Next entry ID: **DL-047** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
+- Next entry ID: **DL-049** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
 
 ---
 
@@ -1255,3 +1255,141 @@ Before implementing Phase 16 production Firestore repositories, rerun the DEBUG 
 Keep the audit test active. Any new production Firestore write path should be introduced deliberately in Phase 16 and should come with tests that prove the intended Firestore shape and local-first behavior.
 
 **Pattern Tags:** #firebase #firebase-auth #firestore #grpc #tls #simulator #debug-smoke #phase-16-gate #anonymous-auth
+
+---
+
+### [DL-047] Harden Firebase Client Config Loading For Local-Only Builds
+**Date:** 2026-05-14
+**Severity:** warning
+**Category:** firebase-integration
+**File(s):** `VirtualTrainer.xcodeproj/project.pbxproj`, `VirtualTrainer/VirtualTrainerApp.swift`, `VirtualTrainer/Services/FirebaseBootstrap.swift`, `VirtualTrainer/Services/FirebaseSmokeVerifier.swift`, `VirtualTrainerTests/FirebaseBootstrapTests.swift`, `VirtualTrainerTests/WorkoutSummarySizeAuditTests.swift`, `GoogleService-Info.example.plist`, `Documentation/DEVELOPMENT_SETUP.md`
+
+**Error:**
+The app target had a direct `GoogleService-Info.plist` resource reference and `VirtualTrainerApp.init()` called Firebase bootstrap unconditionally. A fresh clone without a Firebase client plist could therefore fail resource handling or hit bootstrap assertions even though `BackendMode.local` should be fully functional.
+
+**Root Cause:**
+`GOOGLE_SERVICE_INFO_PLIST` was defined in the environment xcconfigs but not consumed by the Xcode resource pipeline. Firebase bootstrap also treated missing or invalid config as an assertion path instead of a normal local-only state.
+
+**Fix Applied:**
+Removed the direct plist file/resource reference from the app target and added an always-running build phase that copies the configured environment plist into the app bundle only when one is present. Replaced bootstrap's Bool/assertion API with `FirebaseBootstrapState` and `configureIfAvailable()`, returning `.missingConfig`, `.alreadyConfigured`, `.configured`, or sanitized `.failed` states without logging plist contents or secret-like values. Removed normal-launch Firebase bootstrap from `VirtualTrainerApp.init()` and kept the DEBUG smoke verifier behind its explicit launch gate plus successful Firebase configuration. Added a placeholder example plist, development setup documentation, and focused bootstrap tests.
+
+**Verification:**
+Toolchain paths resolve to XcodeDefault:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Clean no-plist build passed after temporarily moving the ignored local client plist out of the repo and using a fresh DerivedData path:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerNoFirebaseDerivedData`
+
+Required build passed with the local client plist present:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required test suite passed:
+
+- Passed: 339
+- Failed: 0
+- Skipped: 0
+
+Targeted `FirebaseBootstrapTests` passed. Fallback secret scan over tracked and new, non-ignored files found no matching secret-like values.
+
+**Prevention Rule:**
+Firebase client config must be copied through the environment-aware build phase, not target-membered as a required resource. Local mode must not call Firebase bootstrap during normal app startup, and any bootstrap failure reason must stay sanitized and free of plist contents, API keys, app IDs, project IDs, and local plist paths.
+
+**Pattern Tags:** #firebase #local-first #xcode-config #secrets #bootstrap #tests
+
+---
+
+### [DL-048] Add Runtime Backend Status Switch For Phase 16A
+**Date:** 2026-05-14
+**Severity:** warning
+**Category:** backend-readiness
+**File(s):** `VirtualTrainer.xcodeproj/project.pbxproj`, `VirtualTrainer/VirtualTrainerApp.swift`, `VirtualTrainer/Repositories/BackendConfiguration.swift`, `VirtualTrainer/Repositories/BackendStatusStore.swift`, `VirtualTrainer/Repositories/AppDependencies.swift`, `VirtualTrainer/Services/FirebaseSmokeVerifier.swift`, `VirtualTrainer/UI/ProfileView.swift`, `VirtualTrainer/UI/MainTabView.swift`, `VirtualTrainerTests/BackendConfigurationTests.swift`, `VirtualTrainerTests/BackendStatusStoreTests.swift`, `VirtualTrainerTests/BackendRepositoryTests.swift`, `VirtualTrainerTests/WorkoutSummarySizeAuditTests.swift`
+
+**Error:**
+Phase 16 needed Firebase to light up incrementally, but the app still had no published desired/active backend status. DEBUG builds also had no safe runtime switch for requesting Firebase, no visible fallback reason when Firebase config was absent, and the DEBUG smoke verifier was not tied to the active backend mode.
+
+**Root Cause:**
+Backend selection was still implicit startup behavior. Firebase readiness, dependency construction, and debug verification did not share one observable source of truth, so local-first behavior could regress as soon as later phases added partial Firebase repositories.
+
+**Fix Applied:**
+Added `BackendConfiguration` to resolve `SPOTTER_BACKEND_MODE` from generated Info.plist plus a DEBUG-only `UserDefaults` override, while non-DEBUG builds stay local until the production switch is promoted. Added `BackendStatusStore` to publish desired mode, active mode, Firebase bootstrap state, and a user-facing fallback message. `VirtualTrainerApp` now constructs and injects that store, builds dependencies through `AppDependencies.from(_:)`, and only checks the smoke-test launch gate when Firebase is active. Phase 16A deliberately keeps Firebase-mode repositories local and tags the dependency graph with `backendMode = .firebase` so Phase 16B can override Auth without rewriting the app shell. Added DEBUG Profile settings UI for desired/active mode, bootstrap state, redacted local account ID, restart warning, and an inline Firebase smoke-test button. The smoke verifier now returns an inline result and no longer prints UID or Firestore path values on success.
+
+**Verification:**
+Toolchain paths resolve under `XcodeDefault.xctoolchain`:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Required build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required test suite passed:
+
+- Passed: 344
+- Failed: 0
+
+`SPOTTER_BACKEND_MODE=firebase` build passed with the ignored local Firebase client config present. `SPOTTER_BACKEND_MODE=firebase` also passed from a fresh DerivedData path while the ignored local client config was temporarily absent; the build phase reported local-only mode and the file was restored immediately afterward.
+
+`git diff --check` passed. `gitleaks` was not installed, so the fallback scan used the repo `.gitleaks.toml` patterns over changed, non-ignored files and found no secret-like values.
+
+**Prevention Rule:**
+Future Firebase phases must route launch-time backend decisions through `BackendStatusStore` and must keep Firebase repository adoption partial and explicit. DEBUG mode switches require a restart rather than live Firebase reconfiguration, and local mode must continue to build, launch, and run tests with no Firebase client plist.
+
+**Pattern Tags:** #backend-mode #firebase #local-first #debug-ui #xcode-config #secrets #tests
+
+---
+
+### [DL-049] Add Firebase Anonymous Auth And Local Account Claim Coordinator
+**Date:** 2026-05-14
+**Severity:** warning
+**Category:** firebase-auth
+**File(s):** `VirtualTrainer/Repositories/Firebase/FirebaseAuthRepository.swift`, `VirtualTrainer/Repositories/AppDependencies.swift`, `VirtualTrainer/Services/AccountClaimCoordinator.swift`, `VirtualTrainer/VirtualTrainerApp.swift`, `VirtualTrainer/UI/ProfileView.swift`, `VirtualTrainerTests/AccountClaimCoordinatorTests.swift`, `VirtualTrainerTests/BackendRepositoryTests.swift`, `VirtualTrainerTests/WorkoutSummarySizeAuditTests.swift`
+
+**Error:**
+Firebase mode could configure Firebase Core, but it still used `LocalAuthRepository` and had no product path for anonymous Firebase Auth. A Firebase UID therefore could not become `AccountContext.currentAccountId`, and existing local-only profile, workout, trophy, insight, calibration, and theme records were not claimed before future remote listeners attach.
+
+**Root Cause:**
+Phase 16A intentionally stopped at backend-mode selection and bootstrap. The app had account-aware stores and `claimLocalDataForAccount(id:)`, but no coordinator tied auth state changes to those stores. The existing `LocalWriteJournal` also treats operation IDs as global idempotency keys, so passing one operation ID directly through all six store claim calls would make the first store record the operation and cause later stores to skip.
+
+**Fix Applied:**
+Added `FirebaseAuthRepository` behind `AuthRepository` for anonymous sign-in, sign-out, delete, and auth-state observation. Added `AppDependencies.firebaseAuthOnly()` so Firebase mode uses Firebase Auth while all data repositories remain local until Firestore phases ship. Added `AccountClaimCoordinator` and `AccountAwareStores`; the coordinator records one parent `.profile` claim operation and gives each store its own child operation ID to preserve the existing journal semantics. `VirtualTrainerApp` now observes Firebase auth changes only when Firebase is the active backend and routes each emitted UID through the coordinator. Profile DEBUG backend tools now support anonymous sign-in, sign-out, redacted UID display, and a manual force re-claim action. No Firestore repository writes were added.
+
+**Verification:**
+Toolchain paths resolve under `XcodeDefault.xctoolchain`:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Required build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required test suite passed:
+
+- Passed: 348
+- Failed: 0
+- Skipped: 0
+
+The required test command was:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Local-only no-plist build passed after temporarily moving the ignored local Firebase client plist out of the repo and restoring it immediately afterward:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerNoFirebaseDerivedData16B`
+
+The no-plist app build installed and launched on the `iPhone 17 Pro` simulator with bundle id `satvik.VirtualTrainer`.
+
+`git diff --check` passed. `GoogleService-Info.plist` was present locally and ignored by git; the build phase copied it into the app bundle without printing plist contents. `gitleaks` was not installed. The fallback scanner found one pre-existing documentation false positive in `Spotter_Phase16_Forward_Plan.md` where a future privacy-validator test mentions redacted private-key fixture text; the changed/unignored files scan found no secret-like values.
+
+**Prevention Rule:**
+Keep Firebase auth adoption separate from Firestore repository adoption. Do not attach future remote listeners until `AccountClaimCoordinator` has claimed local records for the emitted UID. Do not reuse the parent account-claim operation ID directly for all store writes unless `LocalWriteJournal` is redesigned to support multi-entity operation records.
+
+**Pattern Tags:** #firebase-auth #anonymous-auth #account-claim #local-first #write-journal #debug-ui #tests

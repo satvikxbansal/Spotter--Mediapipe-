@@ -40,6 +40,7 @@ struct MainTabView: View {
         .environmentObject(TrophyStore())
         .environmentObject(ThemeStore())
         .environmentObject(InsightStore())
+        .environmentObject(BackendStatusStore())
         .environmentObject(dependencies)
         .environmentObject(SyncOrchestrator(dependencies: dependencies))
 }

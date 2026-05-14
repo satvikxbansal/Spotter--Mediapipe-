@@ -5,6 +5,32 @@ import FirebaseFirestore
 import Foundation
 import OSLog
 
+struct FirebaseSmokeRunResult: Equatable {
+    enum Status: String {
+        case pass
+        case fail
+        case unavailable
+    }
+
+    let status: Status
+    let message: String
+
+    var isSuccess: Bool {
+        status == .pass
+    }
+
+    var inlineMessage: String {
+        switch status {
+        case .pass:
+            return "PASS: \(message)"
+        case .fail:
+            return "FAIL: \(message)"
+        case .unavailable:
+            return "UNAVAILABLE: \(message)"
+        }
+    }
+}
+
 enum FirebaseSmokeVerifier {
     static let launchArgument = "--firebase-smoke-test"
     static let environmentKey = "VIRTUALTRAINER_FIREBASE_SMOKE_TEST"
@@ -22,7 +48,7 @@ enum FirebaseSmokeVerifier {
         guard shouldRun(processInfo: processInfo) else { return }
 
         Task {
-            await run()
+            _ = await run()
         }
     }
 
@@ -31,13 +57,19 @@ enum FirebaseSmokeVerifier {
             || processInfo.environment[environmentKey] == "1"
     }
 
-    private static func run() async {
+    static func run() async -> FirebaseSmokeRunResult {
+        let bootstrapState = FirebaseBootstrap.configureIfAvailable()
+        guard bootstrapState == .configured || bootstrapState == .alreadyConfigured else {
+            let message = "Firebase setup is \(bootstrapState.displayName)."
+            logger.warning("Firebase smoke test requested but Firebase is unavailable: \(message, privacy: .public)")
+            return FirebaseSmokeRunResult(status: .unavailable, message: message)
+        }
+
         let startedAt = Date()
         logger.notice("Firebase smoke test requested")
 
         do {
-            guard FirebaseBootstrap.configureIfNeeded(),
-                  let app = FirebaseApp.app() else {
+            guard let app = FirebaseApp.app() else {
                 throw FirebaseSmokeError.firebaseAppUnavailable
             }
 
@@ -90,7 +122,11 @@ enum FirebaseSmokeVerifier {
             )
             writeResult(result)
             logger.notice("Firebase smoke test passed uid=\(user.uid, privacy: .private) path=\(firestorePath, privacy: .public)")
-            print("[FirebaseSmoke] PASS uid=\(user.uid) path=\(firestorePath)")
+            print("[FirebaseSmoke] PASS")
+            return FirebaseSmokeRunResult(
+                status: .pass,
+                message: "Firebase anonymous auth and Firestore write/read smoke test passed."
+            )
         } catch {
             let message = sanitizedDescription(for: error)
             let result = FirebaseSmokeResult(
@@ -109,6 +145,7 @@ enum FirebaseSmokeVerifier {
             writeResult(result)
             logger.error("Firebase smoke test failed: \(message, privacy: .public)")
             print("[FirebaseSmoke] FAIL \(message)")
+            return FirebaseSmokeRunResult(status: .fail, message: message)
         }
     }
 

@@ -8,6 +8,7 @@ struct ProfileView: View {
     @EnvironmentObject private var trophyStore: TrophyStore
     @EnvironmentObject private var themeStore: ThemeStore
     @EnvironmentObject private var insightStore: InsightStore
+    @EnvironmentObject private var backendStatusStore: BackendStatusStore
     @EnvironmentObject private var appDependencies: AppDependencies
 
     @State private var selectedSummary: WorkoutSessionSummary?
@@ -25,6 +26,8 @@ struct ProfileView: View {
     @State private var isPresentingAccountDeletion = false
     @State private var deletionConfirmationText = ""
     @State private var isDeletingAccountData = false
+    @State private var isRunningFirebaseAuthAction = false
+    @State private var firebaseAuthMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -243,9 +246,15 @@ struct ProfileView: View {
                 SettingsDebugSection(
                     profile: profile,
                     calibrationStatus: calibrationStore.status,
-                    backendMode: appDependencies.backendMode,
+                    backendStatusStore: backendStatusStore,
+                    currentAccountId: accountContext.currentAccountId,
+                    isFirebaseAuthActionRunning: isRunningFirebaseAuthAction,
+                    firebaseAuthMessage: firebaseAuthMessage,
                     isSampleDataEnabled: isSampleDataEnabled,
                     debugStatusMessage: debugStatusMessage,
+                    onFirebaseSignIn: signInAnonymouslyWithFirebase,
+                    onAuthSignOut: signOutOfAuthRepository,
+                    onForceReclaim: forceReclaimLocalData,
                     onSampleDataToggle: setSampleDataEnabledForTesting,
                     onResetOnboarding: {
                         Task {
@@ -546,6 +555,119 @@ struct ProfileView: View {
                 isDeletingAccountData = false
             }
         }
+    }
+
+    private func signInAnonymouslyWithFirebase() {
+        guard backendStatusStore.activeBackendMode == .firebase else {
+            firebaseAuthMessage = "Firebase mode is not active for this launch."
+            return
+        }
+        guard !isRunningFirebaseAuthAction else { return }
+
+        isRunningFirebaseAuthAction = true
+        firebaseAuthMessage = nil
+
+        Task { @MainActor in
+            do {
+                let uid = try await appDependencies.auth.signInAnonymously()
+                firebaseAuthMessage = "Signed in as \(redactedAccountId(uid))."
+                HapticsEngine.shared.successRipple()
+            } catch {
+                firebaseAuthMessage = "Firebase sign-in failed: \(sanitizedDebugMessage(for: error))"
+                HapticsEngine.shared.warningPulse()
+            }
+            isRunningFirebaseAuthAction = false
+        }
+    }
+
+    private func signOutOfAuthRepository() {
+        guard backendStatusStore.activeBackendMode == .firebase else {
+            firebaseAuthMessage = "Firebase mode is not active for this launch."
+            return
+        }
+        guard !isRunningFirebaseAuthAction else { return }
+
+        isRunningFirebaseAuthAction = true
+        firebaseAuthMessage = nil
+
+        Task { @MainActor in
+            do {
+                try await appDependencies.auth.signOut()
+                firebaseAuthMessage = "Signed out. Local data was kept."
+                HapticsEngine.shared.successRipple()
+            } catch {
+                firebaseAuthMessage = "Sign-out failed: \(sanitizedDebugMessage(for: error))"
+                HapticsEngine.shared.warningPulse()
+            }
+            isRunningFirebaseAuthAction = false
+        }
+    }
+
+    private func forceReclaimLocalData() {
+        guard backendStatusStore.activeBackendMode == .firebase else {
+            firebaseAuthMessage = "Firebase mode is not active for this launch."
+            return
+        }
+        guard let uid = accountContext.currentAccountId else {
+            firebaseAuthMessage = "Sign in before forcing a local data claim."
+            return
+        }
+        guard !isRunningFirebaseAuthAction else { return }
+
+        isRunningFirebaseAuthAction = true
+        firebaseAuthMessage = nil
+
+        Task { @MainActor in
+            let coordinator = AccountClaimCoordinator(
+                accountContext: accountContext,
+                stores: AccountAwareStores(
+                    onboardingStore: onboardingStore,
+                    workoutHistoryStore: historyStore,
+                    trophyStore: trophyStore,
+                    insightStore: insightStore,
+                    calibrationStore: calibrationStore,
+                    themeStore: themeStore
+                ),
+                writeJournal: LocalWriteJournal()
+            )
+            let didClaim = await coordinator.claimLocalData(
+                forAccountId: uid,
+                operationId: UUID()
+            )
+            firebaseAuthMessage = didClaim
+                ? "Re-claimed local data for \(redactedAccountId(uid))."
+                : "Re-claim failed. Check the local store errors above."
+            if didClaim {
+                HapticsEngine.shared.successRipple()
+            } else {
+                HapticsEngine.shared.warningPulse()
+            }
+            isRunningFirebaseAuthAction = false
+        }
+    }
+
+    private func redactedAccountId(_ accountId: String?) -> String {
+        guard let accountId = AccountOwnership.normalizedAccountId(accountId) else {
+            return "local only"
+        }
+        if accountId.count <= 8 {
+            return "\(accountId.prefix(2))..."
+        }
+        return "\(accountId.prefix(6))...\(accountId.suffix(2))"
+    }
+
+    private func sanitizedDebugMessage(for error: Error) -> String {
+        String(describing: error)
+            .replacingOccurrences(
+                of: #"AIza[0-9A-Za-z_-]+"#,
+                with: "<redacted-google-api-key>",
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: #"(?i)(token|secret|authorization|bearer|api[_-]?key)=?[A-Za-z0-9_./+=:\-]{12,}"#,
+                with: "<redacted-secret>",
+                options: .regularExpression
+            )
     }
 }
 
@@ -1583,12 +1705,23 @@ private struct AccountDeletionConfirmationSheet: View {
 private struct SettingsDebugSection: View {
     let profile: UserProfile
     let calibrationStatus: CalibrationStatus
-    let backendMode: BackendMode
+    @ObservedObject var backendStatusStore: BackendStatusStore
+    let currentAccountId: String?
+    let isFirebaseAuthActionRunning: Bool
+    let firebaseAuthMessage: String?
     let isSampleDataEnabled: Bool
     let debugStatusMessage: String?
+    let onFirebaseSignIn: () -> Void
+    let onAuthSignOut: () -> Void
+    let onForceReclaim: () -> Void
     let onSampleDataToggle: (Bool) -> Void
     let onResetOnboarding: () -> Void
     let onResetCalibration: () -> Void
+
+#if DEBUG
+    @State private var isRunningFirebaseSmokeTest = false
+    @State private var firebaseSmokeMessage: String?
+#endif
 
     var body: some View {
         DisclosureGroup {
@@ -1597,7 +1730,10 @@ private struct SettingsDebugSection: View {
                 ProfileInfoRow(label: "Fitness level", value: profile.fitnessLevel.displayName)
                 ProfileInfoRow(label: "Equipment", value: profile.equipment.map(\.displayName).joined(separator: ", "))
                 ProfileInfoRow(label: "Calibration", value: calibrationStatus.displayName)
-                ProfileInfoRow(label: "Backend", value: "BackendMode.\(backendMode.rawValue)")
+
+#if DEBUG
+                backendDebugSection
+#endif
 
                 Toggle(
                     isOn: Binding(
@@ -1648,8 +1784,159 @@ private struct SettingsDebugSection: View {
         .tint(Theme.Colors.textSecondary)
     }
 
+#if DEBUG
+    private var backendDebugSection: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                ProfileInfoRow(label: "Desired", value: backendStatusStore.desiredBackendMode.displayName)
+                ProfileInfoRow(label: "Active", value: backendStatusStore.activeBackendMode.displayName)
+                ProfileInfoRow(label: "Firebase", value: backendStatusStore.firebaseBootstrapState.displayName)
+                ProfileInfoRow(label: "Account", value: redactedAccountId(currentAccountId))
+
+                Picker(
+                    "Desired backend",
+                    selection: Binding(
+                        get: { backendStatusStore.desiredBackendMode },
+                        set: { backendStatusStore.setDesiredMode($0) }
+                    )
+                ) {
+                    Text("Local").tag(BackendMode.local)
+                    Text("Firebase").tag(BackendMode.firebase)
+                }
+                .pickerStyle(.segmented)
+
+                if backendStatusStore.requiresRestartToApplyDesiredMode {
+                    Label("Restart required to apply this backend mode.", systemImage: "arrow.clockwise.circle.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Theme.Colors.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let message = backendStatusStore.userFacingMessage {
+                    Text(message)
+                        .caption()
+                        .foregroundStyle(statusColor(for: message))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button(
+                    isRunningFirebaseSmokeTest ? "Running smoke test" : "Run Firebase Smoke Test (DEBUG)",
+                    action: runFirebaseSmokeTest
+                )
+                .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.accent))
+                .disabled(isRunningFirebaseSmokeTest || backendStatusStore.activeBackendMode != .firebase)
+                .opacity(isRunningFirebaseSmokeTest || backendStatusStore.activeBackendMode == .firebase ? 1 : 0.45)
+
+                if backendStatusStore.activeBackendMode != .firebase {
+                    Text("Smoke test is available after Firebase is the active backend for this launch.")
+                        .caption()
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let firebaseSmokeMessage {
+                    Text(firebaseSmokeMessage)
+                        .caption()
+                        .foregroundStyle(statusColor(for: firebaseSmokeMessage))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    ProfileInfoRow(label: "Firebase UID", value: redactedAccountId(currentAccountId))
+
+                    Button(
+                        isFirebaseAuthActionRunning ? "Signing in" : "Sign in anonymously (Firebase)",
+                        action: onFirebaseSignIn
+                    )
+                    .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.accent))
+                    .disabled(isFirebaseAuthActionRunning || backendStatusStore.activeBackendMode != .firebase)
+                    .opacity(
+                        isFirebaseAuthActionRunning || backendStatusStore.activeBackendMode == .firebase
+                            ? 1
+                            : 0.45
+                    )
+
+                    VStack(spacing: Theme.Spacing.sm) {
+                        Button("Sign out", action: onAuthSignOut)
+                            .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.textSecondary))
+                            .disabled(
+                                isFirebaseAuthActionRunning ||
+                                    backendStatusStore.activeBackendMode != .firebase
+                            )
+                            .opacity(
+                                isFirebaseAuthActionRunning || backendStatusStore.activeBackendMode == .firebase
+                                    ? 1
+                                    : 0.45
+                            )
+
+                        Button("Force Re-Claim Local Data Under Current UID", action: onForceReclaim)
+                            .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.accent))
+                            .disabled(
+                                isFirebaseAuthActionRunning ||
+                                    backendStatusStore.activeBackendMode != .firebase ||
+                                    currentAccountId == nil
+                            )
+                            .opacity(
+                                isFirebaseAuthActionRunning ||
+                                    (backendStatusStore.activeBackendMode == .firebase && currentAccountId != nil)
+                                    ? 1
+                                    : 0.45
+                            )
+                    }
+
+                    if let firebaseAuthMessage {
+                        Text(firebaseAuthMessage)
+                            .caption()
+                            .foregroundStyle(statusColor(for: firebaseAuthMessage))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(.top, Theme.Spacing.sm)
+        } label: {
+            HStack(spacing: Theme.Spacing.xs) {
+                Image(systemName: "server.rack")
+                    .font(.system(size: 12, weight: .black))
+                Text("Backend")
+                    .font(.system(size: 12, weight: .black))
+                    .tracking(1.0)
+                    .textCase(.uppercase)
+            }
+            .foregroundStyle(Theme.Colors.textPrimary)
+        }
+    }
+
+    private func runFirebaseSmokeTest() {
+        guard !isRunningFirebaseSmokeTest else { return }
+        isRunningFirebaseSmokeTest = true
+        firebaseSmokeMessage = nil
+
+        Task { @MainActor in
+            let result = await FirebaseSmokeVerifier.run()
+            firebaseSmokeMessage = result.inlineMessage
+            isRunningFirebaseSmokeTest = false
+            if result.isSuccess {
+                HapticsEngine.shared.successRipple()
+            } else {
+                HapticsEngine.shared.warningPulse()
+            }
+        }
+    }
+
+    private func redactedAccountId(_ accountId: String?) -> String {
+        guard let accountId = AccountOwnership.normalizedAccountId(accountId) else {
+            return "Local only"
+        }
+        return "\(accountId.prefix(6))…"
+    }
+#endif
+
     private func statusColor(for message: String) -> Color {
-        message.localizedCaseInsensitiveContains("could not")
+        message.localizedCaseInsensitiveContains("could not") ||
+            message.localizedCaseInsensitiveContains("failed") ||
+            message.localizedCaseInsensitiveContains("unavailable") ||
+            message.localizedCaseInsensitiveContains("missing") ||
+            message.localizedCaseInsensitiveContains("restart required") ||
+            message.localizedCaseInsensitiveContains("not implemented")
             ? Theme.Colors.danger
             : Theme.Colors.positive
     }
@@ -1683,8 +1970,11 @@ private struct CompactDebugButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 11, weight: .black))
             .textCase(.uppercase)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .minimumScaleFactor(0.72)
             .foregroundStyle(foregroundStyle)
-            .frame(maxWidth: .infinity, minHeight: 38)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .background(Theme.Colors.surfaceRaised)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             .opacity(configuration.isPressed ? 0.65 : 1)
@@ -2215,6 +2505,7 @@ private enum LocalUITestingSampleData {
         .environmentObject(stores.trophyStore)
         .environmentObject(stores.themeStore)
         .environmentObject(stores.insightStore)
+        .environmentObject(BackendStatusStore())
         .environmentObject(dependencies)
         .environmentObject(SyncOrchestrator(dependencies: dependencies))
 }

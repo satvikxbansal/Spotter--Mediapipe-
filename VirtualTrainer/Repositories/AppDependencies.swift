@@ -3,6 +3,9 @@ import Foundation
 
 @MainActor
 final class AppDependencies: ObservableObject {
+    /// Runtime-selected backend mode. Phase 16B only swaps Firebase auth into
+    /// the graph; all data repositories remain local until the Firestore
+    /// repository phases ship.
     let backendMode: BackendMode
     let auth: any AuthRepository
     let profile: any ProfileRepository
@@ -36,9 +39,29 @@ final class AppDependencies: ObservableObject {
     }
 
     static func local() -> AppDependencies {
+        localRepositories(taggedAs: .local)
+    }
+
+    static func firebaseAuthOnly() -> AppDependencies {
+        localRepositories(taggedAs: .firebase, auth: FirebaseAuthRepository())
+    }
+
+    static func from(_ statusStore: BackendStatusStore) -> AppDependencies {
+        switch statusStore.activeBackendMode {
+        case .local, .supabase:
+            return local()
+        case .firebase:
+            return firebaseAuthOnly()
+        }
+    }
+
+    private static func localRepositories(
+        taggedAs backendMode: BackendMode,
+        auth: (any AuthRepository)? = nil
+    ) -> AppDependencies {
         AppDependencies(
-            backendMode: .local,
-            auth: LocalAuthRepository(),
+            backendMode: backendMode,
+            auth: auth ?? LocalAuthRepository(),
             profile: LocalProfileRepository(),
             workouts: LocalWorkoutRepository(),
             trophies: LocalTrophyRepository(),

@@ -340,6 +340,45 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertEqual(dependencies.backendMode, .local)
         XCTAssertEqual(orchestrator.status, .idle)
     }
+
+    func testAppDependenciesFromFirebaseStatusUsesFirebaseAuthOnlyForPhase16B() async throws {
+        let defaults = UserDefaults(suiteName: "BackendRepositoryTests-\(UUID().uuidString)")!
+        defaults.set(BackendMode.firebase.rawValue, forKey: BackendConfiguration.userDefaultsKey)
+        let statusStore = BackendStatusStore(
+            bundle: Bundle(for: BackendRepositoryTests.self),
+            userDefaults: defaults,
+            firebaseBootstrapper: { _ in .configured }
+        )
+
+        let dependencies = AppDependencies.from(statusStore)
+
+#if DEBUG
+        XCTAssertEqual(dependencies.backendMode, .firebase)
+        XCTAssertTrue(dependencies.auth is FirebaseAuthRepository)
+#else
+        XCTAssertEqual(dependencies.backendMode, .local)
+        XCTAssertTrue(dependencies.auth is LocalAuthRepository)
+#endif
+        XCTAssertTrue(dependencies.profile is LocalProfileRepository)
+        XCTAssertTrue(dependencies.workouts is LocalWorkoutRepository)
+    }
+
+    func testAppleLinkIsUnavailableInLocalAndFirebaseModesForPhase16B() async throws {
+        let localDependencies = AppDependencies.local()
+        let firebaseDependencies = AppDependencies.firebaseAuthOnly()
+
+        for authRepository in [localDependencies.auth, firebaseDependencies.auth] {
+            do {
+                _ = try await authRepository.linkAnonymousAccountWithApple(
+                    idToken: "phase-16b-token",
+                    nonce: "phase-16b-nonce"
+                )
+                XCTFail("Apple account linking should stay unavailable in Phase 16B.")
+            } catch let error as RepositoryError {
+                XCTAssertEqual(error, .backendUnavailable)
+            }
+        }
+    }
 }
 
 private extension BackendRepositoryTests {
