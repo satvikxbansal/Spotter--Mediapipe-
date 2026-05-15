@@ -17,6 +17,18 @@ nonisolated enum FirestorePathBuilder {
         try workoutDocument(uid: uid, workoutId: workoutId.uuidString.lowercased())
     }
 
+    static func workoutsCollection(uid: String) throws -> String {
+        "\(try users(uid))/workouts"
+    }
+
+    static func setsCollection(uid: String, workoutId: String) throws -> String {
+        "\(try workoutDocument(uid: uid, workoutId: workoutId))/sets"
+    }
+
+    static func setsCollection(uid: String, workoutId: UUID) throws -> String {
+        try setsCollection(uid: uid, workoutId: workoutId.uuidString.lowercased())
+    }
+
     static func setDocument(uid: String, workoutId: String, setId: String) throws -> String {
         "\(try workoutDocument(uid: uid, workoutId: workoutId))/sets/\(try pathComponent(setId, label: "setId"))"
     }

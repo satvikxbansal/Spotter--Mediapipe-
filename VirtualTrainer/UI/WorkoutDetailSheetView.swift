@@ -8,11 +8,16 @@ struct WorkoutDetailSheetView: View {
     @EnvironmentObject private var insightStore: InsightStore
     @State private var evidenceRequest: EvidenceSheetRequest?
     @State private var isShowingDeleteConfirmation = false
+    @State private var detailedSummary: WorkoutSessionSummary?
 
     let summary: WorkoutSessionSummary
 
+    private var displayedSummary: WorkoutSessionSummary {
+        detailedSummary ?? summary
+    }
+
     private var evidenceModel: WorkoutDetailEvidenceModel {
-        WorkoutDetailEvidenceModel(summary: summary)
+        WorkoutDetailEvidenceModel(summary: displayedSummary)
     }
 
     var body: some View {
@@ -70,28 +75,31 @@ struct WorkoutDetailSheetView: View {
             Text("This removes the workout from your visible history.")
         }
         .preferredColorScheme(.dark)
+        .task(id: summary.id) {
+            await loadDetailIfNeeded()
+        }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text(summary.mode.displayName.uppercased())
+            Text(displayedSummary.mode.displayName.uppercased())
                 .font(.system(size: 12, weight: .black))
                 .tracking(1.4)
                 .foregroundStyle(Theme.Colors.accent)
 
-            Text(summary.title)
+            Text(displayedSummary.title)
                 .header(size: 34)
 
             HStack(spacing: Theme.Spacing.sm) {
-                Text(summary.endedAt, style: .date)
-                Text(summary.endedAt, style: .time)
-                Text(summary.coach.coachName)
+                Text(displayedSummary.endedAt, style: .date)
+                Text(displayedSummary.endedAt, style: .time)
+                Text(displayedSummary.coach.coachName)
             }
             .font(.system(size: 12, weight: .heavy))
             .textCase(.uppercase)
             .foregroundStyle(Theme.Colors.textSecondary)
 
-            if let goal = summary.goal {
+            if let goal = displayedSummary.goal {
                 Text(goal)
                     .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(Theme.Colors.textPrimary)
@@ -109,11 +117,11 @@ struct WorkoutDetailSheetView: View {
             ],
             spacing: Theme.Spacing.sm
         ) {
-            DetailStatCard(label: "Duration", value: durationText(summary.durationSeconds))
-            DetailStatCard(label: "Reps", value: "\(summary.totalReps)")
-            DetailStatCard(label: "Hold", value: durationText(summary.totalHoldSeconds))
+            DetailStatCard(label: "Duration", value: durationText(displayedSummary.durationSeconds))
+            DetailStatCard(label: "Reps", value: "\(displayedSummary.totalReps)")
+            DetailStatCard(label: "Hold", value: durationText(displayedSummary.totalHoldSeconds))
             DetailStatCard(label: "Avg Form", value: formText)
-            if let completionPercent = summary.completionPercent {
+            if let completionPercent = displayedSummary.completionPercent {
                 DetailStatCard(
                     label: "Complete",
                     value: "\(Int((completionPercent * 100).rounded()))%"
@@ -131,7 +139,7 @@ struct WorkoutDetailSheetView: View {
                 systemImage: "bolt.heart.fill",
                 title: "Effort",
                 tint: Theme.Colors.accent,
-                bodyText: summary.effortSummary,
+                bodyText: displayedSummary.effortSummary,
                 footerText: "Tap for evidence"
             )
         }
@@ -141,7 +149,7 @@ struct WorkoutDetailSheetView: View {
 
     @ViewBuilder
     private var topCueCard: some View {
-        if let cue = summary.topCue {
+        if let cue = displayedSummary.topCue {
             Button {
                 HapticsEngine.shared.buttonTap()
                 evidenceRequest = .topCue
@@ -206,7 +214,7 @@ struct WorkoutDetailSheetView: View {
     }
 
     private var formText: String {
-        guard let average = summary.averageFormScore else { return "N/A" }
+        guard let average = displayedSummary.averageFormScore else { return "N/A" }
         return "\(Int(average.rounded()))%"
     }
 
@@ -229,8 +237,8 @@ struct WorkoutDetailSheetView: View {
 
     private func deleteWorkout() {
         Task {
-            guard await historyStore.deleteSummary(id: summary.id) else { return }
-            _ = await insightStore.invalidateInsightsReferencingWorkout(id: summary.id)
+            guard await historyStore.deleteSummary(id: displayedSummary.id) else { return }
+            _ = await insightStore.invalidateInsightsReferencingWorkout(id: displayedSummary.id)
             await trophyStore.updateAll(
                 history: historyStore.summaries,
                 calibrationStatus: calibrationStore.status
@@ -238,6 +246,11 @@ struct WorkoutDetailSheetView: View {
             HapticsEngine.shared.successRipple()
             dismiss()
         }
+    }
+
+    private func loadDetailIfNeeded() async {
+        guard displayedSummary.exerciseSummaries.isEmpty else { return }
+        detailedSummary = await historyStore.loadDetailedSummaryIfNeeded(id: summary.id)
     }
 }
 
