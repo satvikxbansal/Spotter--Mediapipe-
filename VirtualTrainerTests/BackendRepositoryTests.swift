@@ -341,7 +341,7 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertEqual(orchestrator.status, .idle)
     }
 
-    func testAppDependenciesFromFirebaseStatusUsesPartialFirestoreRepositoriesForPhase16D() async throws {
+    func testAppDependenciesFromFirebaseStatusUsesPhase16FMemoryFirestoreRepositories() async throws {
         let defaults = UserDefaults(suiteName: "BackendRepositoryTests-\(UUID().uuidString)")!
         defaults.set(BackendMode.firebase.rawValue, forKey: BackendConfiguration.userDefaultsKey)
         let statusStore = BackendStatusStore(
@@ -359,13 +359,15 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertTrue(dependencies.theme is FirestoreThemeRepository)
         XCTAssertTrue(dependencies.calibration is FirestoreCalibrationRepository)
         XCTAssertTrue(dependencies.plans is FirestorePlanRepository)
+        XCTAssertTrue(dependencies.trophies is FirestoreTrophyRepository)
+        XCTAssertTrue(dependencies.insights is FirestoreInsightRepository)
 #else
         XCTAssertEqual(dependencies.backendMode, .local)
         XCTAssertTrue(dependencies.auth is LocalAuthRepository)
-#endif
-        XCTAssertTrue(dependencies.workouts is LocalWorkoutRepository)
         XCTAssertTrue(dependencies.trophies is LocalTrophyRepository)
         XCTAssertTrue(dependencies.insights is LocalInsightRepository)
+#endif
+        XCTAssertTrue(dependencies.workouts is LocalWorkoutRepository)
     }
 
     func testAppleLinkIsUnavailableInLocalAndFirebaseModesForPhase16B() async throws {

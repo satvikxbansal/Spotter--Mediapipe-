@@ -3,9 +3,10 @@ import Foundation
 
 @MainActor
 final class AppDependencies: ObservableObject {
-    /// Runtime-selected backend mode. Phase 16D uses Firebase Auth plus the
-    /// lowest-risk Firestore repositories. Workouts, trophies, and insights
-    /// remain local until their dedicated phases ship.
+    /// Runtime-selected backend mode. Phase 16F uses Firebase Auth plus
+    /// Firestore repositories for profile, theme, calibration, plan cache,
+    /// trophies, and insight memory. Workouts remain local until their
+    /// dedicated sync phase ships.
     let backendMode: BackendMode
     let auth: any AuthRepository
     let profile: any ProfileRepository
@@ -53,8 +54,8 @@ final class AppDependencies: ObservableObject {
             auth: FirebaseAuthRepository(),
             profile: FirestoreProfileRepository(database: firestore),
             workouts: LocalWorkoutRepository(),
-            trophies: LocalTrophyRepository(),
-            insights: LocalInsightRepository(),
+            trophies: FirestoreTrophyRepository(database: firestore),
+            insights: FirestoreInsightRepository(database: firestore),
             theme: FirestoreThemeRepository(database: firestore),
             calibration: FirestoreCalibrationRepository(database: firestore),
             plans: FirestorePlanRepository(database: firestore)

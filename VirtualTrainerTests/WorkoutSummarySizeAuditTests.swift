@@ -94,7 +94,7 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
         )
     }
 
-    func testNoProductionFirebaseUploadCodeExistsYet() throws {
+    func testProductionFirebaseUploadCodeIsLimitedToApprovedPhase16Repositories() throws {
         let sourceURL = Self.repositoryRootURL().appendingPathComponent("VirtualTrainer")
         let swiftFiles = try Self.swiftFiles(in: sourceURL)
         let allowedNeedlesByFile: [String: Set<String>] = [
@@ -136,6 +136,13 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
                 ".setData(",
                 ".updateData("
             ],
+            "FirestoreTrophyRepository.swift": [
+                ".setData("
+            ],
+            "FirestoreInsightRepository.swift": [
+                "import FirebaseFirestore",
+                ".setData("
+            ],
             "FirebaseSmokeVerifier.swift": [
                 "import FirebaseAuth",
                 "import FirebaseCore",
@@ -171,7 +178,7 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
 
         XCTAssertTrue(
             matches.isEmpty,
-            "Firebase usage must remain limited to app bootstrap, the explicit DEBUG smoke verifier, and intentional Phase 16D Firestore repository APIs: \(matches.joined(separator: ", "))"
+            "Firebase usage must remain limited to app bootstrap, the explicit DEBUG smoke verifier, and intentional Phase 16D/16F Firestore repository APIs: \(matches.joined(separator: ", "))"
         )
     }
 }

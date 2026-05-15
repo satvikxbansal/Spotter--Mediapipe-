@@ -3,7 +3,7 @@
 Structured incident log for build failures, crashes, and bug fixes. **Format and categories:** `.cursor/rules/debugging.mdc` (section A).
 
 - Append only — do not delete or rewrite past entries.
-- Next entry ID: **DL-052** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
+- Next entry ID: **DL-054** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
 
 ---
 
@@ -1485,3 +1485,103 @@ Focused Firestore repository tests covered profile conflict, idempotent retry, o
 Keep Firestore adoption explicit and partial by repository. Profile, theme, calibration, and plan cache may sync in Firebase mode, but workout summaries, trophies, insights, raw camera frames, raw pose streams, raw face data, and any secret-like values must not be uploaded by Phase 16D code. Remote plan cache must never be required to start or finish camera sessions.
 
 **Pattern Tags:** #firebase #firestore #sync #local-first #privacy #debug-ui #tests
+
+---
+
+### [DL-052] Sync Trophy And Insight Memory Through Firestore
+**Date:** 2026-05-15
+**Severity:** warning
+**Category:** firestore-sync
+**File(s):** `VirtualTrainer/Repositories/Firebase/FirestoreTrophyRepository.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreInsightRepository.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreDocumentDatabase.swift`, `VirtualTrainer/Repositories/Firebase/FirestorePathBuilder.swift`, `VirtualTrainer/Repositories/AppDependencies.swift`, `VirtualTrainer/Models/TrophyModels.swift`, `VirtualTrainer/Models/InsightStore.swift`, `VirtualTrainer/Repositories/LocalStoreRepositories.swift`, `VirtualTrainer/VirtualTrainerApp.swift`, `README.md`, `Documentation/FirestoreShape.md`, `Documentation/SyncConflictResolution.md`, `VirtualTrainerTests/FirestoreRepositoryTests.swift`, `VirtualTrainerTests/BackendRepositoryTests.swift`, `VirtualTrainerTests/WorkoutSummarySizeAuditTests.swift`
+
+**Error:**
+Phase 16F needed Firebase mode to sync trophy unlock events, derived trophy progress, insight documents, insight delivery aggregates, and insight engagement aggregates while preserving local mode, the live camera stack, planned workouts, deterministic local analytics, privacy boundaries, and no-plist builds.
+
+**Root Cause:**
+Phase 16D intentionally kept trophies and insights local while Firestore support proved the lower-risk profile/theme/calibration/plan paths first. The memory layer still lacked collection listeners, Firestore trophy/insight repositories, store-to-repository wiring after account claim, and aggregate merge behavior. One important mapper edge also surfaced during testing: generic nil `server*` timestamp injection is useful for remote sync metadata, but trophy progress must preserve the user's actual `earnedAt` moment and not let sync-write time become the displayed earned date.
+
+**Fix Applied:**
+Added Firestore repositories for `users/{uid}/trophyEvents/{eventId}`, optional `trophyProgress/current`, `users/{uid}/insights/{dedupeKey}`, `insightDelivery/{dedupeKey}`, and `insightEngagement/{dedupeKey}`. Trophy events use deterministic operation IDs, transactional duplicate checks, append-only active loads, derived earliest-earned progress, and debounced collection observation. Insights merge by `dedupeKey`, preserve newer `sourcePolicyVersion`, tombstone invalidated docs, and merge delivery/engagement aggregates with the documented earliest/latest/max/sum rules. Wired `TrophyStore` and `InsightStore` to observe and push remote changes in Firebase mode while keeping local mode unchanged, and kept all outgoing DTO payloads behind `FirestorePrivacyValidator`. Updated docs to describe the current partial Firebase boundary.
+
+**Verification:**
+Toolchain paths resolve under XcodeDefault:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Required build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required test suite was restarted on request and passed:
+
+- Passed: 370
+- Failed: 0
+- Skipped: 0
+
+The restarted required test command was:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Local-only no-plist build passed after temporarily moving the ignored local Firebase client plist out of the repo and restoring it immediately afterward:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerNoFirebaseDerivedData16F`
+
+Focused tests covered Firestore trophy event round-trip and idempotent duplicate write, earliest-earned trophy progress, coming-soon trophy suppression, insight policy-version replacement, delivery aggregate merge, engagement aggregate merge, insight invalidation hiding, and privacy-validator rejection of forbidden raw-pose payload keys.
+
+`gitleaks` was not installed. The fallback scanner over changed and new non-ignored files found no secret-like values.
+
+**Prevention Rule:**
+When adding a Firestore repository for derived memory, decide whether server timestamps are metadata or user-facing chronology before using generic timestamp injection. Trophy and insight sync must upload only compact derived records, never raw video, frames, face data, pose streams, pose timelines, third-party secrets, or workout raw payloads. Local mode must remain the durable source of truth whenever Firebase config is absent.
+
+**Pattern Tags:** #firebase #firestore #sync #trophies #insights #local-first #privacy #tests
+
+---
+
+### [DL-053] Audit Phase 16F Memory Sync After Interrupted Context
+**Date:** 2026-05-15
+**Severity:** warning
+**Category:** firestore-sync
+**File(s):** `VirtualTrainer/Models/InsightStore.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreInsightRepository.swift`, `VirtualTrainerTests/FirestoreRepositoryTests.swift`, `VirtualTrainerTests/InsightStoreTests.swift`, `VirtualTrainerTests/TrophyEngineTests.swift`, `VirtualTrainerTests/WorkoutSummarySizeAuditTests.swift`
+
+**Error:**
+The restarted audit after a context compaction and lost stream found several Phase 16F edge-case misses: remote insight engagement aggregates could be counted again when listener snapshots echoed the same aggregate; a local engagement after a remote aggregate could push the whole aggregate back as a new delta; invalidating a missing remote insight document threw `notFound` instead of writing a tombstone; policy-version insight updates could refresh `serverCreatedAt` even though the write used merge semantics; coming-soon trophy suppression lacked a direct legacy-progress regression; and the Firebase write safety test still used Phase 16C wording that implied no production Firestore writes existed.
+
+**Root Cause:**
+The first implementation covered the main repository happy paths, but it blurred two distinct shapes: event deltas produced by the current device and aggregate snapshots returned by Firestore listeners. That let sum-based engagement merging be correct for incoming write deltas but unsafe for repeated remote snapshots. Generic Firestore helper behavior also made nil server timestamp injection look safe in all contexts, even when an existing server-owned creation timestamp needed to be preserved. The interrupted stream and context compaction fragmented the acceptance checklist, so the initial tests did not replay identical listener snapshots, spy on the exact payload sent after local engagement, invalidate a never-created insight doc, assert server-owned timestamp preservation, or exercise legacy earned coming-soon trophies.
+
+**Fix Applied:**
+Separated aggregate snapshot merging from delta merging in `InsightStore`, using max-per-kind engagement counts for remote snapshots and sum-only semantics in the Firestore repository transaction. Changed local engagement uploads to send a single-event delta while retaining the full local aggregate in memory. Updated missing-doc invalidation to merge a minimal tombstone at `users/{uid}/insights/{dedupeKey}`. Preserved existing `serverCreatedAt` on insight policy bumps. Added focused regression tests for listener idempotency, local-after-remote engagement payloads, missing insight tombstones, server-created timestamp preservation, coming-soon trophy event suppression, and the updated approved Firebase repository allowlist.
+
+**Verification:**
+Toolchain paths resolve under XcodeDefault:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Required build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required test suite passed:
+
+- Passed: 374
+- Failed: 0
+- Skipped: 0
+
+The required test command was:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Local-only no-plist build passed after temporarily moving the ignored local Firebase client plist out of the repo and restoring it immediately afterward:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerNoFirebaseAuditDerivedData16F`
+
+Focused audit tests passed for `InsightStoreTests`, `FirestoreRepositoryTests`, and `TrophyEngineTests`. Protected live camera source files were not modified. `gitleaks` was not installed, and the fallback changed-file secret scan found no secret-like values.
+
+**Prevention Rule:**
+For sync aggregates, write tests that replay the same listener snapshot twice and separately assert the outbound write payload after a local mutation follows a remote merge. Treat operation deltas and persisted aggregate snapshots as different contracts. Firestore merge writes must explicitly preserve server-owned fields, and checklist-driven phases should be re-audited from the live tree after any context interruption before final verification.
+
+**Pattern Tags:** #audit #firebase #firestore #insights #trophies #idempotency #listeners #privacy #tests

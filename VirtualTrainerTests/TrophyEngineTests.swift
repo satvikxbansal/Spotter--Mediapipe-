@@ -593,6 +593,33 @@ final class TrophyEngineTests: XCTestCase {
         XCTAssertFalse(result.snapshot.comingSoonProgress.isEmpty)
         XCTAssertTrue(result.snapshot.comingSoonProgress.allSatisfy { $0.confidence == .unavailable })
     }
+
+    func testComingSoonTrophiesDoNotEmitUnlockEventsFromLegacyEarnedProgress() async {
+        let earnedAt = date(year: 2026, month: 5, day: 1, hour: 10)
+        let legacyComingSoonProgress = TrophyDefinitionCatalog.comingSoonDefinitions.map { definition in
+            makeProgress(
+                trophyId: definition.id,
+                currentValue: definition.targetValue,
+                targetValue: definition.targetValue,
+                earned: true,
+                earnedAt: earnedAt,
+                lastUpdatedAt: earnedAt,
+                progressLabel: "Earned"
+            )
+        }
+        let previousSnapshot = makeSnapshot(progress: legacyComingSoonProgress)
+
+        let result = engine.updateAll(
+            history: [],
+            calibrationStatus: .notStarted,
+            previousSnapshot: previousSnapshot,
+            now: earnedAt.addingTimeInterval(60)
+        )
+
+        XCTAssertTrue(result.newlyEarnedEvents.isEmpty)
+        XCTAssertTrue(result.snapshot.unlockEventLog.isEmpty)
+        XCTAssertTrue(result.snapshot.comingSoonProgress.allSatisfy { !$0.earned })
+    }
 }
 
 private extension TrophyEngineTests {

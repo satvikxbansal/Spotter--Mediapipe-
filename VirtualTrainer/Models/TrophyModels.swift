@@ -1615,6 +1615,9 @@ final class TrophyStore: ObservableObject {
     private var currentAccountId: String?
     private var allProgress: [TrophyProgress] = []
     private var eventLog: [TrophyUnlockEvent] = []
+    private var backendMode: BackendMode = .local
+    private var trophyRepository: (any TrophyRepository)?
+    private var trophyObservationTask: Task<Void, Never>?
 
     private enum TrophyApplyOutcome {
         case applied
@@ -1654,6 +1657,16 @@ final class TrophyStore: ObservableObject {
         guard currentAccountId != normalizedAccountId else { return }
         currentAccountId = normalizedAccountId
         applyVisibleSnapshot()
+        restartTrophyObservationIfNeeded()
+    }
+
+    func configureRemoteSync(
+        backendMode: BackendMode,
+        trophyRepository: (any TrophyRepository)?
+    ) {
+        self.backendMode = backendMode
+        self.trophyRepository = backendMode == .firebase ? trophyRepository : nil
+        restartTrophyObservationIfNeeded()
     }
 
     func unlockEvents(for trophyId: String) -> [TrophyUnlockEvent] {
@@ -1702,6 +1715,7 @@ final class TrophyStore: ObservableObject {
             latestUnlockEvents = previousUnlockEvents
             return false
         }
+        await saveTrophyEventsRemotelyIfNeeded([stampedEvent], operationId: writeOperationId)
         await recordWriteOperation(writeOperationId, createdAt: writeCreatedAt)
         return true
     }
@@ -1822,6 +1836,7 @@ final class TrophyStore: ObservableObject {
             latestUnlockEvents = previousUnlockEvents
             return false
         }
+        await saveTrophyEventsRemotelyIfNeeded(newEvents, operationId: writeOperationId)
         await recordWriteOperation(writeOperationId, createdAt: now)
         return true
     }
@@ -1939,6 +1954,7 @@ final class TrophyStore: ObservableObject {
             applyVisibleSnapshot()
             return false
         }
+        await syncVisibleTrophyEventsRemotelyIfNeeded()
         await recordWriteOperation(writeOperationId, createdAt: writeCreatedAt)
         return true
     }
@@ -1984,6 +2000,7 @@ final class TrophyStore: ObservableObject {
             latestUnlockEvents = previousUnlockEvents
             return .failed
         }
+        await saveTrophyEventsRemotelyIfNeeded(canonicalNewEvents, operationId: operationId)
         await recordWriteOperation(operationId, createdAt: createdAt)
         return .applied
     }
@@ -2018,6 +2035,113 @@ final class TrophyStore: ObservableObject {
         } catch {
             persistenceError = "Could not load trophies: \(error.localizedDescription)"
         }
+    }
+
+    private func restartTrophyObservationIfNeeded() {
+        trophyObservationTask?.cancel()
+        trophyObservationTask = nil
+
+        guard backendMode == .firebase,
+              let trophyRepository,
+              let currentAccountId else {
+            return
+        }
+
+        trophyObservationTask = Task { [weak self, trophyRepository, currentAccountId] in
+            do {
+                let loadedEvents = try await trophyRepository.loadTrophyEvents(
+                    accountId: currentAccountId,
+                    since: nil
+                )
+                _ = await self?.applyRemoteTrophyEvents(loadedEvents)
+
+                let stream = try await trophyRepository.observeTrophyEvents(accountId: currentAccountId)
+                for await remoteEvents in stream {
+                    _ = await self?.applyRemoteTrophyEvents(remoteEvents)
+                }
+            } catch {
+                await self?.setRemoteTrophyError(error)
+            }
+        }
+    }
+
+    private func saveTrophyEventsRemotelyIfNeeded(
+        _ events: [TrophyUnlockEvent],
+        operationId: UUID
+    ) async {
+        guard backendMode == .firebase,
+              let trophyRepository,
+              let currentAccountId else {
+            return
+        }
+
+        for event in events where !event.isRetracted {
+            let remoteOperationId = events.count == 1 ? operationId : event.id
+            let remoteEvent = event.withAccountId(
+                currentAccountId,
+                operationId: remoteOperationId,
+                now: event.earnedAt
+            )
+            do {
+                _ = try await trophyRepository.saveTrophyEvent(
+                    remoteEvent,
+                    operationId: remoteOperationId
+                )
+            } catch {
+                setRemoteTrophyError(error)
+            }
+        }
+    }
+
+    private func syncVisibleTrophyEventsRemotelyIfNeeded() async {
+        guard backendMode == .firebase,
+              let trophyRepository,
+              let currentAccountId else {
+            return
+        }
+
+        for event in visibleUnlockEvents() where !event.isRetracted {
+            let operationId = UUID()
+            let remoteEvent = event.withAccountId(
+                currentAccountId,
+                operationId: operationId,
+                now: event.earnedAt
+            )
+            do {
+                _ = try await trophyRepository.saveTrophyEvent(
+                    remoteEvent,
+                    operationId: operationId
+                )
+            } catch {
+                setRemoteTrophyError(error)
+            }
+        }
+    }
+
+    @discardableResult
+    private func applyRemoteTrophyEvents(_ remoteEvents: [TrophyUnlockEvent]) async -> Bool {
+        let incomingEvents = remoteEvents.filter(isVisible)
+        guard !incomingEvents.isEmpty else { return true }
+
+        let previousSnapshot = snapshot
+        let previousUnlockEvents = latestUnlockEvents
+        let previousEventLog = eventLog
+        _ = mergeUnlockEventsIntoLog(incomingEvents)
+        applyVisibleSnapshot(
+            generatedAt: incomingEvents.map(\.authoritativeEarnedAt).max(),
+            events: []
+        )
+        guard await persist() != nil else {
+            eventLog = previousEventLog
+            snapshot = previousSnapshot
+            latestUnlockEvents = previousUnlockEvents
+            return false
+        }
+        return true
+    }
+
+    private func setRemoteTrophyError(_ error: Error) {
+        persistenceError = "Could not sync trophies: \(error.localizedDescription)"
     }
 
     @discardableResult

@@ -307,6 +307,30 @@ nonisolated struct InsightEngagementRecord: Codable, Equatable {
         )
     }
 
+    func mergedAggregateSnapshot(with other: InsightEngagementRecord) -> InsightEngagementRecord {
+        var mergedCounts = engagementCounts
+        for (kind, count) in other.engagementCounts {
+            mergedCounts[kind] = max(mergedCounts[kind] ?? 0, count)
+        }
+        var mergedDates = lastEngagementDates
+        for (kind, date) in other.lastEngagementDates {
+            if let existingDate = mergedDates[kind] {
+                mergedDates[kind] = max(existingDate, date)
+            } else {
+                mergedDates[kind] = date
+            }
+        }
+
+        return InsightEngagementRecord(
+            accountId: other.accountId ?? accountId,
+            dedupeKey: dedupeKey,
+            engagementCounts: mergedCounts,
+            lastEngagementDates: mergedDates,
+            deletedAt: maxOptionalDate(deletedAt, other.deletedAt),
+            syncMetadata: SyncMetadata.preferredForMerge(syncMetadata, other.syncMetadata)
+        )
+    }
+
     func markedDeleted(at date: Date, operationId: UUID? = nil) -> InsightEngagementRecord {
         var copy = self
         copy.deletedAt = date
@@ -433,6 +457,11 @@ final class InsightStore: ObservableObject {
     private let ranker = InsightRanker()
     private let decoder = JSONDecoder()
     private let persistenceActor: PersistenceActor
+    private var backendMode: BackendMode = .local
+    private var insightRepository: (any InsightRepository)?
+    private var insightObservationTask: Task<Void, Never>?
+    private var deliveryObservationTask: Task<Void, Never>?
+    private var engagementObservationTask: Task<Void, Never>?
 
     init(
         fileURL: URL? = nil,
@@ -459,6 +488,16 @@ final class InsightStore: ObservableObject {
         guard currentAccountId != normalizedAccountId else { return }
         currentAccountId = normalizedAccountId
         applyVisibleState()
+        restartInsightObservationIfNeeded()
+    }
+
+    func configureRemoteSync(
+        backendMode: BackendMode,
+        insightRepository: (any InsightRepository)?
+    ) {
+        self.backendMode = backendMode
+        self.insightRepository = backendMode == .firebase ? insightRepository : nil
+        restartInsightObservationIfNeeded()
     }
 
     @discardableResult
@@ -496,6 +535,7 @@ final class InsightStore: ObservableObject {
             )
             return []
         }
+        await saveInsightsRemotelyIfNeeded(generatedInsights, operationId: writeOperationId)
         await recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: now)
         return selected
     }
@@ -545,6 +585,7 @@ final class InsightStore: ObservableObject {
             )
             return []
         }
+        await saveInsightsRemotelyIfNeeded(generatedInsights, operationId: writeOperationId)
         await recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: now)
         return selected
     }
@@ -632,6 +673,7 @@ final class InsightStore: ObservableObject {
             )
             return false
         }
+        await saveInsightsRemotelyIfNeeded(insights, operationId: writeOperationId)
         await recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: writeCreatedAt)
         return true
     }
@@ -678,6 +720,10 @@ final class InsightStore: ObservableObject {
             )
             return false
         }
+        await saveDeliveryRecordRemotelyIfNeeded(
+            dedupeKey: stampedRecord.dedupeKey,
+            operationId: writeOperationId
+        )
         await recordWriteOperation(writeOperationId, entityKind: .insightDelivery, createdAt: writeCreatedAt)
         return true
     }
@@ -721,6 +767,7 @@ final class InsightStore: ObservableObject {
             )
             return false
         }
+        await saveEngagementRecordRemotelyIfNeeded(stampedRecord, operationId: writeOperationId)
         await recordWriteOperation(writeOperationId, entityKind: .insightEngagement, createdAt: writeCreatedAt)
         return true
     }
@@ -771,7 +818,7 @@ final class InsightStore: ObservableObject {
         for remoteRecord in incomingRecords {
             let key = storageKey(accountId: remoteRecord.accountId, dedupeKey: remoteRecord.dedupeKey)
             if let existingRecord = allEngagementRecords[key] {
-                allEngagementRecords[key] = existingRecord.merged(with: remoteRecord)
+                allEngagementRecords[key] = existingRecord.mergedAggregateSnapshot(with: remoteRecord)
             } else {
                 allEngagementRecords[key] = remoteRecord
             }
@@ -824,6 +871,10 @@ final class InsightStore: ObservableObject {
             )
             return
         }
+        await saveDeliveryRecordRemotelyIfNeeded(
+            dedupeKey: insight.dedupeKey,
+            operationId: writeOperationId
+        )
         await recordWriteOperation(writeOperationId, entityKind: .insightDelivery, createdAt: now)
     }
 
@@ -854,6 +905,10 @@ final class InsightStore: ObservableObject {
             )
             return
         }
+        await saveDeliveryRecordRemotelyIfNeeded(
+            dedupeKey: dedupeKey,
+            operationId: writeOperationId
+        )
         await recordWriteOperation(writeOperationId, entityKind: .insightDelivery, createdAt: now)
     }
 
@@ -867,6 +922,11 @@ final class InsightStore: ObservableObject {
         let previousAllInsights = allInsights
         let previousAllDeliveryRecords = allDeliveryRecords
         let previousAllEngagementRecords = allEngagementRecords
+        var remoteDeltaRecord = InsightEngagementRecord(
+            accountId: currentAccountId,
+            dedupeKey: insight.dedupeKey
+        )
+        remoteDeltaRecord.record(kind, at: now, operationId: writeOperationId)
         let key = storageKey(accountId: currentAccountId, dedupeKey: insight.dedupeKey)
         if var record = allEngagementRecords[key] {
             record.record(kind, at: now, operationId: writeOperationId)
@@ -900,6 +960,7 @@ final class InsightStore: ObservableObject {
             )
             return
         }
+        await saveEngagementRecordRemotelyIfNeeded(remoteDeltaRecord, operationId: writeOperationId)
         await recordWriteOperation(writeOperationId, entityKind: .insightEngagement, createdAt: now)
     }
 
@@ -977,6 +1038,10 @@ final class InsightStore: ObservableObject {
             applyVisibleState()
             return false
         }
+        await invalidateInsightRemotelyIfNeeded(
+            dedupeKey: dedupeKey,
+            operationId: writeOperationId
+        )
         await recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: deletedAt)
         return true
     }
@@ -990,6 +1055,7 @@ final class InsightStore: ObservableObject {
         let writeOperationId = operationId ?? UUID()
         let previousAllInsights = allInsights
         var invalidatedCount = 0
+        var invalidatedDedupeKeys: [String] = []
         allInsights = allInsights.map { insight in
             guard !insight.isDeleted,
                   isVisible(insight),
@@ -997,6 +1063,7 @@ final class InsightStore: ObservableObject {
             else { return insight }
 
             invalidatedCount += 1
+            invalidatedDedupeKeys.append(insight.dedupeKey)
             return insight.markedDeleted(at: deletedAt, operationId: writeOperationId)
         }
 
@@ -1011,6 +1078,12 @@ final class InsightStore: ObservableObject {
             allInsights = previousAllInsights
             applyVisibleState()
             return 0
+        }
+        for dedupeKey in invalidatedDedupeKeys {
+            await invalidateInsightRemotelyIfNeeded(
+                dedupeKey: dedupeKey,
+                operationId: writeOperationId
+            )
         }
         await recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: deletedAt)
         return invalidatedCount
@@ -1096,6 +1169,7 @@ final class InsightStore: ObservableObject {
             applyVisibleState()
             return false
         }
+        await syncVisibleInsightStateRemotelyIfNeeded(operationId: writeOperationId)
         await recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: writeCreatedAt)
         return true
     }
@@ -1325,6 +1399,222 @@ private extension InsightStore {
         }
     }
 
+    private func restartInsightObservationIfNeeded() {
+        insightObservationTask?.cancel()
+        deliveryObservationTask?.cancel()
+        engagementObservationTask?.cancel()
+        insightObservationTask = nil
+        deliveryObservationTask = nil
+        engagementObservationTask = nil
+
+        guard backendMode == .firebase,
+              let insightRepository,
+              let currentAccountId else {
+            return
+        }
+
+        insightObservationTask = Task { [weak self, insightRepository, currentAccountId] in
+            do {
+                let loadedInsights = try await insightRepository.loadRecentInsights(
+                    accountId: currentAccountId,
+                    limit: 80
+                )
+                _ = await self?.applyRemoteInsights(loadedInsights)
+
+                let stream = try await insightRepository.observeRecentInsights(
+                    accountId: currentAccountId,
+                    limit: 80
+                )
+                for await remoteInsights in stream {
+                    _ = await self?.applyRemoteInsights(remoteInsights)
+                }
+            } catch {
+                await self?.setRemoteInsightError(error)
+            }
+        }
+
+        deliveryObservationTask = Task { [weak self, insightRepository, currentAccountId] in
+            do {
+                let loadedRecords = try await insightRepository.loadDeliveryRecords(accountId: currentAccountId)
+                _ = await self?.applyRemoteDeliveryRecords(loadedRecords)
+
+                let stream = try await insightRepository.observeDeliveryRecords(accountId: currentAccountId)
+                for await remoteRecords in stream {
+                    _ = await self?.applyRemoteDeliveryRecords(remoteRecords)
+                }
+            } catch {
+                await self?.setRemoteInsightError(error)
+            }
+        }
+
+        engagementObservationTask = Task { [weak self, insightRepository, currentAccountId] in
+            do {
+                let loadedRecords = try await insightRepository.loadEngagementRecords(accountId: currentAccountId)
+                _ = await self?.applyRemoteEngagementRecords(loadedRecords)
+
+                let stream = try await insightRepository.observeEngagementRecords(accountId: currentAccountId)
+                for await remoteRecords in stream {
+                    _ = await self?.applyRemoteEngagementRecords(remoteRecords)
+                }
+            } catch {
+                await self?.setRemoteInsightError(error)
+            }
+        }
+    }
+
+    @discardableResult
+    func applyRemoteInsights(_ remoteInsights: [AIInsight]) async -> Bool {
+        let incomingInsights = remoteInsights.filter(isVisible)
+        guard !incomingInsights.isEmpty else { return true }
+
+        let previousAllInsights = allInsights
+        let previousAllDeliveryRecords = allDeliveryRecords
+        let previousAllEngagementRecords = allEngagementRecords
+        allInsights = dedupedInsightsByStorageKey(allInsights + incomingInsights)
+        applyVisibleState()
+
+        guard await persist() != nil else {
+            restoreState(
+                insights: previousAllInsights,
+                deliveryRecords: previousAllDeliveryRecords,
+                engagementRecords: previousAllEngagementRecords
+            )
+            return false
+        }
+        return true
+    }
+
+    private func saveInsightsRemotelyIfNeeded(
+        _ insights: [AIInsight],
+        operationId: UUID
+    ) async {
+        guard backendMode == .firebase,
+              let insightRepository,
+              let currentAccountId else {
+            return
+        }
+        let now = Date()
+        let outgoingInsights = insights
+            .filter { !$0.isExpired(now: now) && !$0.evidence.isEmpty }
+            .map {
+                $0.withAccountId(
+                    currentAccountId,
+                    operationId: operationId,
+                    now: $0.createdAt
+                )
+            }
+        guard !outgoingInsights.isEmpty else { return }
+
+        do {
+            _ = try await insightRepository.saveInsights(
+                outgoingInsights,
+                operationId: operationId
+            )
+        } catch {
+            setRemoteInsightError(error)
+        }
+    }
+
+    private func saveDeliveryRecordRemotelyIfNeeded(
+        dedupeKey: String,
+        operationId: UUID
+    ) async {
+        guard backendMode == .firebase,
+              let insightRepository,
+              let currentAccountId else {
+            return
+        }
+        let key = storageKey(accountId: currentAccountId, dedupeKey: dedupeKey)
+        guard let record = allDeliveryRecords[key] else { return }
+
+        do {
+            _ = try await insightRepository.saveDeliveryRecord(
+                record.withAccountId(currentAccountId, operationId: operationId),
+                operationId: operationId
+            )
+        } catch {
+            setRemoteInsightError(error)
+        }
+    }
+
+    private func saveEngagementRecordRemotelyIfNeeded(
+        _ record: InsightEngagementRecord,
+        operationId: UUID
+    ) async {
+        guard backendMode == .firebase,
+              let insightRepository,
+              let currentAccountId else {
+            return
+        }
+        let activityDate = maxOptionalDate(record.deletedAt, record.latestEngagedAt()) ?? Date()
+
+        do {
+            _ = try await insightRepository.saveEngagementRecord(
+                record.withAccountId(currentAccountId, operationId: operationId, now: activityDate),
+                operationId: operationId
+            )
+        } catch {
+            setRemoteInsightError(error)
+        }
+    }
+
+    private func invalidateInsightRemotelyIfNeeded(
+        dedupeKey: String,
+        operationId: UUID
+    ) async {
+        guard backendMode == .firebase,
+              let insightRepository,
+              let currentAccountId else {
+            return
+        }
+
+        do {
+            try await insightRepository.invalidateInsight(
+                accountId: currentAccountId,
+                dedupeKey: dedupeKey,
+                operationId: operationId
+            )
+        } catch {
+            setRemoteInsightError(error)
+        }
+    }
+
+    private func syncVisibleInsightStateRemotelyIfNeeded(operationId: UUID) async {
+        guard backendMode == .firebase,
+              let insightRepository,
+              let currentAccountId else {
+            return
+        }
+        let now = Date()
+        let outgoingInsights = allInsights
+            .filter { isVisible($0) && !$0.isDeleted && !$0.isExpired(now: now) && !$0.evidence.isEmpty }
+            .map { $0.withAccountId(currentAccountId, operationId: operationId, now: $0.createdAt) }
+        let outgoingDeliveryRecords = allDeliveryRecords.values
+            .filter { isVisible($0) && !$0.isDeleted }
+            .map { $0.withAccountId(currentAccountId, operationId: operationId) }
+        let outgoingEngagementRecords = allEngagementRecords.values
+            .filter { isVisible($0) && !$0.isDeleted }
+            .map { $0.withAccountId(currentAccountId, operationId: operationId) }
+
+        do {
+            if !outgoingInsights.isEmpty {
+                _ = try await insightRepository.saveInsights(outgoingInsights, operationId: operationId)
+            }
+            for record in outgoingDeliveryRecords {
+                _ = try await insightRepository.saveDeliveryRecord(record, operationId: operationId)
+            }
+            for record in outgoingEngagementRecords {
+                _ = try await insightRepository.saveEngagementRecord(record, operationId: operationId)
+            }
+        } catch {
+            setRemoteInsightError(error)
+        }
+    }
+
+    private func setRemoteInsightError(_ error: Error) {
+        persistenceError = "Could not sync coach insights: \(error.localizedDescription)"
+    }
+
     @discardableResult
     func persist() async -> PersistenceWriteOutcome? {
         do {
@@ -1498,7 +1788,7 @@ private extension InsightStore {
         records.reduce(into: [String: InsightEngagementRecord]()) { result, record in
             let key = storageKey(accountId: record.accountId, dedupeKey: record.dedupeKey)
             if let existing = result[key] {
-                result[key] = existing.merged(with: record)
+                result[key] = existing.mergedAggregateSnapshot(with: record)
             } else {
                 result[key] = record
             }
@@ -1564,7 +1854,7 @@ private extension InsightStore {
     ) -> [String: InsightEngagementRecord] {
         records.reduce(into: [String: InsightEngagementRecord]()) { result, record in
             if let existing = result[record.dedupeKey] {
-                result[record.dedupeKey] = existing.merged(with: record)
+                result[record.dedupeKey] = existing.mergedAggregateSnapshot(with: record)
             } else {
                 result[record.dedupeKey] = record
             }

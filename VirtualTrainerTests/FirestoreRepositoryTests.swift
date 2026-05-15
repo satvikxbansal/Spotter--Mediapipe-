@@ -76,7 +76,7 @@ final class FirestoreRepositoryTests: XCTestCase {
         XCTAssertEqual(observedChanged?.displayName, "Changed Athlete")
     }
 
-    func testFirebasePartialKeepsWorkoutTrophyAndInsightRepositoriesLocal() async {
+    func testFirebasePartialUsesPhase16FMemoryFirestoreRepositories() async {
         let dependencies = AppDependencies.firebasePartial()
 
         XCTAssertEqual(dependencies.backendMode, .firebase)
@@ -86,8 +86,189 @@ final class FirestoreRepositoryTests: XCTestCase {
         XCTAssertTrue(dependencies.calibration is FirestoreCalibrationRepository)
         XCTAssertTrue(dependencies.plans is FirestorePlanRepository)
         XCTAssertTrue(dependencies.workouts is LocalWorkoutRepository)
-        XCTAssertTrue(dependencies.trophies is LocalTrophyRepository)
-        XCTAssertTrue(dependencies.insights is LocalInsightRepository)
+        XCTAssertTrue(dependencies.trophies is FirestoreTrophyRepository)
+        XCTAssertTrue(dependencies.insights is FirestoreInsightRepository)
+    }
+
+    func testFirestoreTrophyRepositoryRoundTripsEventsAndDerivesEarliestProgress() async throws {
+        let database = InMemoryFirestoreDocumentDatabase()
+        let repository = FirestoreTrophyRepository(database: database)
+        let later = makeTrophyEvent(earnedAt: now.addingTimeInterval(120))
+        let earlier = makeTrophyEvent(earnedAt: now)
+
+        _ = try await repository.saveTrophyEvent(later, operationId: fixedUUID(160_101))
+        let duplicate = try await repository.saveTrophyEvent(later, operationId: fixedUUID(160_101))
+        _ = try await repository.saveTrophyEvent(earlier, operationId: fixedUUID(160_102))
+
+        let events = try await repository.loadTrophyEvents(accountId: accountId, since: nil)
+        let progress = try await repository.loadTrophyProgress(accountId: accountId)
+        let duplicatePath = try FirestorePathBuilder.trophyEvent(
+            uid: accountId,
+            eventId: fixedUUID(160_101).uuidString.lowercased()
+        )
+
+        XCTAssertEqual(duplicate.earnedAt, later.earnedAt)
+        XCTAssertEqual(database.writeCount(for: duplicatePath), 1)
+        XCTAssertEqual(events.map(\.earnedAt), [now, now.addingTimeInterval(120)])
+        XCTAssertEqual(
+            progress.first { $0.trophyId == TrophyDefinitionCatalog.ID.spark }?.earnedAt,
+            now
+        )
+    }
+
+    func testFirestoreInsightRepositoryRoundTripsByDedupeKeyAndPolicyVersionBumpWins() async throws {
+        let database = InMemoryFirestoreDocumentDatabase()
+        let repository = FirestoreInsightRepository(database: database)
+        let oldInsight = makeInsight(
+            dedupeKey: "policy-bump",
+            headline: "Old policy headline",
+            sourcePolicyVersion: "phase14.local.deterministic.v1",
+            createdAt: now
+        )
+        let newInsight = makeInsight(
+            dedupeKey: "policy-bump",
+            headline: "New policy headline",
+            sourcePolicyVersion: "phase14.local.deterministic.v2",
+            createdAt: now.addingTimeInterval(10)
+        )
+
+        _ = try await repository.saveInsights([oldInsight], operationId: fixedUUID(160_201))
+        _ = try await repository.saveInsights([newInsight], operationId: fixedUUID(160_202))
+
+        let loaded = try await repository.loadRecentInsights(accountId: accountId, limit: 5)
+
+        XCTAssertEqual(loaded.map(\.dedupeKey), ["policy-bump"])
+        XCTAssertEqual(loaded.first?.headline, "New policy headline")
+        XCTAssertEqual(loaded.first?.sourcePolicyVersion, "phase14.local.deterministic.v2")
+    }
+
+    func testFirestoreInsightPolicyBumpPreservesServerCreatedAt() async throws {
+        let database = InMemoryFirestoreDocumentDatabase()
+        let repository = FirestoreInsightRepository(database: database)
+        let dedupeKey = "policy-bump-preserve-server-created"
+        let oldInsight = makeInsight(
+            dedupeKey: dedupeKey,
+            headline: "Old preserved server time",
+            sourcePolicyVersion: "phase14.local.deterministic.v1",
+            createdAt: now
+        )
+        let newInsight = makeInsight(
+            dedupeKey: dedupeKey,
+            headline: "New preserved server time",
+            sourcePolicyVersion: "phase14.local.deterministic.v2",
+            createdAt: now.addingTimeInterval(10)
+        )
+        let path = try FirestorePathBuilder.insight(uid: accountId, dedupeKey: dedupeKey)
+
+        _ = try await repository.saveInsights([oldInsight], operationId: fixedUUID(160_211))
+        let firstDocument = try await database.getDocument(path: path)
+        let firstServerCreatedAt = try XCTUnwrap(firstDocument?.data["serverCreatedAt"] as? String)
+        _ = try await repository.saveInsights([newInsight], operationId: fixedUUID(160_212))
+        let secondDocument = try await database.getDocument(path: path)
+        let secondServerCreatedAt = try XCTUnwrap(secondDocument?.data["serverCreatedAt"] as? String)
+
+        XCTAssertEqual(secondServerCreatedAt, firstServerCreatedAt)
+    }
+
+    func testFirestoreInsightDeliveryMergeUsesEarliestLatestAndMaxCount() async throws {
+        let database = InMemoryFirestoreDocumentDatabase()
+        let repository = FirestoreInsightRepository(database: database)
+        let first = InsightDeliveryRecord(
+            accountId: accountId,
+            dedupeKey: "delivery-aggregate",
+            firstPresentedAt: now.addingTimeInterval(20),
+            lastPresentedAt: now.addingTimeInterval(30),
+            presentationCount: 2,
+            surfaceLastPresentedAt: [
+                InsightSurface.dashboard.rawValue: now.addingTimeInterval(30)
+            ]
+        )
+        let second = InsightDeliveryRecord(
+            accountId: accountId,
+            dedupeKey: "delivery-aggregate",
+            firstPresentedAt: now,
+            lastPresentedAt: now.addingTimeInterval(60),
+            presentationCount: 1,
+            surfaceLastPresentedAt: [
+                InsightSurface.dashboard.rawValue: now.addingTimeInterval(40),
+                InsightSurface.profile.rawValue: now.addingTimeInterval(60)
+            ]
+        )
+
+        _ = try await repository.saveDeliveryRecord(first, operationId: fixedUUID(160_301))
+        let merged = try await repository.saveDeliveryRecord(second, operationId: fixedUUID(160_302))
+
+        XCTAssertEqual(merged.firstPresentedAt, now)
+        XCTAssertEqual(merged.lastPresentedAt, now.addingTimeInterval(60))
+        XCTAssertEqual(merged.presentationCount, 2)
+        XCTAssertEqual(merged.surfaceLastPresentedAt[InsightSurface.dashboard.rawValue], now.addingTimeInterval(40))
+        XCTAssertEqual(merged.surfaceLastPresentedAt[InsightSurface.profile.rawValue], now.addingTimeInterval(60))
+    }
+
+    func testFirestoreInsightEngagementMergeSumsCountsAndKeepsMaxDates() async throws {
+        let database = InMemoryFirestoreDocumentDatabase()
+        let repository = FirestoreInsightRepository(database: database)
+        var first = InsightEngagementRecord(accountId: accountId, dedupeKey: "engagement-aggregate")
+        first.record(.helpful, at: now)
+        first.record(.opened, at: now.addingTimeInterval(5))
+        var second = InsightEngagementRecord(accountId: accountId, dedupeKey: "engagement-aggregate")
+        second.record(.helpful, at: now.addingTimeInterval(20))
+        second.record(.notHelpful, at: now.addingTimeInterval(30))
+
+        _ = try await repository.saveEngagementRecord(first, operationId: fixedUUID(160_401))
+        let merged = try await repository.saveEngagementRecord(second, operationId: fixedUUID(160_402))
+
+        XCTAssertEqual(merged.count(for: .helpful), 2)
+        XCTAssertEqual(merged.count(for: .opened), 1)
+        XCTAssertEqual(merged.count(for: .notHelpful), 1)
+        XCTAssertEqual(merged.lastEngagedAt(for: .helpful), now.addingTimeInterval(20))
+        XCTAssertEqual(merged.lastEngagedAt(for: .notHelpful), now.addingTimeInterval(30))
+    }
+
+    func testFirestoreInsightInvalidationHidesInsightFromRecentLoads() async throws {
+        let database = InMemoryFirestoreDocumentDatabase()
+        let repository = FirestoreInsightRepository(database: database)
+        let insight = makeInsight(dedupeKey: "invalidated-remote")
+
+        _ = try await repository.saveInsights([insight], operationId: fixedUUID(160_501))
+        try await repository.invalidateInsight(
+            accountId: accountId,
+            dedupeKey: insight.dedupeKey,
+            operationId: fixedUUID(160_502)
+        )
+
+        let loaded = try await repository.loadRecentInsights(accountId: accountId, limit: 5)
+
+        XCTAssertFalse(loaded.contains { $0.dedupeKey == insight.dedupeKey })
+    }
+
+    func testFirestoreInsightInvalidationWritesTombstoneWhenDocumentIsMissing() async throws {
+        let database = InMemoryFirestoreDocumentDatabase()
+        let repository = FirestoreInsightRepository(database: database)
+        let dedupeKey = "missing-invalidated-remote"
+
+        try await repository.invalidateInsight(
+            accountId: accountId,
+            dedupeKey: dedupeKey,
+            operationId: fixedUUID(160_503)
+        )
+
+        let loaded = try await repository.loadRecentInsights(accountId: accountId, limit: 5)
+        let path = try FirestorePathBuilder.insight(uid: accountId, dedupeKey: dedupeKey)
+        let tombstone = try await database.getDocument(path: path)
+
+        XCTAssertFalse(loaded.contains { $0.dedupeKey == dedupeKey })
+        XCTAssertEqual(tombstone?.data["accountId"] as? String, accountId)
+        XCTAssertEqual(tombstone?.data["dedupeKey"] as? String, dedupeKey)
+        XCTAssertNotNil(tombstone?.data["deletedAt"])
+    }
+
+    func testPrivacyValidatorRejectsForbiddenKeysInInsightPayloads() throws {
+        let document = mapToInsightDocument(makeInsight(dedupeKey: "privacy-reject"))
+        var payload = try FirestoreEncodingHelpers.payload(from: document)
+        payload["rawPoseTimeline"] = [["x": 0.2, "y": 0.4]]
+
+        XCTAssertThrowsError(try FirestorePrivacyValidator.validate(payload))
     }
 
     private func nextProfile(
@@ -128,6 +309,66 @@ final class FirestoreRepositoryTests: XCTestCase {
                 serverVersion: nil,
                 syncState: .pendingUpload,
                 pendingOperationId: operationId
+            )
+        )
+    }
+
+    private func makeTrophyEvent(earnedAt: Date) -> TrophyUnlockEvent {
+        TrophyUnlockEvent(
+            accountId: accountId,
+            trophyId: TrophyDefinitionCatalog.ID.spark,
+            title: "The Spark",
+            subtitle: "First workout complete",
+            earnedAt: earnedAt,
+            reason: "Repository sync test unlock.",
+            celebrationStyle: .standard,
+            syncMetadata: SyncMetadata(
+                localUpdatedAt: earnedAt,
+                lastSyncedAt: nil,
+                serverVersion: nil,
+                syncState: .pendingUpload,
+                pendingOperationId: nil
+            )
+        )
+    }
+
+    private func makeInsight(
+        dedupeKey: String,
+        headline: String = "Keep the streak specific",
+        sourcePolicyVersion: String = AIInsight.currentSourcePolicyVersion,
+        createdAt: Date? = nil
+    ) -> AIInsight {
+        let createdAt = createdAt ?? now
+        return AIInsight(
+            accountId: accountId,
+            type: .consistency,
+            headline: headline,
+            message: "You trained twice this week, so keep the next block short and repeatable.",
+            shortMessage: "Keep the next block repeatable.",
+            evidence: [
+                InsightEvidence(
+                    metric: "weeklyConsistency",
+                    value: "2 sessions",
+                    comparison: "up from 1",
+                    confidence: 0.9
+                )
+            ],
+            recommendedAction: .continuePlan,
+            severity: .positive,
+            emotionalIntent: .reinforceConsistency,
+            userValueScore: 80,
+            confidence: 0.9,
+            surfaces: [.dashboard, .profile],
+            createdAt: createdAt,
+            sourcePolicyVersion: sourcePolicyVersion,
+            expiresAt: createdAt.addingTimeInterval(86_400),
+            dedupeKey: dedupeKey,
+            syncMetadata: SyncMetadata(
+                localUpdatedAt: createdAt,
+                lastSyncedAt: nil,
+                serverVersion: nil,
+                syncState: .pendingUpload,
+                pendingOperationId: nil
             )
         )
     }
@@ -201,6 +442,48 @@ private final class InMemoryFirestoreDocumentDatabase: FirestoreDocumentDatabase
         return matches
     }
 
+    func listenCollection(
+        collectionPath: String,
+        filters: [FirestoreQueryFilter],
+        orderBy: String?,
+        descending: Bool,
+        limit: Int?,
+        onChange: @escaping (Result<[FirestoreStoredDocument], Error>) -> Void
+    ) -> FirestoreListenerHandle {
+        let id = UUID()
+        let listenerKey = collectionPath
+        listeners[listenerKey, default: [:]][id] = { [weak self] _ in
+            guard let self else { return }
+            do {
+                let documents = try self.queryDocumentsSync(
+                    collectionPath: collectionPath,
+                    filters: filters,
+                    orderBy: orderBy,
+                    descending: descending,
+                    limit: limit
+                )
+                onChange(.success(documents))
+            } catch {
+                onChange(.failure(error))
+            }
+        }
+        do {
+            let documents = try queryDocumentsSync(
+                collectionPath: collectionPath,
+                filters: filters,
+                orderBy: orderBy,
+                descending: descending,
+                limit: limit
+            )
+            onChange(.success(documents))
+        } catch {
+            onChange(.failure(error))
+        }
+        return InMemoryFirestoreListenerHandle { [weak self] in
+            self?.listeners[listenerKey]?.removeValue(forKey: id)
+        }
+    }
+
     func runTransaction(
         _ update: @escaping (FirestoreRepositoryTransaction) throws -> Any?
     ) async throws -> Any? {
@@ -257,6 +540,46 @@ private final class InMemoryFirestoreDocumentDatabase: FirestoreDocumentDatabase
         listeners[path]?.values.forEach {
             $0(.success(documents[path]))
         }
+        let collectionPath = path.split(separator: "/").dropLast().joined(separator: "/")
+        listeners[collectionPath]?.values.forEach {
+            $0(.success(nil))
+        }
+    }
+
+    private func queryDocumentsSync(
+        collectionPath: String,
+        filters: [FirestoreQueryFilter],
+        orderBy: String?,
+        descending: Bool,
+        limit: Int?
+    ) throws -> [FirestoreStoredDocument] {
+        let prefix = collectionPath + "/"
+        var matches = documents.values.filter { document in
+            guard document.path.hasPrefix(prefix),
+                  !document.path.dropFirst(prefix.count).contains("/") else {
+                return false
+            }
+            return filters.allSatisfy { filter in
+                guard let value = document.data[filter.field] else { return false }
+                if value is NSNull, filter.value is NSNull {
+                    return true
+                }
+                return String(describing: value) == String(describing: filter.value)
+            }
+        }
+
+        if let orderBy {
+            matches.sort {
+                let lhs = $0.data[orderBy].map(String.init(describing:)) ?? ""
+                let rhs = $1.data[orderBy].map(String.init(describing:)) ?? ""
+                return descending ? lhs > rhs : lhs < rhs
+            }
+        }
+
+        if let limit {
+            matches = Array(matches.prefix(max(limit, 0)))
+        }
+        return matches
     }
 
     private func normalizeWritePayload(_ payload: [String: Any], updateTime: Date) -> [String: Any] {

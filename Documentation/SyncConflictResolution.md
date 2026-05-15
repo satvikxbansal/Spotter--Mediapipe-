@@ -24,7 +24,7 @@ Treat trophy progress as derived state. The canonical source for unlocks is the 
 
 ## TrophyUnlockEvent
 
-Treat unlock events as append-only. If duplicate unlocks exist for the same account and trophy, the earliest server timestamp wins. Later duplicates can be retained for audit/debug while the user-facing trophy uses the earliest canonical `earnedAt`.
+Treat unlock events as append-only. If duplicate unlocks exist for the same account and trophy, the earliest canonical `earnedAt` wins. Server write timestamps remain sync metadata; they must not replace the user's actual earned moment in user-facing trophy progress.
 
 ## AIInsight
 

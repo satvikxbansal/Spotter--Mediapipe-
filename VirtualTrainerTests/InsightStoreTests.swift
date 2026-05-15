@@ -251,8 +251,10 @@ final class InsightStoreTests: XCTestCase {
         await store.recordEngagement(insight, kind: .helpful, now: now)
         var remote = InsightEngagementRecord(accountId: accountId, dedupeKey: insight.dedupeKey)
         remote.record(.helpful, at: now.addingTimeInterval(10))
+        remote.record(.helpful, at: now.addingTimeInterval(15))
         remote.record(.notHelpful, at: now.addingTimeInterval(20))
 
+        assertTrue(await store.applyRemoteEngagementRecords([remote]))
         assertTrue(await store.applyRemoteEngagementRecords([remote]))
 
         let merged = try XCTUnwrap(store.engagementRecord(for: insight.dedupeKey))
@@ -266,6 +268,32 @@ final class InsightStoreTests: XCTestCase {
         let reloaded = InsightStore(fileURL: url, accountId: accountId)
         XCTAssertEqual(reloaded.engagementRecord(for: insight.dedupeKey)?.count(for: .helpful), 2)
         XCTAssertEqual(reloaded.engagementRecord(for: insight.dedupeKey)?.count(for: .notHelpful), 1)
+    }
+
+    func testRecordEngagementPushesSingleDeltaAfterRemoteAggregate() async throws {
+        let now = Date(timeIntervalSince1970: 1_778_067_200)
+        let accountId = "account-a"
+        let repository = SpyInsightRepository()
+        let store = InsightStore(fileURL: temporaryInsightURL(), accountId: accountId)
+        store.configureRemoteSync(backendMode: .firebase, insightRepository: repository)
+        let insight = makeInsight(
+            dedupeKey: "remote-engagement-delta",
+            score: 100,
+            surface: .profile,
+            now: now
+        )
+        var remoteAggregate = InsightEngagementRecord(accountId: accountId, dedupeKey: insight.dedupeKey)
+        for offset in 0..<5 {
+            remoteAggregate.record(.helpful, at: now.addingTimeInterval(Double(offset)))
+        }
+
+        assertTrue(await store.applyRemoteEngagementRecords([remoteAggregate]))
+        await store.recordEngagement(insight, kind: .helpful, now: now.addingTimeInterval(60))
+
+        let savedDelta = try XCTUnwrap(repository.savedEngagementRecords.last)
+        XCTAssertEqual(savedDelta.count(for: .helpful), 1)
+        XCTAssertEqual(savedDelta.lastEngagedAt(for: .helpful), now.addingTimeInterval(60))
+        XCTAssertEqual(store.engagementRecord(for: insight.dedupeKey)?.count(for: .helpful), 6)
     }
 
     func testLegacySnapshotWithoutEngagementRecordsStillDecodes() async throws {
@@ -617,4 +645,60 @@ private extension InsightStoreTests {
             updatedAt: now
         )
     }
+}
+
+@MainActor
+private final class SpyInsightRepository: InsightRepository {
+    private(set) var savedEngagementRecords: [InsightEngagementRecord] = []
+
+    func saveInsights(_ insights: [AIInsight], operationId: UUID) async throws -> [AIInsight] {
+        insights
+    }
+
+    func loadRecentInsights(accountId: String, limit: Int) async throws -> [AIInsight] {
+        []
+    }
+
+    func observeRecentInsights(accountId: String, limit: Int) async throws -> AsyncStream<[AIInsight]> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func saveDeliveryRecord(
+        _ record: InsightDeliveryRecord,
+        operationId: UUID
+    ) async throws -> InsightDeliveryRecord {
+        record
+    }
+
+    func loadDeliveryRecords(accountId: String) async throws -> [InsightDeliveryRecord] {
+        []
+    }
+
+    func observeDeliveryRecords(accountId: String) async throws -> AsyncStream<[InsightDeliveryRecord]> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func saveEngagementRecord(
+        _ record: InsightEngagementRecord,
+        operationId: UUID
+    ) async throws -> InsightEngagementRecord {
+        savedEngagementRecords.append(record)
+        return record
+    }
+
+    func loadEngagementRecords(accountId: String) async throws -> [InsightEngagementRecord] {
+        []
+    }
+
+    func observeEngagementRecords(accountId: String) async throws -> AsyncStream<[InsightEngagementRecord]> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func invalidateInsight(accountId: String, dedupeKey: String, operationId: UUID) async throws {}
 }

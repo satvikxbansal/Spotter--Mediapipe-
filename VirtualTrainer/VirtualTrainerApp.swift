@@ -134,5 +134,13 @@ struct VirtualTrainerApp: App {
             backendMode: appDependencies.backendMode,
             calibrationRepository: appDependencies.calibration
         )
+        trophyStore.configureRemoteSync(
+            backendMode: appDependencies.backendMode,
+            trophyRepository: appDependencies.trophies
+        )
+        insightStore.configureRemoteSync(
+            backendMode: appDependencies.backendMode,
+            insightRepository: appDependencies.insights
+        )
     }
 }

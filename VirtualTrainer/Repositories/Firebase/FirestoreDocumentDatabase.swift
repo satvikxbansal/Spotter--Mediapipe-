@@ -37,6 +37,14 @@ protocol FirestoreDocumentDatabase: AnyObject {
         descending: Bool,
         limit: Int?
     ) async throws -> [FirestoreStoredDocument]
+    func listenCollection(
+        collectionPath: String,
+        filters: [FirestoreQueryFilter],
+        orderBy: String?,
+        descending: Bool,
+        limit: Int?,
+        onChange: @escaping (Result<[FirestoreStoredDocument], Error>) -> Void
+    ) -> FirestoreListenerHandle
     func runTransaction(
         _ update: @escaping (FirestoreRepositoryTransaction) throws -> Any?
     ) async throws -> Any?
@@ -93,6 +101,49 @@ final class FirebaseFirestoreDocumentDatabase: FirestoreDocumentDatabase {
         return snapshot.documents.compactMap { document in
             storedDocument(from: document, path: document.reference.path)
         }
+    }
+
+    func listenCollection(
+        collectionPath: String,
+        filters: [FirestoreQueryFilter],
+        orderBy: String?,
+        descending: Bool,
+        limit: Int?,
+        onChange: @escaping (Result<[FirestoreStoredDocument], Error>) -> Void
+    ) -> FirestoreListenerHandle {
+        let firestore: Firestore
+        do {
+            firestore = try resolvedFirestore()
+        } catch {
+            onChange(.failure(error))
+            return FirebaseFirestoreNoopListenerHandle()
+        }
+
+        var query: Query = firestore.collection(collectionPath)
+        for filter in filters {
+            query = query.whereField(filter.field, isEqualTo: filter.value)
+        }
+        if let orderBy {
+            query = query.order(by: orderBy, descending: descending)
+        }
+        if let limit {
+            query = query.limit(to: limit)
+        }
+
+        let registration = query.addSnapshotListener { snapshot, error in
+            if let error {
+                onChange(.failure(error))
+                return
+            }
+            guard let snapshot else {
+                onChange(.success([]))
+                return
+            }
+            onChange(.success(snapshot.documents.compactMap { document in
+                storedDocument(from: document, path: document.reference.path)
+            }))
+        }
+        return FirebaseFirestoreListenerHandle(registration: registration)
     }
 
     func runTransaction(

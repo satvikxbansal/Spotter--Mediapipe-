@@ -251,6 +251,25 @@ final class LocalTrophyRepository: TrophyRepository {
 final class LocalInsightRepository: InsightRepository {
     private let store: InsightStore
     private let defaultAccountId: String?
+    private var insightContinuations: [UUID: InsightObserver] = [:]
+    private var deliveryContinuations: [UUID: DeliveryObserver] = [:]
+    private var engagementContinuations: [UUID: EngagementObserver] = [:]
+
+    private struct InsightObserver {
+        let accountId: String
+        let limit: Int
+        let continuation: AsyncStream<[AIInsight]>.Continuation
+    }
+
+    private struct DeliveryObserver {
+        let accountId: String
+        let continuation: AsyncStream<[InsightDeliveryRecord]>.Continuation
+    }
+
+    private struct EngagementObserver {
+        let accountId: String
+        let continuation: AsyncStream<[InsightEngagementRecord]>.Continuation
+    }
 
     init(
         fileURL: URL? = nil,
@@ -274,6 +293,7 @@ final class LocalInsightRepository: InsightRepository {
         guard await store.saveInsights(insights, operationId: operationId) else {
             throw localSaveError(store.persistenceError, fallback: "Could not save local insights.")
         }
+        notifyInsightObservers()
         let savedDedupeKeys = Set(insights.map(\.dedupeKey))
         return store.recentInsights.filter { savedDedupeKeys.contains($0.dedupeKey) }
     }
@@ -283,12 +303,33 @@ final class LocalInsightRepository: InsightRepository {
         return Array(store.recentInsights.filter { !$0.isDeleted }.prefix(max(limit, 0)))
     }
 
+    func observeRecentInsights(accountId: String, limit: Int) async throws -> AsyncStream<[AIInsight]> {
+        let normalizedAccountId = try normalizedRequiredAccountId(accountId)
+        store.setCurrentAccountId(normalizedAccountId)
+        return AsyncStream { continuation in
+            let id = UUID()
+            insightContinuations[id] = InsightObserver(
+                accountId: normalizedAccountId,
+                limit: limit,
+                continuation: continuation
+            )
+            continuation.yield(recentInsights(accountId: normalizedAccountId, limit: limit))
+            continuation.onTermination = { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.insightContinuations.removeValue(forKey: id)
+                }
+            }
+        }
+    }
+
     @discardableResult
     func saveDeliveryRecord(_ record: InsightDeliveryRecord, operationId: UUID) async throws -> InsightDeliveryRecord {
         store.setCurrentAccountId(record.accountId ?? defaultAccountId)
         guard await store.saveDeliveryRecord(record, operationId: operationId) else {
             throw localSaveError(store.persistenceError, fallback: "Could not save local insight delivery record.")
         }
+        notifyDeliveryObservers()
         return store
             .allDeliveryRecordsIncludingTombstones()
             .first { $0.dedupeKey == record.dedupeKey } ?? record
@@ -299,12 +340,32 @@ final class LocalInsightRepository: InsightRepository {
         return store.allDeliveryRecordsIncludingTombstones()
     }
 
+    func observeDeliveryRecords(accountId: String) async throws -> AsyncStream<[InsightDeliveryRecord]> {
+        let normalizedAccountId = try normalizedRequiredAccountId(accountId)
+        store.setCurrentAccountId(normalizedAccountId)
+        return AsyncStream { continuation in
+            let id = UUID()
+            deliveryContinuations[id] = DeliveryObserver(
+                accountId: normalizedAccountId,
+                continuation: continuation
+            )
+            continuation.yield(deliveryRecords(accountId: normalizedAccountId))
+            continuation.onTermination = { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.deliveryContinuations.removeValue(forKey: id)
+                }
+            }
+        }
+    }
+
     @discardableResult
     func saveEngagementRecord(_ record: InsightEngagementRecord, operationId: UUID) async throws -> InsightEngagementRecord {
         store.setCurrentAccountId(record.accountId ?? defaultAccountId)
         guard await store.saveEngagementRecord(record, operationId: operationId) else {
             throw localSaveError(store.persistenceError, fallback: "Could not save local insight engagement record.")
         }
+        notifyEngagementObservers()
         return store
             .allEngagementRecordsIncludingTombstones()
             .first { $0.dedupeKey == record.dedupeKey } ?? record
@@ -315,15 +376,70 @@ final class LocalInsightRepository: InsightRepository {
         return store.allEngagementRecordsIncludingTombstones()
     }
 
+    func observeEngagementRecords(accountId: String) async throws -> AsyncStream<[InsightEngagementRecord]> {
+        let normalizedAccountId = try normalizedRequiredAccountId(accountId)
+        store.setCurrentAccountId(normalizedAccountId)
+        return AsyncStream { continuation in
+            let id = UUID()
+            engagementContinuations[id] = EngagementObserver(
+                accountId: normalizedAccountId,
+                continuation: continuation
+            )
+            continuation.yield(engagementRecords(accountId: normalizedAccountId))
+            continuation.onTermination = { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.engagementContinuations.removeValue(forKey: id)
+                }
+            }
+        }
+    }
+
     func invalidateInsight(accountId: String, dedupeKey: String, operationId: UUID) async throws {
         store.setCurrentAccountId(try normalizedRequiredAccountId(accountId))
         guard await store.invalidateInsight(dedupeKey: dedupeKey, operationId: operationId) else {
             throw RepositoryError.notFound
         }
+        notifyInsightObservers()
     }
 
     private func firstAccountId(in insights: [AIInsight]) -> String? {
         insights.lazy.compactMap(\.accountId).first
+    }
+
+    private func notifyInsightObservers() {
+        insightContinuations.values.forEach { observer in
+            observer.continuation.yield(
+                recentInsights(accountId: observer.accountId, limit: observer.limit)
+            )
+        }
+    }
+
+    private func notifyDeliveryObservers() {
+        deliveryContinuations.values.forEach { observer in
+            observer.continuation.yield(deliveryRecords(accountId: observer.accountId))
+        }
+    }
+
+    private func notifyEngagementObservers() {
+        engagementContinuations.values.forEach { observer in
+            observer.continuation.yield(engagementRecords(accountId: observer.accountId))
+        }
+    }
+
+    private func recentInsights(accountId: String, limit: Int) -> [AIInsight] {
+        store.setCurrentAccountId(accountId)
+        return Array(store.recentInsights.filter { !$0.isDeleted }.prefix(max(limit, 0)))
+    }
+
+    private func deliveryRecords(accountId: String) -> [InsightDeliveryRecord] {
+        store.setCurrentAccountId(accountId)
+        return store.allDeliveryRecordsIncludingTombstones()
+    }
+
+    private func engagementRecords(accountId: String) -> [InsightEngagementRecord] {
+        store.setCurrentAccountId(accountId)
+        return store.allEngagementRecordsIncludingTombstones()
     }
 }
 

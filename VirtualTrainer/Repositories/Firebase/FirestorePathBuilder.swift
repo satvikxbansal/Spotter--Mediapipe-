@@ -29,6 +29,10 @@ nonisolated enum FirestorePathBuilder {
         "\(try users(uid))/trophyEvents/\(try pathComponent(eventId, label: "eventId"))"
     }
 
+    static func trophyEventsCollection(uid: String) throws -> String {
+        "\(try users(uid))/trophyEvents"
+    }
+
     static func trophyEvent(uid: String, eventId: UUID) throws -> String {
         try trophyEvent(uid: uid, eventId: eventId.uuidString.lowercased())
     }
@@ -41,12 +45,24 @@ nonisolated enum FirestorePathBuilder {
         "\(try users(uid))/insights/\(try pathComponent(dedupeKey, label: "dedupeKey"))"
     }
 
+    static func insightsCollection(uid: String) throws -> String {
+        "\(try users(uid))/insights"
+    }
+
     static func insightDelivery(uid: String, dedupeKey: String) throws -> String {
         "\(try users(uid))/insightDelivery/\(try pathComponent(dedupeKey, label: "dedupeKey"))"
     }
 
+    static func insightDeliveryCollection(uid: String) throws -> String {
+        "\(try users(uid))/insightDelivery"
+    }
+
     static func insightEngagement(uid: String, dedupeKey: String) throws -> String {
         "\(try users(uid))/insightEngagement/\(try pathComponent(dedupeKey, label: "dedupeKey"))"
+    }
+
+    static func insightEngagementCollection(uid: String) throws -> String {
+        "\(try users(uid))/insightEngagement"
     }
 
     static func calibration(uid: String) throws -> String {

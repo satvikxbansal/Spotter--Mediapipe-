@@ -44,12 +44,15 @@ protocol InsightRepository: AnyObject {
     @discardableResult
     func saveInsights(_ insights: [AIInsight], operationId: UUID) async throws -> [AIInsight]
     func loadRecentInsights(accountId: String, limit: Int) async throws -> [AIInsight]
+    func observeRecentInsights(accountId: String, limit: Int) async throws -> AsyncStream<[AIInsight]>
     @discardableResult
     func saveDeliveryRecord(_ record: InsightDeliveryRecord, operationId: UUID) async throws -> InsightDeliveryRecord
     func loadDeliveryRecords(accountId: String) async throws -> [InsightDeliveryRecord]
+    func observeDeliveryRecords(accountId: String) async throws -> AsyncStream<[InsightDeliveryRecord]>
     @discardableResult
     func saveEngagementRecord(_ record: InsightEngagementRecord, operationId: UUID) async throws -> InsightEngagementRecord
     func loadEngagementRecords(accountId: String) async throws -> [InsightEngagementRecord]
+    func observeEngagementRecords(accountId: String) async throws -> AsyncStream<[InsightEngagementRecord]>
     func invalidateInsight(accountId: String, dedupeKey: String, operationId: UUID) async throws
 }
 
