@@ -134,5 +134,13 @@ struct VirtualTrainerApp: App {
             backendMode: appDependencies.backendMode,
             calibrationRepository: appDependencies.calibration
         )
+        workoutHistoryStore.configureRemoteSync(
+            backendMode: appDependencies.backendMode,
+            workoutRepository: appDependencies.workouts
+        )
+        syncOrchestrator.configureWorkoutPush(
+            localStore: workoutHistoryStore,
+            workoutRepository: appDependencies.workouts
+        )
     }
 }

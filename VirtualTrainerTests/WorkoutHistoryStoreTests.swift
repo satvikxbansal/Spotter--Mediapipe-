@@ -688,6 +688,48 @@ final class WorkoutHistoryStoreTests: XCTestCase {
         XCTAssertTrue(store.fetchRecentSummaries().isEmpty)
         XCTAssertNotNil(store.persistenceError)
     }
+
+    func testFirebaseModeWorkoutSaveLeavesPendingWhenRemoteFails() async throws {
+        let accountId = "firebase-history"
+        let repository = RecordingWorkoutRepository(saveError: RepositoryError.backendUnavailable)
+        let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL(), accountId: accountId)
+        store.configureRemoteSync(backendMode: .firebase, workoutRepository: repository)
+        let operationId = UUID(uuidString: "00000000-0000-0000-0000-00000000C001") ?? UUID()
+        let summary = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001101") ?? UUID(),
+            title: "Remote Fails",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_900)
+        )
+
+        assertTrue(await store.addSummary(summary, operationId: operationId))
+
+        let fetched = try XCTUnwrap(store.fetchSummary(id: summary.id))
+        XCTAssertEqual(repository.savedOperationIds, [operationId])
+        XCTAssertEqual(fetched.accountId, accountId)
+        XCTAssertEqual(fetched.syncMetadata.syncState, .pendingUpload)
+        XCTAssertEqual(fetched.syncMetadata.pendingOperationId, operationId)
+    }
+
+    func testFirebaseModeWorkoutSaveMarksLocalSummarySyncedOnAck() async throws {
+        let accountId = "firebase-history"
+        let repository = RecordingWorkoutRepository()
+        let store = WorkoutHistoryStore(fileURL: temporaryHistoryURL(), accountId: accountId)
+        store.configureRemoteSync(backendMode: .firebase, workoutRepository: repository)
+        let operationId = UUID(uuidString: "00000000-0000-0000-0000-00000000C002") ?? UUID()
+        let summary = makeStoredSummary(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001102") ?? UUID(),
+            title: "Remote Ack",
+            endedAt: Date(timeIntervalSince1970: 1_776_200_901)
+        )
+
+        assertTrue(await store.addSummary(summary, operationId: operationId))
+
+        let fetched = try XCTUnwrap(store.fetchSummary(id: summary.id))
+        XCTAssertEqual(repository.savedOperationIds, [operationId])
+        XCTAssertEqual(fetched.accountId, accountId)
+        XCTAssertEqual(fetched.syncMetadata.syncState, .synced)
+        XCTAssertNil(fetched.syncMetadata.pendingOperationId)
+    }
 }
 
 private extension WorkoutHistoryStoreTests {
@@ -920,5 +962,40 @@ private extension WorkoutHistoryStoreTests {
         FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
             .appendingPathComponent("WorkoutHistory.json")
+    }
+}
+
+@MainActor
+private final class RecordingWorkoutRepository: WorkoutRepository {
+    private let saveError: Error?
+    private(set) var savedOperationIds: [UUID] = []
+
+    init(saveError: Error? = nil) {
+        self.saveError = saveError
+    }
+
+    @discardableResult
+    func saveWorkoutSummary(_ summary: WorkoutSessionSummary, operationId: UUID) async throws -> WorkoutSessionSummary {
+        savedOperationIds.append(operationId)
+        if let saveError {
+            throw saveError
+        }
+        return summary.markedSynced()
+    }
+
+    func loadRecentWorkouts(accountId: String, limit: Int, since: Date?) async throws -> [WorkoutSessionSummary] {
+        []
+    }
+
+    func loadWorkout(accountId: String, id: UUID) async throws -> WorkoutSessionSummary? {
+        nil
+    }
+
+    func deleteWorkout(accountId: String, id: UUID, operationId: UUID) async throws {}
+
+    func observeRecentWorkouts(accountId: String, limit: Int) async throws -> AsyncStream<[WorkoutSessionSummary]> {
+        AsyncStream { continuation in
+            continuation.yield([])
+        }
     }
 }

@@ -1485,3 +1485,52 @@ Focused Firestore repository tests covered profile conflict, idempotent retry, o
 Keep Firestore adoption explicit and partial by repository. Profile, theme, calibration, and plan cache may sync in Firebase mode, but workout summaries, trophies, insights, raw camera frames, raw pose streams, raw face data, and any secret-like values must not be uploaded by Phase 16D code. Remote plan cache must never be required to start or finish camera sessions.
 
 **Pattern Tags:** #firebase #firestore #sync #local-first #privacy #debug-ui #tests
+
+---
+
+### [DL-052] Sync Workout Summaries With Firestore Option B Shape
+**Date:** 2026-05-14
+**Severity:** warning
+**Category:** firestore-sync
+**File(s):** `VirtualTrainer/Repositories/Firebase/FirestoreWorkoutRepository.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreDocumentDatabase.swift`, `VirtualTrainer/Repositories/Firebase/FirestorePathBuilder.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreMapper.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreDTOs.swift`, `VirtualTrainer/Repositories/AppDependencies.swift`, `VirtualTrainer/Repositories/SyncOrchestrator.swift`, `VirtualTrainer/Models/WorkoutHistoryStore.swift`, `VirtualTrainer/Models/WorkoutSessionSummary.swift`, `VirtualTrainer/VirtualTrainerApp.swift`, `VirtualTrainer/UI/WorkoutDetailSheetView.swift`, `VirtualTrainerTests/FirestoreRepositoryTests.swift`, `VirtualTrainerTests/WorkoutHistoryStoreTests.swift`, `VirtualTrainerTests/WorkoutSummarySizeAuditTests.swift`, `VirtualTrainerTests/BackendRepositoryTests.swift`
+
+**Error:**
+Phase 16E needed planned-workout and free-analysis summaries to sync to Firestore without embedding all set evidence in the parent workout document, without breaking local-only operation, and without storing raw camera, pose, face, or video data.
+
+**Root Cause:**
+Phase 16D intentionally left workouts local while lower-risk repositories moved to Firestore. Workout summaries carry compact rollups plus per-set evidence, so using a single embedded document would exceed the measured shape budget and make listener refreshes too heavy for cross-device history sync.
+
+**Fix Applied:**
+Added `FirestoreWorkoutRepository` for `users/{uid}/workouts/{workoutId}` plus deterministic `sets/{exerciseType}-set-{setIndex}` documents. Saves now validate `summary.accountId == uid`, encode the compact workout and set documents through the Firestore privacy validator, and commit a single write batch with the parent operation ID copied onto every set. Deletes are soft tombstones on the workout doc, reads filter `deletedAt == null`, detail loads fetch sets on demand, and recent listeners debounce compact emissions by 250 ms. Firebase-mode `WorkoutHistoryStore` now keeps local persistence first, then pushes workout saves/deletes remotely, merges observed compact remote summaries with local pending work, and lazy-loads detail in the detail sheet. Added a DEBUG-only serial `pushPendingWorkouts()` path in `SyncOrchestrator`.
+
+**Verification:**
+Toolchain paths resolve under XcodeDefault:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Required build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required test suite passed:
+
+- Passed: 373
+- Failed: 0
+- Skipped: 0
+
+The required test command was:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Focused `FirestoreRepositoryTests` passed the compact write, deterministic set ID, same-operation retry, soft-delete, and compact-observer cases. Focused `WorkoutSummarySizeAuditTests` passed the documented compact estimate, max-set under 64 KB, and forbidden set payload rejection cases. Local-only no-plist build passed after temporarily moving the ignored local Firebase client plist out of the repo and restoring it immediately:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerNoFirebaseDerivedData16E`
+
+`git diff --check` passed. `gitleaks` was not installed, so the fallback `.gitleaks.toml` pattern scan over changed and new non-ignored files found no secret-like values. Existing Swift 6 concurrency warnings remain in Firestore observer debounce code and should be cleaned up in a follow-up before the toolchain flips those warnings to errors.
+
+**Prevention Rule:**
+Future Firestore workout changes must keep summaries split into one compact workout doc plus per-set evidence docs, validate all encoded payloads before writing, keep local persistence as the first commit point, preserve `BackendMode.local` and no-plist builds, and never serialize raw camera frames, raw pose streams, face data, video, or third-party secrets.
+
+**Pattern Tags:** #firebase #firestore #workout-history #option-b #local-first #privacy #tests

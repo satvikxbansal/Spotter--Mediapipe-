@@ -57,6 +57,9 @@ final class WorkoutHistoryStore: ObservableObject {
     private var allSummaries: [WorkoutSessionSummary] = []
     private var persistedAllSummaries: [WorkoutSessionSummary] = []
     private var persistenceGeneration = 0
+    private var backendMode: BackendMode = .local
+    private var workoutRepository: (any WorkoutRepository)?
+    private var workoutObservationTask: Task<Void, Never>?
 
     init(
         fileURL: URL? = nil,
@@ -80,11 +83,21 @@ final class WorkoutHistoryStore: ObservableObject {
 
     nonisolated deinit {}
 
+    func configureRemoteSync(
+        backendMode: BackendMode,
+        workoutRepository: (any WorkoutRepository)?
+    ) {
+        self.backendMode = backendMode
+        self.workoutRepository = backendMode == .firebase ? workoutRepository : nil
+        restartWorkoutObservationIfNeeded()
+    }
+
     func setCurrentAccountId(_ accountId: String?) {
         let normalizedAccountId = AccountOwnership.normalizedAccountId(accountId)
         guard currentAccountId != normalizedAccountId else { return }
         currentAccountId = normalizedAccountId
         applyAllSummaries(allSummaries)
+        restartWorkoutObservationIfNeeded()
     }
 
     @discardableResult
@@ -120,6 +133,10 @@ final class WorkoutHistoryStore: ObservableObject {
         }
         guard await persist(generation: generation) != nil else { return false }
         await recordWriteOperation(writeOperationId, entityKind: .workout, createdAt: deletedAt)
+        await deleteWorkoutRemotelyIfNeeded(
+            updatedSummaries[existingIndex],
+            operationId: writeOperationId
+        )
         return true
     }
 
@@ -185,6 +202,31 @@ final class WorkoutHistoryStore: ObservableObject {
 
     func fetchSummaryIncludingDeleted(id: UUID) -> WorkoutSessionSummary? {
         allSummaries.first { $0.id == id && isVisible($0) }
+    }
+
+    func loadDetailedSummaryIfNeeded(id: UUID) async -> WorkoutSessionSummary? {
+        guard let localSummary = fetchSummary(id: id) else { return nil }
+        guard localSummary.exerciseSummaries.isEmpty,
+              backendMode == .firebase,
+              let workoutRepository,
+              let currentAccountId
+        else {
+            return localSummary
+        }
+
+        do {
+            guard let remoteSummary = try await workoutRepository.loadWorkout(
+                accountId: currentAccountId,
+                id: id
+            ) else {
+                return nil
+            }
+            _ = await applyRemoteWorkoutCache(remoteSummary)
+            return remoteSummary
+        } catch {
+            persistenceError = "Could not load workout detail sync: \(error.localizedDescription)"
+            return localSummary
+        }
     }
 
     func allSummariesIncludingTombstones() -> [WorkoutSessionSummary] {
@@ -317,17 +359,25 @@ final class WorkoutHistoryStore: ObservableObject {
     }
 
     @discardableResult
-    private func upsert(_ summary: WorkoutSessionSummary, operationId: UUID? = nil) async -> Bool {
+    private func upsert(
+        _ summary: WorkoutSessionSummary,
+        operationId: UUID? = nil,
+        markLocalMutation: Bool = true,
+        saveRemote: Bool = true,
+        recordJournal: Bool = true
+    ) async -> Bool {
         let writeOperationId = operationId ?? UUID()
 
         let writeCreatedAt = Date()
         let previousAllSummaries = allSummaries
         var updatedSummaries = allSummaries
-        let accountStampedSummary = summary.withAccountId(
-            currentAccountId,
-            operationId: writeOperationId,
-            now: writeCreatedAt
-        )
+        let accountStampedSummary = markLocalMutation
+            ? summary.withAccountId(
+                currentAccountId,
+                operationId: writeOperationId,
+                now: writeCreatedAt
+            )
+            : summary
         if let existingIndex = updatedSummaries.firstIndex(where: { $0.id == accountStampedSummary.id }) {
             updatedSummaries[existingIndex] = accountStampedSummary
         } else {
@@ -335,13 +385,163 @@ final class WorkoutHistoryStore: ObservableObject {
         }
 
         let generation = applyLocalMutation(updatedSummaries)
-        if await writeJournal.contains(operationId: writeOperationId) {
+        if recordJournal, await writeJournal.contains(operationId: writeOperationId) {
             rollbackLocalMutationIfNeeded(generation: generation, allSummaries: previousAllSummaries)
             return true
         }
         guard await persist(generation: generation) != nil else { return false }
-        await recordWriteOperation(writeOperationId, entityKind: .workout, createdAt: writeCreatedAt)
+        if recordJournal {
+            await recordWriteOperation(writeOperationId, entityKind: .workout, createdAt: writeCreatedAt)
+        }
+        if saveRemote {
+            await saveWorkoutRemotelyIfNeeded(accountStampedSummary, operationId: writeOperationId)
+        }
         return true
+    }
+
+    private func restartWorkoutObservationIfNeeded() {
+        workoutObservationTask?.cancel()
+        workoutObservationTask = nil
+
+        guard backendMode == .firebase,
+              let workoutRepository,
+              let currentAccountId else {
+            return
+        }
+
+        workoutObservationTask = Task { [weak self, workoutRepository, currentAccountId] in
+            do {
+                let loadedSummaries = try await workoutRepository.loadRecentWorkouts(
+                    accountId: currentAccountId,
+                    limit: 80,
+                    since: nil
+                )
+                _ = await self?.mergeRemoteWorkoutCache(loadedSummaries)
+
+                let stream = try await workoutRepository.observeRecentWorkouts(
+                    accountId: currentAccountId,
+                    limit: 80
+                )
+                for await remoteSummaries in stream {
+                    _ = await self?.mergeRemoteWorkoutCache(remoteSummaries)
+                }
+            } catch {
+                await self?.setRemoteWorkoutError(error)
+            }
+        }
+    }
+
+    @discardableResult
+    private func saveWorkoutRemotelyIfNeeded(
+        _ summary: WorkoutSessionSummary,
+        operationId: UUID
+    ) async -> Bool {
+        guard backendMode == .firebase,
+              let workoutRepository,
+              AccountOwnership.normalizedAccountId(summary.accountId) != nil else {
+            return true
+        }
+
+        do {
+            let savedSummary = try await workoutRepository.saveWorkoutSummary(
+                summary,
+                operationId: operationId
+            )
+            return await applyRemoteWorkoutCache(savedSummary)
+        } catch {
+            persistenceError = "Could not sync workout: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    @discardableResult
+    private func deleteWorkoutRemotelyIfNeeded(
+        _ summary: WorkoutSessionSummary,
+        operationId: UUID
+    ) async -> Bool {
+        guard backendMode == .firebase,
+              let workoutRepository,
+              let accountId = AccountOwnership.normalizedAccountId(summary.accountId) else {
+            return true
+        }
+
+        do {
+            try await workoutRepository.deleteWorkout(
+                accountId: accountId,
+                id: summary.id,
+                operationId: operationId
+            )
+            return await markSummarySynced(id: summary.id)
+        } catch {
+            persistenceError = "Could not sync workout delete: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    @discardableResult
+    func applyRemoteWorkoutCache(_ remoteSummary: WorkoutSessionSummary) async -> Bool {
+        await upsert(
+            remoteSummary.markedSynced(),
+            operationId: UUID(),
+            markLocalMutation: false,
+            saveRemote: false,
+            recordJournal: false
+        )
+    }
+
+    @discardableResult
+    func markSummarySynced(id: UUID) async -> Bool {
+        guard let existingIndex = allSummaries.firstIndex(where: { $0.id == id && isVisible($0) }) else {
+            return false
+        }
+
+        var updatedSummaries = allSummaries
+        updatedSummaries[existingIndex] = updatedSummaries[existingIndex].markedSynced()
+        let generation = applyLocalMutation(updatedSummaries)
+        return await persist(generation: generation) != nil
+    }
+
+    @discardableResult
+    private func mergeRemoteWorkoutCache(_ remoteSummaries: [WorkoutSessionSummary]) async -> Bool {
+        guard !remoteSummaries.isEmpty else { return true }
+
+        var updatedSummaries = allSummaries
+        for remoteSummary in remoteSummaries {
+            let syncedRemoteSummary = remoteSummary.markedSynced()
+            if let existingIndex = updatedSummaries.firstIndex(where: { $0.id == syncedRemoteSummary.id }) {
+                let localSummary = updatedSummaries[existingIndex]
+                if localSummary.syncMetadata.syncState == .pendingUpload ||
+                    localSummary.syncMetadata.syncState == .conflict {
+                    continue
+                }
+                updatedSummaries[existingIndex] = preserveLocalDetailIfNeeded(
+                    localSummary: localSummary,
+                    remoteSummary: syncedRemoteSummary
+                )
+            } else {
+                updatedSummaries.append(syncedRemoteSummary)
+            }
+        }
+
+        let generation = applyLocalMutation(updatedSummaries)
+        return await persist(generation: generation) != nil
+    }
+
+    private func preserveLocalDetailIfNeeded(
+        localSummary: WorkoutSessionSummary,
+        remoteSummary: WorkoutSessionSummary
+    ) -> WorkoutSessionSummary {
+        guard remoteSummary.exerciseSummaries.isEmpty,
+              !localSummary.exerciseSummaries.isEmpty else {
+            return remoteSummary
+        }
+        return localSummary.markedSynced(
+            serverVersion: remoteSummary.syncMetadata.serverVersion
+        )
+    }
+
+    private func setRemoteWorkoutError(_ error: Error) {
+        persistenceError = "Could not observe workout sync: \(error.localizedDescription)"
     }
 
     private func recordWriteOperation(
