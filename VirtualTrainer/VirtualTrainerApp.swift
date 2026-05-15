@@ -134,6 +134,7 @@ struct VirtualTrainerApp: App {
             backendMode: appDependencies.backendMode,
             calibrationRepository: appDependencies.calibration
         )
+<<<<<<< HEAD
         trophyStore.configureRemoteSync(
             backendMode: appDependencies.backendMode,
             trophyRepository: appDependencies.trophies
@@ -141,6 +142,15 @@ struct VirtualTrainerApp: App {
         insightStore.configureRemoteSync(
             backendMode: appDependencies.backendMode,
             insightRepository: appDependencies.insights
+=======
+        workoutHistoryStore.configureRemoteSync(
+            backendMode: appDependencies.backendMode,
+            workoutRepository: appDependencies.workouts
+        )
+        syncOrchestrator.configureWorkoutPush(
+            localStore: workoutHistoryStore,
+            workoutRepository: appDependencies.workouts
+>>>>>>> 7b383eb8cd6e04e19d45807bc31fc441348b786c
         )
     }
 }

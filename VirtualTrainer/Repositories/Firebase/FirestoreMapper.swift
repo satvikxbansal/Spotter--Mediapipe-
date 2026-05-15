@@ -73,7 +73,10 @@ nonisolated func mapFromProfileDocument(_ doc: FirestoreProfileDocument) -> User
     )
 }
 
-nonisolated func mapToWorkoutDocument(_ summary: WorkoutSessionSummary) -> FirestoreWorkoutDocument {
+nonisolated func mapToWorkoutDocument(
+    _ summary: WorkoutSessionSummary,
+    operationId: UUID? = nil
+) -> FirestoreWorkoutDocument {
     FirestoreWorkoutDocument(
         schemaVersion: FirestoreDTOSchema.currentVersion,
         accountId: normalizedAccountId(summary.accountId),
@@ -107,7 +110,7 @@ nonisolated func mapToWorkoutDocument(_ summary: WorkoutSessionSummary) -> Fires
         createdAt: summary.createdAt,
         deletedAt: summary.deletedAt,
         syncMetadata: mapToFirestoreSyncMetadata(summary.syncMetadata),
-        operationId: summary.syncMetadata.pendingOperationId ?? UUID()
+        operationId: operationId ?? summary.syncMetadata.pendingOperationId ?? UUID()
     )
 }
 
@@ -169,7 +172,7 @@ nonisolated func mapToWorkoutSetDocument(
     setId: String? = nil,
     operationId: UUID = UUID()
 ) -> FirestoreWorkoutSetDocument {
-    let resolvedSetId = setId ?? defaultSetDocumentId(for: setSummary)
+    let resolvedSetId = setId ?? firestoreWorkoutSetDocumentId(for: setSummary)
     return FirestoreWorkoutSetDocument(
         schemaVersion: FirestoreDTOSchema.currentVersion,
         accountId: normalizedAccountId(accountId),
@@ -814,7 +817,7 @@ private nonisolated func mapFromFirestoreWorkoutBlock(_ dto: FirestoreWorkoutBlo
     )
 }
 
-private nonisolated func defaultSetDocumentId(for setSummary: ExerciseSetSummary) -> String {
+nonisolated func firestoreWorkoutSetDocumentId(for setSummary: ExerciseSetSummary) -> String {
     let index = setSummary.setIndex ?? 0
     return "\(setSummary.exerciseType.rawValue)-set-\(index)"
 }

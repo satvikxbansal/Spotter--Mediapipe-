@@ -12,6 +12,7 @@ nonisolated enum WorkoutSessionSummaryMode: String, Codable, Equatable {
             return "Planned Workout"
         }
     }
+
 }
 
 nonisolated enum WorkoutOutcome: String, Codable, Equatable {
@@ -368,6 +369,20 @@ nonisolated struct WorkoutSessionSummary: Identifiable, Codable, Equatable {
                 now: now
             )
         return copy(accountId: normalizedAccountId, deletedAt: deletedAt, syncMetadata: metadata)
+    }
+
+    func markedSynced(
+        lastSyncedAt: Date = Date(),
+        serverVersion: String? = nil
+    ) -> WorkoutSessionSummary {
+        var metadata = syncMetadata
+        metadata.lastSyncedAt = lastSyncedAt
+        metadata.syncState = .synced
+        metadata.pendingOperationId = nil
+        if let serverVersion {
+            metadata.serverVersion = serverVersion
+        }
+        return copy(accountId: accountId, deletedAt: deletedAt, syncMetadata: metadata)
     }
 }
 

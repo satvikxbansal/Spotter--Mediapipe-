@@ -359,11 +359,19 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertTrue(dependencies.theme is FirestoreThemeRepository)
         XCTAssertTrue(dependencies.calibration is FirestoreCalibrationRepository)
         XCTAssertTrue(dependencies.plans is FirestorePlanRepository)
+<<<<<<< HEAD
         XCTAssertTrue(dependencies.trophies is FirestoreTrophyRepository)
         XCTAssertTrue(dependencies.insights is FirestoreInsightRepository)
 #else
         XCTAssertEqual(dependencies.backendMode, .local)
         XCTAssertTrue(dependencies.auth is LocalAuthRepository)
+=======
+        XCTAssertTrue(dependencies.workouts is FirestoreWorkoutRepository)
+#else
+        XCTAssertEqual(dependencies.backendMode, .local)
+        XCTAssertTrue(dependencies.auth is LocalAuthRepository)
+#endif
+>>>>>>> 7b383eb8cd6e04e19d45807bc31fc441348b786c
         XCTAssertTrue(dependencies.trophies is LocalTrophyRepository)
         XCTAssertTrue(dependencies.insights is LocalInsightRepository)
 #endif

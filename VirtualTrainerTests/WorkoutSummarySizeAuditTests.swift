@@ -61,6 +61,71 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
         )
     }
 
+    func testFirestoreWorkoutDTOSizeMatchesDocumentedCompactEstimate() throws {
+        let fixture = Self.makeAuditFixture()
+        let document = mapToWorkoutDocument(
+            fixture.summary,
+            operationId: Self.uuid(7_000)
+        )
+        let jsonBytes = try Self.historyJSONEncoder().encode(document).count
+        let estimatedBytes = Self.firestoreEstimate(forJSONBytes: jsonBytes)
+        let documentedEstimate = try Self.documentedCompactWorkoutEstimate()
+        let allowedDelta = max(1, Int((Double(documentedEstimate) * 0.05).rounded(.up)))
+
+        XCTAssertLessThanOrEqual(
+            abs(estimatedBytes - documentedEstimate),
+            allowedDelta,
+            "The implemented compact Firestore workout DTO should stay within 5% of Documentation/FirestoreShape.md."
+        )
+    }
+
+    func testLargestFirestoreSetDTOStaysUnder64KB() throws {
+        let fixture = Self.makeAuditFixture()
+        let setDocumentSizes = try fixture.summary.exerciseSummaries.map { setSummary in
+            try Self.historyJSONEncoder().encode(
+                mapToWorkoutSetDocument(
+                    setSummary,
+                    accountId: fixture.summary.accountId ?? "",
+                    workoutId: fixture.summary.id,
+                    setId: firestoreWorkoutSetDocumentId(for: setSummary),
+                    operationId: Self.uuid(7_000)
+                )
+            ).count
+        }
+        let estimatedBytes = Self.firestoreEstimate(forJSONBytes: setDocumentSizes.max() ?? 0)
+
+        XCTAssertLessThan(
+            estimatedBytes,
+            Self.setDocumentThresholdBytes,
+            "The implemented Firestore set DTO should keep detailed evidence below 64 KiB."
+        )
+    }
+
+    func testFirestoreSetPrivacyValidatorRejectsRawCameraAndForbiddenNestedPayloads() throws {
+        let fixture = Self.makeAuditFixture()
+        let setSummary = try XCTUnwrap(fixture.summary.exerciseSummaries.first)
+        let setDocument = mapToWorkoutSetDocument(
+            setSummary,
+            accountId: fixture.summary.accountId ?? "",
+            workoutId: fixture.summary.id,
+            setId: firestoreWorkoutSetDocumentId(for: setSummary),
+            operationId: Self.uuid(7_000)
+        )
+        var payload = try FirestoreEncodingHelpers.payload(from: setDocument)
+
+        payload["cameraFrame"] = Data(repeating: 0, count: 32)
+        XCTAssertThrowsError(try FirestorePrivacyValidator.validate(payload))
+
+        var nestedPayload = try FirestoreEncodingHelpers.payload(from: setDocument)
+        nestedPayload["repQualityEvents"] = [
+            [
+                "repIndex": 1,
+                "rawPoseTimeline": "derived tests must still reject this forbidden key"
+            ]
+        ]
+        XCTAssertThrowsError(try FirestorePrivacyValidator.validate(nestedPayload))
+    }
+
     func testFirestoreShapeDocumentExistsAndMatchesAudit() throws {
         let sizes = try Self.measureAuditSizes()
         let documentationURL = Self.repositoryRootURL()
@@ -136,12 +201,19 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
                 ".setData(",
                 ".updateData("
             ],
+<<<<<<< HEAD
             "FirestoreTrophyRepository.swift": [
                 ".setData("
             ],
             "FirestoreInsightRepository.swift": [
                 "import FirebaseFirestore",
                 ".setData("
+=======
+            "FirestoreWorkoutRepository.swift": [
+                "import FirebaseFirestore",
+                ".setData(",
+                ".updateData("
+>>>>>>> 7b383eb8cd6e04e19d45807bc31fc441348b786c
             ],
             "FirebaseSmokeVerifier.swift": [
                 "import FirebaseAuth",
@@ -501,6 +573,20 @@ private extension WorkoutSummarySizeAuditTests {
 
     static func firestoreEstimate(forJSONBytes jsonBytes: Int) -> Int {
         Int((Double(jsonBytes) * firestoreOverheadMultiplier).rounded(.up)) + firestoreFixedOverheadBytes
+    }
+
+    static func documentedCompactWorkoutEstimate() throws -> Int {
+        let contents = try String(
+            contentsOf: repositoryRootURL().appendingPathComponent("Documentation/FirestoreShape.md")
+        )
+        let prefix = "compactWorkoutDocumentEstimatedFirestoreBytes: "
+        guard let range = contents.range(of: prefix) else {
+            XCTFail("FirestoreShape.md is missing compact workout estimate.")
+            return 0
+        }
+        let suffix = contents[range.upperBound...]
+        let digits = suffix.prefix { $0.isNumber }
+        return Int(digits) ?? 0
     }
 
     static func uuid(_ value: Int) -> UUID {

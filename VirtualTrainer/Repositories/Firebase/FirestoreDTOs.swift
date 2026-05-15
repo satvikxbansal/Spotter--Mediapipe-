@@ -182,6 +182,42 @@ nonisolated struct FirestoreWorkoutDocument: Codable, Equatable {
     let deletedAt: Date?
     let syncMetadata: FirestoreSyncMetadataFields?
     let operationId: UUID
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case accountId
+        case workoutId
+        case summarySchemaVersion
+        case appBuildVersion
+        case mode
+        case planId
+        case planTitle
+        case title
+        case goal
+        case coach
+        case startedAt
+        case endedAt
+        case serverEndedAt
+        case durationSeconds
+        case totalReps
+        case totalHoldSeconds
+        case averageFormScore
+        case completionPercent
+        case setCount
+        case repQualityEventCount
+        case cueEventCount
+        case topCue = "topCueSummary"
+        case effortSummary
+        case workoutOutcome
+        case structuredEffortSummary
+        case totalGoodFormReps
+        case totalExcellentFormReps
+        case totalHighSeverityCues
+        case createdAt
+        case deletedAt
+        case syncMetadata
+        case operationId
+    }
 }
 
 nonisolated struct FirestoreWorkoutSetDocument: Codable, Equatable {
