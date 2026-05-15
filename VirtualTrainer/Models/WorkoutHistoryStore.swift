@@ -60,6 +60,7 @@ final class WorkoutHistoryStore: ObservableObject {
     private var backendMode: BackendMode = .local
     private var workoutRepository: (any WorkoutRepository)?
     private var workoutObservationTask: Task<Void, Never>?
+    private var autoObserveRemote = true
 
     init(
         fileURL: URL? = nil,
@@ -85,10 +86,12 @@ final class WorkoutHistoryStore: ObservableObject {
 
     func configureRemoteSync(
         backendMode: BackendMode,
-        workoutRepository: (any WorkoutRepository)?
+        workoutRepository: (any WorkoutRepository)?,
+        autoObserve: Bool = true
     ) {
         self.backendMode = backendMode
         self.workoutRepository = backendMode == .firebase ? workoutRepository : nil
+        self.autoObserveRemote = autoObserve
         restartWorkoutObservationIfNeeded()
     }
 
@@ -248,6 +251,16 @@ final class WorkoutHistoryStore: ObservableObject {
         )
     }
 
+    var pendingUploadCount: Int {
+        allSummaries.filter { isVisible($0) && $0.syncMetadata.syncState == .pendingUpload }.count
+    }
+
+    func pendingWorkoutSummariesForSync() -> [WorkoutSessionSummary] {
+        sortedSummaries(
+            allSummaries.filter { isVisible($0) && $0.syncMetadata.syncState == .pendingUpload }
+        )
+    }
+
     func aggregateStats(now: Date = Date()) -> WorkoutHistoryStats {
         guard !summaries.isEmpty else { return .empty }
 
@@ -404,6 +417,7 @@ final class WorkoutHistoryStore: ObservableObject {
         workoutObservationTask = nil
 
         guard backendMode == .firebase,
+              autoObserveRemote,
               let workoutRepository,
               let currentAccountId else {
             return
@@ -480,13 +494,43 @@ final class WorkoutHistoryStore: ObservableObject {
 
     @discardableResult
     func applyRemoteWorkoutCache(_ remoteSummary: WorkoutSessionSummary) async -> Bool {
-        await upsert(
-            remoteSummary.markedSynced(),
+        let syncedSummary = remoteSummary.markedSynced(
+            serverVersion: remoteSummary.syncMetadata.serverVersion
+        )
+        if let existing = allSummaries.first(where: { $0.id == syncedSummary.id }),
+           existing.syncMetadata == syncedSummary.syncMetadata {
+            return true
+        }
+        return await upsert(
+            syncedSummary,
             operationId: UUID(),
             markLocalMutation: false,
             saveRemote: false,
             recordJournal: false
         )
+    }
+
+    @discardableResult
+    func applyRemoteWorkouts(_ remoteSummaries: [WorkoutSessionSummary]) async -> Bool {
+        await mergeRemoteWorkoutCache(remoteSummaries)
+    }
+
+    @discardableResult
+    func markSummaryConflict(
+        id: UUID,
+        serverVersion: String?,
+        localVersion: String?
+    ) async -> Bool {
+        guard let existingIndex = allSummaries.firstIndex(where: { $0.id == id && isVisible($0) }) else {
+            return false
+        }
+
+        var updatedSummaries = allSummaries
+        updatedSummaries[existingIndex].syncMetadata = updatedSummaries[existingIndex]
+            .syncMetadata
+            .markedConflict(serverVersion: serverVersion, localVersion: localVersion)
+        let generation = applyLocalMutation(updatedSummaries)
+        return await persist(generation: generation) != nil
     }
 
     @discardableResult

@@ -30,6 +30,11 @@ protocol WorkoutRepository: AnyObject {
 }
 
 @MainActor
+protocol WorkoutTombstoneRepository: AnyObject {
+    func loadRecentWorkoutTombstones(accountId: String, limit: Int, since: Date?) async throws -> [WorkoutSessionSummary]
+}
+
+@MainActor
 protocol TrophyRepository: AnyObject {
     func loadTrophyDefinitions() async throws -> [TrophyDefinition]
     func loadTrophyEvents(accountId: String, since: Date?) async throws -> [TrophyUnlockEvent]

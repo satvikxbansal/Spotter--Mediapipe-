@@ -92,10 +92,16 @@ struct VirtualTrainerApp: App {
             let authChanges = try await appDependencies.auth.observeAuthChanges()
             for await uid in authChanges {
                 await coordinator.handleAuthChange(uid)
+                if let uid {
+                    try? await syncOrchestrator.performFullSync(accountId: uid)
+                } else {
+                    try? await syncOrchestrator.stopListeners()
+                }
             }
         } catch {
             accountContext.clearAccount()
             syncStoresWithAccount()
+            try? await syncOrchestrator.stopListeners()
         }
     }
 
@@ -124,33 +130,41 @@ struct VirtualTrainerApp: App {
     private func configureStoreRemoteSync() {
         onboardingStore.configureRemoteSync(
             backendMode: appDependencies.backendMode,
-            profileRepository: appDependencies.profile
+            profileRepository: appDependencies.profile,
+            autoObserve: false
         )
         themeStore.configureRemoteSync(
             backendMode: appDependencies.backendMode,
-            themeRepository: appDependencies.theme
+            themeRepository: appDependencies.theme,
+            autoObserve: false
         )
         calibrationStore.configureRemoteSync(
             backendMode: appDependencies.backendMode,
-            calibrationRepository: appDependencies.calibration
+            calibrationRepository: appDependencies.calibration,
+            autoObserve: false
         )
-<<<<<<< HEAD
+        workoutHistoryStore.configureRemoteSync(
+            backendMode: appDependencies.backendMode,
+            workoutRepository: appDependencies.workouts,
+            autoObserve: false
+        )
         trophyStore.configureRemoteSync(
             backendMode: appDependencies.backendMode,
-            trophyRepository: appDependencies.trophies
+            trophyRepository: appDependencies.trophies,
+            autoObserve: false
         )
         insightStore.configureRemoteSync(
             backendMode: appDependencies.backendMode,
-            insightRepository: appDependencies.insights
-=======
-        workoutHistoryStore.configureRemoteSync(
-            backendMode: appDependencies.backendMode,
-            workoutRepository: appDependencies.workouts
+            insightRepository: appDependencies.insights,
+            autoObserve: false
         )
-        syncOrchestrator.configureWorkoutPush(
-            localStore: workoutHistoryStore,
-            workoutRepository: appDependencies.workouts
->>>>>>> 7b383eb8cd6e04e19d45807bc31fc441348b786c
+        syncOrchestrator.configure(
+            accountIdProvider: { accountContext.currentAccountId },
+            profileStore: onboardingStore,
+            calibrationStore: calibrationStore,
+            workoutHistoryStore: workoutHistoryStore,
+            trophyStore: trophyStore,
+            insightStore: insightStore
         )
     }
 }

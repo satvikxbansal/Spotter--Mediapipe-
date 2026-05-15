@@ -462,6 +462,7 @@ final class InsightStore: ObservableObject {
     private var insightObservationTask: Task<Void, Never>?
     private var deliveryObservationTask: Task<Void, Never>?
     private var engagementObservationTask: Task<Void, Never>?
+    private var autoObserveRemote = true
 
     init(
         fileURL: URL? = nil,
@@ -493,10 +494,12 @@ final class InsightStore: ObservableObject {
 
     func configureRemoteSync(
         backendMode: BackendMode,
-        insightRepository: (any InsightRepository)?
+        insightRepository: (any InsightRepository)?,
+        autoObserve: Bool = true
     ) {
         self.backendMode = backendMode
         self.insightRepository = backendMode == .firebase ? insightRepository : nil
+        self.autoObserveRemote = autoObserve
         restartInsightObservationIfNeeded()
     }
 
@@ -643,6 +646,28 @@ final class InsightStore: ObservableObject {
         sortedEngagementRecords(allEngagementRecords.values.filter(isVisible))
     }
 
+    var pendingUploadCount: Int {
+        allInsights.filter { isVisible($0) && $0.syncMetadata.syncState == .pendingUpload }.count +
+            allDeliveryRecords.values.filter { isVisible($0) && $0.syncMetadata.syncState == .pendingUpload }.count +
+            allEngagementRecords.values.filter { isVisible($0) && $0.syncMetadata.syncState == .pendingUpload }.count
+    }
+
+    func pendingInsightsForSync() -> [AIInsight] {
+        allInsights.filter { isVisible($0) && $0.syncMetadata.syncState == .pendingUpload }
+    }
+
+    func pendingDeliveryRecordsForSync() -> [InsightDeliveryRecord] {
+        sortedDeliveryRecords(
+            allDeliveryRecords.values.filter { isVisible($0) && $0.syncMetadata.syncState == .pendingUpload }
+        )
+    }
+
+    func pendingEngagementRecordsForSync() -> [InsightEngagementRecord] {
+        sortedEngagementRecords(
+            allEngagementRecords.values.filter { isVisible($0) && $0.syncMetadata.syncState == .pendingUpload }
+        )
+    }
+
     @discardableResult
     func saveInsights(_ insights: [AIInsight], operationId: UUID? = nil) async -> Bool {
         guard !insights.isEmpty else { return true }
@@ -773,9 +798,25 @@ final class InsightStore: ObservableObject {
     }
 
     @discardableResult
-    func applyRemoteDeliveryRecords(_ remoteRecords: [InsightDeliveryRecord]) async -> Bool {
-        let incomingRecords = remoteRecords.filter(isVisible)
+    func applyRemoteDeliveryRecords(
+        _ remoteRecords: [InsightDeliveryRecord],
+        allowReplacingPending: Bool = false
+    ) async -> Bool {
+        let incomingRecords = remoteRecords.filter(isVisible).map { record in
+            var copy = record
+            copy.syncMetadata = record.syncMetadata.markedSynced(
+                serverVersion: record.syncMetadata.serverVersion
+            )
+            return copy
+        }
         guard !incomingRecords.isEmpty else { return true }
+        let deliveryAlreadyApplied = incomingRecords.allSatisfy { incomingRecord in
+            allDeliveryRecords.contains {
+                $0.key == storageKey(accountId: incomingRecord.accountId, dedupeKey: incomingRecord.dedupeKey) &&
+                    $0.value.syncMetadata == incomingRecord.syncMetadata
+            }
+        }
+        if deliveryAlreadyApplied { return true }
 
         let previousAllInsights = allInsights
         let previousAllDeliveryRecords = allDeliveryRecords
@@ -784,10 +825,22 @@ final class InsightStore: ObservableObject {
         for remoteRecord in incomingRecords {
             let key = storageKey(accountId: remoteRecord.accountId, dedupeKey: remoteRecord.dedupeKey)
             if let existingRecord = allDeliveryRecords[key] {
-                allDeliveryRecords[key] = InsightDeliveryRecord.merged(
+                if existingRecord.syncMetadata.syncState == .conflict {
+                    continue
+                }
+                var mergedRecord = InsightDeliveryRecord.merged(
                     local: existingRecord,
                     remote: remoteRecord
                 )
+                if remoteRecord.deletedAt != nil {
+                    mergedRecord.syncMetadata = remoteRecord.syncMetadata
+                } else if allowReplacingPending,
+                          existingRecord.syncMetadata.syncState == .pendingUpload {
+                    mergedRecord.syncMetadata = remoteRecord.syncMetadata
+                } else if existingRecord.syncMetadata.syncState == .pendingUpload {
+                    mergedRecord.syncMetadata = existingRecord.syncMetadata
+                }
+                allDeliveryRecords[key] = mergedRecord
             } else {
                 allDeliveryRecords[key] = remoteRecord
             }
@@ -807,9 +860,25 @@ final class InsightStore: ObservableObject {
     }
 
     @discardableResult
-    func applyRemoteEngagementRecords(_ remoteRecords: [InsightEngagementRecord]) async -> Bool {
-        let incomingRecords = remoteRecords.filter(isVisible)
+    func applyRemoteEngagementRecords(
+        _ remoteRecords: [InsightEngagementRecord],
+        allowReplacingPending: Bool = false
+    ) async -> Bool {
+        let incomingRecords = remoteRecords.filter(isVisible).map { record in
+            var copy = record
+            copy.syncMetadata = record.syncMetadata.markedSynced(
+                serverVersion: record.syncMetadata.serverVersion
+            )
+            return copy
+        }
         guard !incomingRecords.isEmpty else { return true }
+        let engagementAlreadyApplied = incomingRecords.allSatisfy { incomingRecord in
+            allEngagementRecords.contains {
+                $0.key == storageKey(accountId: incomingRecord.accountId, dedupeKey: incomingRecord.dedupeKey) &&
+                    $0.value.syncMetadata == incomingRecord.syncMetadata
+            }
+        }
+        if engagementAlreadyApplied { return true }
 
         let previousAllInsights = allInsights
         let previousAllDeliveryRecords = allDeliveryRecords
@@ -818,7 +887,19 @@ final class InsightStore: ObservableObject {
         for remoteRecord in incomingRecords {
             let key = storageKey(accountId: remoteRecord.accountId, dedupeKey: remoteRecord.dedupeKey)
             if let existingRecord = allEngagementRecords[key] {
-                allEngagementRecords[key] = existingRecord.mergedAggregateSnapshot(with: remoteRecord)
+                if existingRecord.syncMetadata.syncState == .conflict {
+                    continue
+                }
+                var mergedRecord = existingRecord.mergedAggregateSnapshot(with: remoteRecord)
+                if remoteRecord.deletedAt != nil {
+                    mergedRecord.syncMetadata = remoteRecord.syncMetadata
+                } else if allowReplacingPending,
+                          existingRecord.syncMetadata.syncState == .pendingUpload {
+                    mergedRecord.syncMetadata = remoteRecord.syncMetadata
+                } else if existingRecord.syncMetadata.syncState == .pendingUpload {
+                    mergedRecord.syncMetadata = existingRecord.syncMetadata
+                }
+                allEngagementRecords[key] = mergedRecord
             } else {
                 allEngagementRecords[key] = remoteRecord
             }
@@ -1173,9 +1254,91 @@ final class InsightStore: ObservableObject {
         await recordWriteOperation(writeOperationId, entityKind: .insight, createdAt: writeCreatedAt)
         return true
     }
+
+    @discardableResult
+    func markInsightConflict(
+        dedupeKey: String,
+        serverVersion: String?,
+        localVersion: String?
+    ) async -> Bool {
+        let previousAllInsights = allInsights
+        var didMark = false
+        allInsights = allInsights.map { insight in
+            guard insight.dedupeKey == dedupeKey, isVisible(insight) else { return insight }
+            var copy = insight
+            copy.syncMetadata = insight.syncMetadata.markedConflict(
+                serverVersion: serverVersion,
+                localVersion: localVersion
+            )
+            didMark = true
+            return copy
+        }
+        guard didMark else { return false }
+        applyVisibleState()
+        guard await persist() != nil else {
+            allInsights = previousAllInsights
+            applyVisibleState()
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func markDeliveryConflict(
+        dedupeKey: String,
+        serverVersion: String?,
+        localVersion: String?
+    ) async -> Bool {
+        let previousAllDeliveryRecords = allDeliveryRecords
+        guard let key = allDeliveryRecords.first(where: {
+            $0.value.dedupeKey == dedupeKey && isVisible($0.value)
+        })?.key else {
+            return false
+        }
+        var record = allDeliveryRecords[key]!
+        record.syncMetadata = record.syncMetadata.markedConflict(
+            serverVersion: serverVersion,
+            localVersion: localVersion
+        )
+        allDeliveryRecords[key] = record
+        applyVisibleState()
+        guard await persist() != nil else {
+            allDeliveryRecords = previousAllDeliveryRecords
+            applyVisibleState()
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func markEngagementConflict(
+        dedupeKey: String,
+        serverVersion: String?,
+        localVersion: String?
+    ) async -> Bool {
+        let previousAllEngagementRecords = allEngagementRecords
+        guard let key = allEngagementRecords.first(where: {
+            $0.value.dedupeKey == dedupeKey && isVisible($0.value)
+        })?.key else {
+            return false
+        }
+        var record = allEngagementRecords[key]!
+        record.syncMetadata = record.syncMetadata.markedConflict(
+            serverVersion: serverVersion,
+            localVersion: localVersion
+        )
+        allEngagementRecords[key] = record
+        applyVisibleState()
+        guard await persist() != nil else {
+            allEngagementRecords = previousAllEngagementRecords
+            applyVisibleState()
+            return false
+        }
+        return true
+    }
 }
 
-private extension InsightStore {
+extension InsightStore {
     func fetchCandidates(
         for surface: InsightSurface,
         profile: UserProfile,
@@ -1408,6 +1571,7 @@ private extension InsightStore {
         engagementObservationTask = nil
 
         guard backendMode == .firebase,
+              autoObserveRemote,
               let insightRepository,
               let currentAccountId else {
             return
@@ -1463,14 +1627,50 @@ private extension InsightStore {
     }
 
     @discardableResult
-    func applyRemoteInsights(_ remoteInsights: [AIInsight]) async -> Bool {
-        let incomingInsights = remoteInsights.filter(isVisible)
+    func applyRemoteInsights(
+        _ remoteInsights: [AIInsight],
+        allowReplacingPending: Bool = false
+    ) async -> Bool {
+        let incomingInsights = remoteInsights.filter(isVisible).map { insight in
+            var copy = insight
+            copy.syncMetadata = insight.syncMetadata.markedSynced(
+                serverVersion: insight.syncMetadata.serverVersion
+            )
+            return copy
+        }
         guard !incomingInsights.isEmpty else { return true }
+        let alreadyApplied = incomingInsights.allSatisfy { incomingInsight in
+            allInsights.contains {
+                storageKey(accountId: $0.accountId, dedupeKey: $0.dedupeKey) ==
+                    storageKey(accountId: incomingInsight.accountId, dedupeKey: incomingInsight.dedupeKey) &&
+                    $0.syncMetadata == incomingInsight.syncMetadata
+            }
+        }
+        if alreadyApplied { return true }
 
         let previousAllInsights = allInsights
         let previousAllDeliveryRecords = allDeliveryRecords
         let previousAllEngagementRecords = allEngagementRecords
-        allInsights = dedupedInsightsByStorageKey(allInsights + incomingInsights)
+        var updatedInsights = allInsights
+        for incomingInsight in incomingInsights {
+            let incomingKey = storageKey(
+                accountId: incomingInsight.accountId,
+                dedupeKey: incomingInsight.dedupeKey
+            )
+            if let existingIndex = updatedInsights.firstIndex(where: {
+                storageKey(accountId: $0.accountId, dedupeKey: $0.dedupeKey) == incomingKey
+            }) {
+                let existingInsight = updatedInsights[existingIndex]
+                if existingInsight.syncMetadata.syncState == .conflict ||
+                    (!allowReplacingPending && existingInsight.syncMetadata.syncState == .pendingUpload) {
+                    continue
+                }
+                updatedInsights[existingIndex] = incomingInsight
+            } else {
+                updatedInsights.append(incomingInsight)
+            }
+        }
+        allInsights = dedupedInsightsByStorageKey(updatedInsights)
         applyVisibleState()
 
         guard await persist() != nil else {

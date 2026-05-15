@@ -27,6 +27,7 @@ final class OnboardingStore: ObservableObject {
     private var backendMode: BackendMode = .local
     private var profileRepository: (any ProfileRepository)?
     private var profileObservationTask: Task<Void, Never>?
+    private var autoObserveRemote = true
 
     var hasCompletedOnboarding: Bool {
         profile != nil
@@ -54,10 +55,12 @@ final class OnboardingStore: ObservableObject {
 
     func configureRemoteSync(
         backendMode: BackendMode,
-        profileRepository: (any ProfileRepository)?
+        profileRepository: (any ProfileRepository)?,
+        autoObserve: Bool = true
     ) {
         self.backendMode = backendMode
         self.profileRepository = backendMode == .firebase ? profileRepository : nil
+        self.autoObserveRemote = autoObserve
         restartProfileObservationIfNeeded()
     }
 
@@ -67,6 +70,14 @@ final class OnboardingStore: ObservableObject {
         currentAccountId = normalizedAccountId
         applyStoredProfile()
         restartProfileObservationIfNeeded()
+    }
+
+    var pendingUploadCount: Int {
+        storedProfile?.syncMetadata.syncState == .pendingUpload ? 1 : 0
+    }
+
+    func pendingProfileForSync() -> UserProfile? {
+        storedProfile?.syncMetadata.syncState == .pendingUpload ? storedProfile : nil
     }
 
     func canContinue(from step: Step) -> Bool {
@@ -468,6 +479,7 @@ final class OnboardingStore: ObservableObject {
         profileObservationTask = nil
 
         guard backendMode == .firebase,
+              autoObserveRemote,
               let profileRepository,
               let currentAccountId else {
             return
@@ -506,7 +518,7 @@ final class OnboardingStore: ObservableObject {
                 profile,
                 operationId: operationId
             )
-            return await applyRemoteProfileCache(savedProfile)
+            return await applyRemoteProfileCache(savedProfile, allowReplacingPending: true)
         } catch {
             persistenceError = "Could not sync profile: \(error.localizedDescription)"
             return false
@@ -514,14 +526,50 @@ final class OnboardingStore: ObservableObject {
     }
 
     @discardableResult
-    private func applyRemoteProfileCache(_ remoteProfile: UserProfile) async -> Bool {
-        await save(
-            remoteProfile,
+    func applyRemoteProfile(
+        _ remoteProfile: UserProfile,
+        allowReplacingPending: Bool = false
+    ) async -> Bool {
+        var syncedProfile = remoteProfile
+        syncedProfile.syncMetadata = remoteProfile.syncMetadata.markedSynced(
+            serverVersion: remoteProfile.syncMetadata.serverVersion
+        )
+        if let storedProfile {
+            if storedProfile.syncMetadata == syncedProfile.syncMetadata {
+                return true
+            }
+            if !allowReplacingPending,
+               storedProfile.syncMetadata.syncState == .pendingUpload ||
+                storedProfile.syncMetadata.syncState == .conflict {
+                return true
+            }
+        }
+        return await save(
+            syncedProfile,
             operationId: UUID(),
             markLocalMutation: false,
             saveRemote: false,
             recordJournal: false
         )
+    }
+
+    @discardableResult
+    private func applyRemoteProfileCache(
+        _ remoteProfile: UserProfile,
+        allowReplacingPending: Bool = false
+    ) async -> Bool {
+        await applyRemoteProfile(remoteProfile, allowReplacingPending: allowReplacingPending)
+    }
+
+    @discardableResult
+    func markProfileConflict(serverVersion: String?, localVersion: String?) async -> Bool {
+        guard var storedProfile else { return false }
+        storedProfile.syncMetadata = storedProfile.syncMetadata.markedConflict(
+            serverVersion: serverVersion,
+            localVersion: localVersion
+        )
+        let generation = applyLocalMutation(storedProfile)
+        return await persist(storedProfile, generation: generation) != nil
     }
 
     private func setRemoteProfileError(_ error: Error) {

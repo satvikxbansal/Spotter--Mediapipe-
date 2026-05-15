@@ -19,6 +19,7 @@ final class ThemeStore: ObservableObject {
     private var backendMode: BackendMode = .local
     private var themeRepository: (any ThemeRepository)?
     private var themeObservationTask: Task<Void, Never>?
+    private var autoObserveRemote = true
 
     init(
         fileURL: URL? = nil,
@@ -45,10 +46,12 @@ final class ThemeStore: ObservableObject {
 
     func configureRemoteSync(
         backendMode: BackendMode,
-        themeRepository: (any ThemeRepository)?
+        themeRepository: (any ThemeRepository)?,
+        autoObserve: Bool = true
     ) {
         self.backendMode = backendMode
         self.themeRepository = backendMode == .firebase ? themeRepository : nil
+        self.autoObserveRemote = autoObserve
         restartThemeObservationIfNeeded()
     }
 
@@ -172,6 +175,7 @@ final class ThemeStore: ObservableObject {
         themeObservationTask = nil
 
         guard backendMode == .firebase,
+              autoObserveRemote,
               let themeRepository,
               let currentAccountId else {
             return

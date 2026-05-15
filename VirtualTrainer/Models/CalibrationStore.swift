@@ -17,6 +17,7 @@ final class CalibrationStore: ObservableObject {
     private var backendMode: BackendMode = .local
     private var calibrationRepository: (any CalibrationRepository)?
     private var calibrationObservationTask: Task<Void, Never>?
+    private var autoObserveRemote = true
 
     var status: CalibrationStatus {
         guard record?.isDeleted != true else { return .notStarted }
@@ -53,10 +54,12 @@ final class CalibrationStore: ObservableObject {
 
     func configureRemoteSync(
         backendMode: BackendMode,
-        calibrationRepository: (any CalibrationRepository)?
+        calibrationRepository: (any CalibrationRepository)?,
+        autoObserve: Bool = true
     ) {
         self.backendMode = backendMode
         self.calibrationRepository = backendMode == .firebase ? calibrationRepository : nil
+        self.autoObserveRemote = autoObserve
         restartCalibrationObservationIfNeeded()
     }
 
@@ -66,6 +69,14 @@ final class CalibrationStore: ObservableObject {
         currentAccountId = normalizedAccountId
         applyStoredRecord()
         restartCalibrationObservationIfNeeded()
+    }
+
+    var pendingUploadCount: Int {
+        storedRecord?.syncMetadata.syncState == .pendingUpload ? 1 : 0
+    }
+
+    func pendingCalibrationRecordForSync() -> CalibrationRecord? {
+        storedRecord?.syncMetadata.syncState == .pendingUpload ? storedRecord : nil
     }
 
     @discardableResult
@@ -278,6 +289,7 @@ final class CalibrationStore: ObservableObject {
         calibrationObservationTask = nil
 
         guard backendMode == .firebase,
+              autoObserveRemote,
               let calibrationRepository,
               let currentAccountId else {
             return
@@ -315,7 +327,7 @@ final class CalibrationStore: ObservableObject {
                 record,
                 operationId: operationId
             )
-            return await applyRemoteCalibrationCache(savedRecord)
+            return await applyRemoteCalibrationCache(savedRecord, allowReplacingPending: true)
         } catch {
             persistenceError = "Could not sync calibration: \(error.localizedDescription)"
             return false
@@ -323,15 +335,51 @@ final class CalibrationStore: ObservableObject {
     }
 
     @discardableResult
-    private func applyRemoteCalibrationCache(_ remoteRecord: CalibrationRecord) async -> Bool {
-        await save(
-            remoteRecord,
+    func applyRemoteCalibration(
+        _ remoteRecord: CalibrationRecord,
+        allowReplacingPending: Bool = false
+    ) async -> Bool {
+        var syncedRecord = remoteRecord
+        syncedRecord.syncMetadata = remoteRecord.syncMetadata.markedSynced(
+            serverVersion: remoteRecord.syncMetadata.serverVersion
+        )
+        if let storedRecord {
+            if storedRecord.syncMetadata == syncedRecord.syncMetadata {
+                return true
+            }
+            if !allowReplacingPending,
+               storedRecord.syncMetadata.syncState == .pendingUpload ||
+                storedRecord.syncMetadata.syncState == .conflict {
+                return true
+            }
+        }
+        return await save(
+            syncedRecord,
             stampWithCurrentAccount: false,
             operationId: UUID(),
             markLocalMutation: false,
             saveRemote: false,
             recordJournal: false
         )
+    }
+
+    @discardableResult
+    private func applyRemoteCalibrationCache(
+        _ remoteRecord: CalibrationRecord,
+        allowReplacingPending: Bool = false
+    ) async -> Bool {
+        await applyRemoteCalibration(remoteRecord, allowReplacingPending: allowReplacingPending)
+    }
+
+    @discardableResult
+    func markCalibrationConflict(serverVersion: String?, localVersion: String?) async -> Bool {
+        guard var storedRecord else { return false }
+        storedRecord.syncMetadata = storedRecord.syncMetadata.markedConflict(
+            serverVersion: serverVersion,
+            localVersion: localVersion
+        )
+        let generation = applyLocalMutation(storedRecord)
+        return await persist(storedRecord, generation: generation) != nil
     }
 
     private func setRemoteCalibrationError(_ error: Error) {

@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 final class FirestoreTrophyRepository: TrophyRepository {
-    private static let observerDebounceNanoseconds: UInt64 = 500_000_000
+    private static let observerDebounceNanoseconds: UInt64 = 1_000_000_000
 
     private let database: any FirestoreDocumentDatabase
 

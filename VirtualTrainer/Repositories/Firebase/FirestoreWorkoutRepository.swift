@@ -2,7 +2,7 @@ import FirebaseFirestore
 import Foundation
 
 @MainActor
-final class FirestoreWorkoutRepository: WorkoutRepository {
+final class FirestoreWorkoutRepository: WorkoutRepository, WorkoutTombstoneRepository {
     private let database: any FirestoreDocumentDatabase
 
     init(database: any FirestoreDocumentDatabase) {
@@ -78,6 +78,28 @@ final class FirestoreWorkoutRepository: WorkoutRepository {
         )
 
         return try Self.recentWorkouts(
+            from: documents,
+            limit: limit,
+            since: since
+        )
+    }
+
+    func loadRecentWorkoutTombstones(
+        accountId: String,
+        limit: Int,
+        since: Date?
+    ) async throws -> [WorkoutSessionSummary] {
+        let uid = try FirestoreRepositorySupport.requiredAccountId(accountId)
+        let collectionPath = try FirestorePathBuilder.workoutsCollection(uid: uid)
+        let documents = try await database.queryDocuments(
+            collectionPath: collectionPath,
+            filters: [],
+            orderBy: "serverEndedAt",
+            descending: true,
+            limit: nil
+        )
+
+        return try Self.recentWorkoutTombstones(
             from: documents,
             limit: limit,
             since: since
@@ -232,6 +254,37 @@ final class FirestoreWorkoutRepository: WorkoutRepository {
                 )
             }
             .filter { !$0.isDeleted }
+            .filter { summary in
+                guard let since else { return true }
+                return summary.authoritativeEndedAt >= since
+            }
+            .sorted {
+                if $0.authoritativeEndedAt == $1.authoritativeEndedAt {
+                    return $0.createdAt > $1.createdAt
+                }
+                return $0.authoritativeEndedAt > $1.authoritativeEndedAt
+            }
+        return Array(summaries.prefix(max(limit, 0)))
+    }
+
+    private nonisolated static func recentWorkoutTombstones(
+        from storedDocuments: [FirestoreStoredDocument],
+        limit: Int,
+        since: Date?
+    ) throws -> [WorkoutSessionSummary] {
+        let summaries = try storedDocuments
+            .map { storedDocument in
+                let document = try FirestoreRepositorySupport.decode(
+                    FirestoreWorkoutDocument.self,
+                    from: storedDocument
+                )
+                return syncedWorkout(
+                    mapFromWorkoutDocument(document),
+                    storedDocument: storedDocument,
+                    serverDate: document.serverEndedAt
+                )
+            }
+            .filter(\.isDeleted)
             .filter { summary in
                 guard let since else { return true }
                 return summary.authoritativeEndedAt >= since

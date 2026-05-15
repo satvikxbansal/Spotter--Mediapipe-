@@ -201,19 +201,17 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
                 ".setData(",
                 ".updateData("
             ],
-<<<<<<< HEAD
             "FirestoreTrophyRepository.swift": [
                 ".setData("
             ],
             "FirestoreInsightRepository.swift": [
                 "import FirebaseFirestore",
                 ".setData("
-=======
+            ],
             "FirestoreWorkoutRepository.swift": [
                 "import FirebaseFirestore",
                 ".setData(",
                 ".updateData("
->>>>>>> 7b383eb8cd6e04e19d45807bc31fc441348b786c
             ],
             "FirebaseSmokeVerifier.swift": [
                 "import FirebaseAuth",

@@ -1618,6 +1618,7 @@ final class TrophyStore: ObservableObject {
     private var backendMode: BackendMode = .local
     private var trophyRepository: (any TrophyRepository)?
     private var trophyObservationTask: Task<Void, Never>?
+    private var autoObserveRemote = true
 
     private enum TrophyApplyOutcome {
         case applied
@@ -1662,10 +1663,12 @@ final class TrophyStore: ObservableObject {
 
     func configureRemoteSync(
         backendMode: BackendMode,
-        trophyRepository: (any TrophyRepository)?
+        trophyRepository: (any TrophyRepository)?,
+        autoObserve: Bool = true
     ) {
         self.backendMode = backendMode
         self.trophyRepository = backendMode == .firebase ? trophyRepository : nil
+        self.autoObserveRemote = autoObserve
         restartTrophyObservationIfNeeded()
     }
 
@@ -1676,6 +1679,14 @@ final class TrophyStore: ObservableObject {
 
     func allUnlockEvents() -> [TrophyUnlockEvent] {
         visibleUnlockEvents()
+    }
+
+    var pendingUploadCount: Int {
+        visibleUnlockEvents().filter { $0.syncMetadata.syncState == .pendingUpload }.count
+    }
+
+    func pendingTrophyEventsForSync() -> [TrophyUnlockEvent] {
+        visibleUnlockEvents().filter { $0.syncMetadata.syncState == .pendingUpload }
     }
 
     func unlockEvents(in interval: DateInterval) -> [TrophyUnlockEvent] {
@@ -2042,6 +2053,7 @@ final class TrophyStore: ObservableObject {
         trophyObservationTask = nil
 
         guard backendMode == .firebase,
+              autoObserveRemote,
               let trophyRepository,
               let currentAccountId else {
             return
@@ -2119,9 +2131,22 @@ final class TrophyStore: ObservableObject {
     }
 
     @discardableResult
-    private func applyRemoteTrophyEvents(_ remoteEvents: [TrophyUnlockEvent]) async -> Bool {
-        let incomingEvents = remoteEvents.filter(isVisible)
+    func applyRemoteTrophyEvents(_ remoteEvents: [TrophyUnlockEvent]) async -> Bool {
+        let incomingEvents = remoteEvents.filter(isVisible).map { event in
+            var copy = event
+            copy.syncMetadata = event.syncMetadata.markedSynced(
+                serverVersion: event.syncMetadata.serverVersion
+            )
+            return copy
+        }
         guard !incomingEvents.isEmpty else { return true }
+        let alreadyApplied = incomingEvents.allSatisfy { incomingEvent in
+            eventLog.contains {
+                trophyEventStorageKey(for: $0) == trophyEventStorageKey(for: incomingEvent) &&
+                    $0.syncMetadata == incomingEvent.syncMetadata
+            }
+        }
+        if alreadyApplied { return true }
 
         let previousSnapshot = snapshot
         let previousUnlockEvents = latestUnlockEvents
@@ -2131,6 +2156,32 @@ final class TrophyStore: ObservableObject {
             generatedAt: incomingEvents.map(\.authoritativeEarnedAt).max(),
             events: []
         )
+        guard await persist() != nil else {
+            eventLog = previousEventLog
+            snapshot = previousSnapshot
+            latestUnlockEvents = previousUnlockEvents
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func markTrophyEventConflict(
+        id: UUID,
+        serverVersion: String?,
+        localVersion: String?
+    ) async -> Bool {
+        guard let existingIndex = eventLog.firstIndex(where: { $0.id == id && isVisible($0) }) else {
+            return false
+        }
+
+        let previousEventLog = eventLog
+        let previousSnapshot = snapshot
+        let previousUnlockEvents = latestUnlockEvents
+        eventLog[existingIndex].syncMetadata = eventLog[existingIndex]
+            .syncMetadata
+            .markedConflict(serverVersion: serverVersion, localVersion: localVersion)
+        applyVisibleSnapshot()
         guard await persist() != nil else {
             eventLog = previousEventLog
             snapshot = previousSnapshot

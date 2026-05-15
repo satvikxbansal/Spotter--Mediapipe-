@@ -10,6 +10,7 @@ struct ProfileView: View {
     @EnvironmentObject private var insightStore: InsightStore
     @EnvironmentObject private var backendStatusStore: BackendStatusStore
     @EnvironmentObject private var appDependencies: AppDependencies
+    @EnvironmentObject private var syncOrchestrator: SyncOrchestrator
 
     @State private var selectedSummary: WorkoutSessionSummary?
     @State private var isShowingAllHistory = false
@@ -249,6 +250,7 @@ struct ProfileView: View {
                     profile: profile,
                     calibrationStatus: calibrationStore.status,
                     backendStatusStore: backendStatusStore,
+                    syncOrchestrator: syncOrchestrator,
                     currentAccountId: accountContext.currentAccountId,
                     isFirebaseAuthActionRunning: isRunningFirebaseAuthAction,
                     firebaseAuthMessage: firebaseAuthMessage,
@@ -262,6 +264,11 @@ struct ProfileView: View {
                     onTestProfileSync: testProfileSync,
                     onTestCalibrationSync: testCalibrationSync,
                     onTestPlanSync: testPlanSync,
+                    onRunFullSync: runFullSync,
+                    onPushPendingWrites: pushPendingWrites,
+                    onPullRemote: pullRemote,
+                    onStartListeners: startSyncListeners,
+                    onStopListeners: stopSyncListeners,
                     onSampleDataToggle: setSampleDataEnabledForTesting,
                     onResetOnboarding: {
                         Task {
@@ -714,6 +721,45 @@ struct ProfileView: View {
                 throw RepositoryError.invalidPayload("Plan read-back did not return the saved active plan.")
             }
             return "Plan sync passed for \(redactedAccountId(uid)); active plan is \(savedPlan.title)."
+        }
+    }
+
+    private func runFullSync() {
+        runFirestoreSyncTest {
+            let uid = try await ensureFirebaseAccountForDebug()
+            try await syncOrchestrator.performFullSync(accountId: uid)
+            return "Full sync completed for \(redactedAccountId(uid))."
+        }
+    }
+
+    private func pushPendingWrites() {
+        runFirestoreSyncTest {
+            let uid = try await ensureFirebaseAccountForDebug()
+            try await syncOrchestrator.pushPendingLocal(accountId: uid)
+            return "Pending writes pushed for \(redactedAccountId(uid))."
+        }
+    }
+
+    private func pullRemote() {
+        runFirestoreSyncTest {
+            let uid = try await ensureFirebaseAccountForDebug()
+            try await syncOrchestrator.pullRemote(accountId: uid)
+            return "Remote records pulled for \(redactedAccountId(uid))."
+        }
+    }
+
+    private func startSyncListeners() {
+        runFirestoreSyncTest {
+            let uid = try await ensureFirebaseAccountForDebug()
+            try await syncOrchestrator.startListeners(accountId: uid)
+            return "Sync listeners started for \(redactedAccountId(uid))."
+        }
+    }
+
+    private func stopSyncListeners() {
+        runFirestoreSyncTest {
+            try await syncOrchestrator.stopListeners()
+            return "Sync listeners stopped."
         }
     }
 
@@ -1819,6 +1865,7 @@ private struct SettingsDebugSection: View {
     let profile: UserProfile
     let calibrationStatus: CalibrationStatus
     @ObservedObject var backendStatusStore: BackendStatusStore
+    @ObservedObject var syncOrchestrator: SyncOrchestrator
     let currentAccountId: String?
     let isFirebaseAuthActionRunning: Bool
     let firebaseAuthMessage: String?
@@ -1832,6 +1879,11 @@ private struct SettingsDebugSection: View {
     let onTestProfileSync: () -> Void
     let onTestCalibrationSync: () -> Void
     let onTestPlanSync: () -> Void
+    let onRunFullSync: () -> Void
+    let onPushPendingWrites: () -> Void
+    let onPullRemote: () -> Void
+    let onStartListeners: () -> Void
+    let onStopListeners: () -> Void
     let onSampleDataToggle: (Bool) -> Void
     let onResetOnboarding: () -> Void
     let onResetCalibration: () -> Void
@@ -2043,6 +2095,50 @@ private struct SettingsDebugSection: View {
                         ? 1
                         : 0.45
                 )
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    Text("Sync Orchestrator")
+                        .font(.system(size: 11, weight: .black))
+                        .tracking(0.9)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+
+                    ProfileInfoRow(label: "Status", value: syncOrchestrator.status.displayName)
+                    ProfileInfoRow(label: "Last synced", value: lastSyncedValue)
+                    ProfileInfoRow(label: "Pending uploads", value: "\(syncOrchestrator.pendingUploadCount)")
+                    ProfileInfoRow(label: "Conflicts", value: "\(syncOrchestrator.conflictCount)")
+                    ProfileInfoRow(label: "Listeners", value: syncOrchestrator.listenersAttached ? "Attached" : "Stopped")
+
+                    if let lastError = syncOrchestrator.lastError {
+                        ProfileInfoRow(label: "Last error", value: lastError)
+                    }
+
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Button("Run Full Sync", action: onRunFullSync)
+                            .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.accent))
+                        Button("Push Pending Writes", action: onPushPendingWrites)
+                            .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.accent))
+                    }
+
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Button("Pull Remote", action: onPullRemote)
+                            .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.accent))
+                        Button(syncOrchestrator.listenersAttached ? "Stop Listeners" : "Start Listeners") {
+                            if syncOrchestrator.listenersAttached {
+                                onStopListeners()
+                            } else {
+                                onStartListeners()
+                            }
+                        }
+                        .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.accent))
+                    }
+                }
+                .disabled(isFirestoreSyncActionRunning || backendStatusStore.activeBackendMode != .firebase)
+                .opacity(
+                    isFirestoreSyncActionRunning || backendStatusStore.activeBackendMode == .firebase
+                        ? 1
+                        : 0.45
+                )
             }
             .padding(.top, Theme.Spacing.sm)
         } label: {
@@ -2056,6 +2152,11 @@ private struct SettingsDebugSection: View {
             }
             .foregroundStyle(Theme.Colors.textPrimary)
         }
+    }
+
+    private var lastSyncedValue: String {
+        guard let lastSyncedAt = syncOrchestrator.lastSyncedAt else { return "Never" }
+        return lastSyncedAt.formatted(date: .abbreviated, time: .standard)
     }
 
     private func runFirebaseSmokeTest() {

@@ -71,4 +71,24 @@ nonisolated struct SyncMetadata: Codable, Equatable {
         if rhs.syncState == .pendingUpload && lhs.syncState != .pendingUpload { return rhs }
         return lhs.localUpdatedAt >= rhs.localUpdatedAt ? lhs : rhs
     }
+
+    func markedSynced(
+        lastSyncedAt: Date = Date(),
+        serverVersion: String? = nil
+    ) -> SyncMetadata {
+        var copy = self
+        copy.lastSyncedAt = lastSyncedAt
+        copy.serverVersion = serverVersion ?? copy.serverVersion
+        copy.syncState = .synced
+        copy.pendingOperationId = nil
+        return copy
+    }
+
+    func markedConflict(serverVersion: String?, localVersion _: String?) -> SyncMetadata {
+        var copy = self
+        copy.serverVersion = serverVersion ?? copy.serverVersion
+        copy.syncState = .conflict
+        copy.pendingOperationId = nil
+        return copy
+    }
 }

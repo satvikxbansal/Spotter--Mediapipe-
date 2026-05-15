@@ -76,11 +76,7 @@ final class FirestoreRepositoryTests: XCTestCase {
         XCTAssertEqual(observedChanged?.displayName, "Changed Athlete")
     }
 
-<<<<<<< HEAD
-    func testFirebasePartialUsesPhase16FMemoryFirestoreRepositories() async {
-=======
-    func testFirebasePartialUsesWorkoutRepositoryAndKeepsTrophyInsightRepositoriesLocal() async {
->>>>>>> 7b383eb8cd6e04e19d45807bc31fc441348b786c
+    func testFirebasePartialUsesPhase16GFirestoreRepositories() async {
         let dependencies = AppDependencies.firebasePartial()
 
         XCTAssertEqual(dependencies.backendMode, .firebase)
@@ -89,8 +85,7 @@ final class FirestoreRepositoryTests: XCTestCase {
         XCTAssertTrue(dependencies.theme is FirestoreThemeRepository)
         XCTAssertTrue(dependencies.calibration is FirestoreCalibrationRepository)
         XCTAssertTrue(dependencies.plans is FirestorePlanRepository)
-<<<<<<< HEAD
-        XCTAssertTrue(dependencies.workouts is LocalWorkoutRepository)
+        XCTAssertTrue(dependencies.workouts is FirestoreWorkoutRepository)
         XCTAssertTrue(dependencies.trophies is FirestoreTrophyRepository)
         XCTAssertTrue(dependencies.insights is FirestoreInsightRepository)
     }
@@ -274,11 +269,6 @@ final class FirestoreRepositoryTests: XCTestCase {
         payload["rawPoseTimeline"] = [["x": 0.2, "y": 0.4]]
 
         XCTAssertThrowsError(try FirestorePrivacyValidator.validate(payload))
-=======
-        XCTAssertTrue(dependencies.workouts is FirestoreWorkoutRepository)
-        XCTAssertTrue(dependencies.trophies is LocalTrophyRepository)
-        XCTAssertTrue(dependencies.insights is LocalInsightRepository)
->>>>>>> 7b383eb8cd6e04e19d45807bc31fc441348b786c
     }
 
     func testWorkoutRepositoryWritesCompactWorkoutAndDeterministicSetDocuments() async throws {
@@ -427,7 +417,6 @@ final class FirestoreRepositoryTests: XCTestCase {
         )
     }
 
-<<<<<<< HEAD
     private func makeTrophyEvent(earnedAt: Date) -> TrophyUnlockEvent {
         TrophyUnlockEvent(
             accountId: accountId,
@@ -443,7 +432,10 @@ final class FirestoreRepositoryTests: XCTestCase {
                 serverVersion: nil,
                 syncState: .pendingUpload,
                 pendingOperationId: nil
-=======
+            )
+        )
+    }
+
     private func makeWorkoutSummary(
         id: UUID,
         sets: [ExerciseSetSummary]? = nil,
@@ -485,12 +477,10 @@ final class FirestoreRepositoryTests: XCTestCase {
                 serverVersion: nil,
                 syncState: .pendingUpload,
                 pendingOperationId: operationId
->>>>>>> 7b383eb8cd6e04e19d45807bc31fc441348b786c
             )
         )
     }
 
-<<<<<<< HEAD
     private func makeInsight(
         dedupeKey: String,
         headline: String = "Keep the streak specific",
@@ -532,7 +522,6 @@ final class FirestoreRepositoryTests: XCTestCase {
         )
     }
 
-=======
     private func makeSetSummary(
         exerciseType: ExerciseType,
         setIndex: Int,
@@ -596,7 +585,6 @@ final class FirestoreRepositoryTests: XCTestCase {
         return values.reduce(0, +) / Double(values.count)
     }
 
->>>>>>> 7b383eb8cd6e04e19d45807bc31fc441348b786c
     private func fixedUUID(_ value: Int) -> UUID {
         UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", value)) ?? UUID()
     }

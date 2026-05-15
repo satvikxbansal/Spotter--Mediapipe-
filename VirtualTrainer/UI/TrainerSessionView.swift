@@ -159,6 +159,7 @@ struct TrainerSessionView: View {
         .preferredColorScheme(.dark)
         .statusBarHidden()
         .onAppear {
+            WorkoutSessionContext.markLiveStarted()
             didCompletePlannedSet = false
             repCount = 0
             previousRepCount = 0
@@ -1313,6 +1314,7 @@ struct TrainerSessionView: View {
     private func stopLivePipelines() {
         cameraManager.onFrame = nil
         cameraManager.stop()
+        WorkoutSessionContext.markLiveEnded()
     }
 
     private func recordCues(_ cues: [CoachCue]) {

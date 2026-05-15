@@ -58,6 +58,53 @@ nonisolated struct WorkoutSessionContext: Identifiable, Equatable {
     }
 }
 
+@MainActor
+extension WorkoutSessionContext {
+    static var isLive: Bool {
+        WorkoutSessionLiveState.shared.isLive
+    }
+
+    static func markLiveStarted() {
+        WorkoutSessionLiveState.shared.markStarted()
+    }
+
+    static func markLiveEnded() {
+        WorkoutSessionLiveState.shared.markEnded()
+    }
+
+    static func onWorkoutEnded(_ action: @escaping @MainActor () -> Void) {
+        WorkoutSessionLiveState.shared.onEnded(action)
+    }
+}
+
+@MainActor
+private final class WorkoutSessionLiveState {
+    static let shared = WorkoutSessionLiveState()
+
+    private(set) var isLive = false
+    private var onEndedActions: [@MainActor () -> Void] = []
+
+    func markStarted() {
+        isLive = true
+    }
+
+    func markEnded() {
+        guard isLive else { return }
+        isLive = false
+        let actions = onEndedActions
+        onEndedActions.removeAll()
+        actions.forEach { $0() }
+    }
+
+    func onEnded(_ action: @escaping @MainActor () -> Void) {
+        guard isLive else {
+            action()
+            return
+        }
+        onEndedActions.append(action)
+    }
+}
+
 nonisolated struct PlannedWorkoutRestContext: Identifiable {
     let lastSummary: PlannedWorkoutSetSummary
     let upNextContext: WorkoutSessionContext
