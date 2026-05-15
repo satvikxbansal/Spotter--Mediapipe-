@@ -1732,3 +1732,107 @@ Protected live camera pipeline files were not modified.
 For every future sync phase, prove pull-before-push with a local pending record plus a stale remote version for each store shape: singleton, list, aggregate, and tombstone. Ack paths must have explicit tests showing pending metadata clears and repeated push becomes a no-op. Listener merge tests must include both repeated identical snapshots and remote tombstones arriving while a local pending auxiliary record exists. Do not treat `LocalWriteJournal` as a replay payload queue unless its schema is deliberately migrated to store replayable record references or payloads.
 
 **Pattern Tags:** #audit #sync #firebase #firestore #local-first #listeners #conflicts #pending-upload #tombstones #privacy #tests
+
+---
+
+### [DL-057] Lock Down Firestore Rules And App Check Prep
+**Date:** 2026-05-15
+**Severity:** warning
+**Category:** firebase-security
+**File(s):** `Documentation/firestore.rules`, `Documentation/FirebaseConsoleChecklist.md`, `Documentation/AppCheckRollout.md`, `VirtualTrainer.xcodeproj/project.pbxproj`, `VirtualTrainer/Services/FirebaseBootstrap.swift`, `VirtualTrainerTests/FirestoreRepositoryTests.swift`
+
+**Error:**
+Phase 16H needed the Firebase server boundary to catch up with the repository layer before wider backend testing. Without owner-only Firestore rules, App Check rollout notes, and repository-level payload assertions, a Firebase-mode development build could compile while the manual console setup or a future repository write drifted outside the intended account and privacy boundary.
+
+**Root Cause:**
+Earlier Phase 16 work deliberately added Firebase repositories behind a feature flag before publishing production-ready rules or App Check enforcement. The existing DTO privacy tests verified representative encodable models, but they did not inspect every repository write payload produced by realistic save, update, tombstone, and aggregate paths. Firebase App Check was already available through the Firebase package graph, but the app target did not link the App Check product or install a DEBUG-only provider before `FirebaseApp.configure()`.
+
+**Fix Applied:**
+Added the v1 owner-only Firestore rules document with default deny, user ownership checks, delete-by-tombstone behavior for durable sync records, user-cleared plan deletion, raw-sensor and secret-like field-name denial, and a Phase 16J TODO for schema-level required-field and type validation. Added Firebase Console and App Check rollout documentation covering anonymous auth only, Firestore rule publishing, no initial composite indexes, debug App Check registration without enforcement, disabled Storage/RTDB, no Functions deployment, and manual cross-uid denial smoke testing. Linked `FirebaseAppCheck` into the app target and installed `AppCheckDebugProviderFactory` only in DEBUG before Firebase configures. Added repository privacy assertion coverage that captures realistic in-memory Firestore writes for profile, theme, calibration, plans, workouts, workout sets, workout tombstones, trophies, insights, insight delivery, and insight engagement, then verifies each payload stays within the published DTO key set and avoids forbidden raw data or secret-like keys.
+
+**Verification:**
+Toolchain paths resolve under XcodeDefault:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Required build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required test suite passed:
+
+- Passed: 392
+- Failed: 0
+- Skipped: 0
+
+The required test command was:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Focused repository privacy assertion test passed. Local-only no-plist build passed after temporarily moving the ignored Firebase client plist out of the repo and restoring it immediately afterward:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData-local-no-plist SPOTTER_BACKEND_MODE=local`
+
+Firebase-mode build-setting override passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData-firebase-mode SPOTTER_BACKEND_MODE=firebase`
+
+Protected live camera pipeline files were not modified. No raw video, camera frame, face image, raw pose stream, raw pose timeline, biometric face data, face blendshape stream, or third-party secret field is introduced by the new repository payload test fixtures.
+
+**Prevention Rule:**
+Every new Firestore write path must have a repository-level payload assertion that captures the actual encoded write and compares it with the DTO's published key set plus the raw-data and secret-field denylist. Keep App Check enforcement off until debug-token onboarding, owner-only rule smoke tests, and Phase 17 emulator automation prove the dev workflow and denial paths. Firestore rule changes must stay documented with console steps and must preserve `BackendMode.local` no-plist builds.
+
+**Pattern Tags:** #firebase #firestore-rules #app-check #privacy #repository-tests #local-first #backend-mode #security
+
+---
+
+### [DL-058] Audit Phase 16H Repository Payload Coverage After Compaction
+**Date:** 2026-05-15
+**Severity:** warning
+**Category:** test-coverage
+**File(s):** `VirtualTrainerTests/FirestoreRepositoryTests.swift`, `DEBUG_LOG.md`
+
+**Error:**
+The post-compaction Phase 16H audit found that the newly added repository privacy test did not fully prove its own acceptance claim. It captured and validated every write that happened during the fixture run, but it only asserted a minimum write count. Because the in-memory Firestore test double compared JSON-encoded boolean fields by `String(describing:)`, `NSNumber(true)` did not match the Swift `true` filter value. That caused the second active-plan save fixture to miss the prior active plan and skip the inactive-plan update payload, while the test still passed under the loose `>= 14` write-count assertion.
+
+**Root Cause:**
+The production Firestore repository path was reviewed correctly, but the audit surface shifted into test fidelity: `FirestorePlanRepository.saveActivePlan` relies on an `active == true` query before deactivating older active plans. Real Firestore handles boolean filters natively; the in-memory test double approximated filters with string comparison, which is not type-faithful after `JSONSerialization` turns booleans into `NSNumber`. The miss survived the first pass because the test validated payload privacy after capture rather than proving each intended repository write category had been captured. The context compaction and lost stream also encouraged resuming from a checklist summary and green full-suite result instead of replaying the exact write trace category by category. The early shell mistakes during verification (`status` as a zsh read-only variable and a misquoted fallback secret-scan regex) were process noise, not product defects, but they are the same class of risk: after interruption, every assertion and command should be re-derived from live output instead of trusted from memory.
+
+**Fix Applied:**
+Hardened the repository privacy test with exact write-category assertions for full profile save, profile-backed theme patch, calibration save, two active plan saves, inactive-plan update, workout summary, two workout set documents, workout tombstone, trophy event append, full insight save, insight tombstone, insight delivery, and insight engagement. Added a key-only write summary to the count failure message so future misses can be diagnosed without logging secret values. Fixed the in-memory Firestore filter matcher to treat `NSNumber` and `Bool` values equivalently for boolean filters while preserving the existing `NSNull` and string fallback behavior. This makes the test double exercise the same active-plan deactivation path the live Firestore query would exercise.
+
+**Verification:**
+Focused repository privacy test passed after the audit fix:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData -only-testing:VirtualTrainerTests/FirestoreRepositoryTests/testRepositoryWritePayloadsMatchPublishedDTOKeysAndPrivacyBoundary`
+
+Required build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required test suite passed:
+
+- Passed: 392
+- Failed: 0
+- Skipped: 0
+
+The required test command was:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Local-only no-plist build passed after temporarily moving the ignored Firebase client plist out of the repo and restoring it immediately afterward:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData-local-no-plist SPOTTER_BACKEND_MODE=local`
+
+Firebase-mode build-setting override passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData-firebase-mode SPOTTER_BACKEND_MODE=firebase`
+
+Protected live camera pipeline files were not modified.
+
+**Prevention Rule:**
+Repository privacy tests must prove both payload shape and path coverage. Do not accept aggregate write counts as coverage for multi-repository fixtures; assert the expected path/kind/category for every intended write. In-memory Firestore doubles must compare filtered values by Firestore semantics, not only string descriptions, especially for `Bool`, `NSNull`, server timestamp stand-ins, and future typed query values. After a context compaction, lost stream, or command failure, re-run the exact focused assertion that would fail if the missed path were absent before trusting a full-suite green result.
+
+**Pattern Tags:** #audit #test-coverage #firestore #repository-tests #privacy #plans #local-first #compaction #verification

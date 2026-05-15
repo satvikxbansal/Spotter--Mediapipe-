@@ -1,5 +1,8 @@
 import FirebaseCore
 import Foundation
+#if DEBUG
+import FirebaseAppCheck
+#endif
 
 nonisolated enum FirebaseBootstrapState: Equatable {
     case notAttempted
@@ -35,6 +38,9 @@ nonisolated enum FirebaseBootstrap {
         }
 
         do {
+#if DEBUG
+            AppCheck.setAppCheckProviderFactory(AppCheckDebugProviderFactory())
+#endif
             try configurator(options)
         } catch {
             return .failed(reason: sanitizedFailureReason(for: error, plistPath: plistURL.path))

@@ -271,6 +271,84 @@ final class FirestoreRepositoryTests: XCTestCase {
         XCTAssertThrowsError(try FirestorePrivacyValidator.validate(payload))
     }
 
+    func testRepositoryWritePayloadsMatchPublishedDTOKeysAndPrivacyBoundary() async throws {
+        let database = InMemoryFirestoreDocumentDatabase()
+        let profileRepository = FirestoreProfileRepository(database: database)
+        let themeRepository = FirestoreThemeRepository(database: database)
+        let calibrationRepository = FirestoreCalibrationRepository(database: database)
+        let planRepository = FirestorePlanRepository(database: database)
+        let workoutRepository = FirestoreWorkoutRepository(database: database)
+        let trophyRepository = FirestoreTrophyRepository(database: database)
+        let insightRepository = FirestoreInsightRepository(database: database)
+
+        let profile = makeProfile(updatedAt: now, operationId: fixedUUID(160_701))
+        _ = try await profileRepository.saveProfile(profile, operationId: fixedUUID(160_701))
+        try await themeRepository.saveTheme(.spicy, accountId: accountId, operationId: fixedUUID(160_702))
+
+        let calibration = makeCalibrationRecord(operationId: fixedUUID(160_703))
+        _ = try await calibrationRepository.saveCalibrationRecord(calibration, operationId: fixedUUID(160_703))
+
+        let firstPlan = makePlan(id: fixedUUID(160_704), title: "Payload Plan A")
+        let secondPlan = makePlan(id: fixedUUID(160_705), title: "Payload Plan B")
+        _ = try await planRepository.saveActivePlan(firstPlan, accountId: accountId, operationId: fixedUUID(160_706))
+        _ = try await planRepository.saveActivePlan(secondPlan, accountId: accountId, operationId: fixedUUID(160_707))
+
+        let workout = makeWorkoutSummary(
+            id: fixedUUID(160_708),
+            sets: [
+                makeSetSummary(exerciseType: .squat, setIndex: 0, formScores: [90, 86]),
+                makeSetSummary(exerciseType: .pushup, setIndex: 1, formScores: [85])
+            ],
+            operationId: fixedUUID(160_709)
+        )
+        _ = try await workoutRepository.saveWorkoutSummary(workout, operationId: fixedUUID(160_709))
+        try await workoutRepository.deleteWorkout(
+            accountId: accountId,
+            id: workout.id,
+            operationId: fixedUUID(160_710)
+        )
+
+        _ = try await trophyRepository.saveTrophyEvent(
+            makeTrophyEvent(earnedAt: now.addingTimeInterval(25)),
+            operationId: fixedUUID(160_711)
+        )
+
+        let insight = makeInsight(dedupeKey: "payload-boundary")
+        _ = try await insightRepository.saveInsights([insight], operationId: fixedUUID(160_712))
+
+        let delivery = InsightDeliveryRecord(
+            accountId: accountId,
+            dedupeKey: insight.dedupeKey,
+            firstPresentedAt: now,
+            lastPresentedAt: now.addingTimeInterval(30),
+            presentationCount: 1,
+            surfaceLastPresentedAt: [InsightSurface.dashboard.rawValue: now.addingTimeInterval(30)]
+        )
+        _ = try await insightRepository.saveDeliveryRecord(delivery, operationId: fixedUUID(160_713))
+
+        var engagement = InsightEngagementRecord(accountId: accountId, dedupeKey: insight.dedupeKey)
+        engagement.record(.opened, at: now.addingTimeInterval(45))
+        _ = try await insightRepository.saveEngagementRecord(engagement, operationId: fixedUUID(160_714))
+
+        try await insightRepository.invalidateInsight(
+            accountId: accountId,
+            dedupeKey: "payload-boundary-missing",
+            operationId: fixedUUID(160_715)
+        )
+
+        let writes = database.appliedWrites
+        assertRepositoryWriteCoverage(writes)
+
+        for write in writes {
+            try assertNoForbiddenKeys(in: write.payload, context: write.path)
+            assertNoUnexpectedKeys(
+                in: write.payload,
+                allowedKeys: allowedTopLevelKeys(forFirestorePath: write.path),
+                context: "\(write.kind.description) \(write.path)"
+            )
+        }
+    }
+
     func testWorkoutRepositoryWritesCompactWorkoutAndDeterministicSetDocuments() async throws {
         let database = InMemoryFirestoreDocumentDatabase()
         let repository = FirestoreWorkoutRepository(database: database)
@@ -436,6 +514,235 @@ final class FirestoreRepositoryTests: XCTestCase {
         )
     }
 
+    private func makeCalibrationRecord(operationId: UUID) -> CalibrationRecord {
+        CalibrationRecord(
+            id: fixedUUID(160_803),
+            accountId: accountId,
+            status: .completed,
+            exerciseType: CalibrationDefaults.exerciseType,
+            targetReps: CalibrationDefaults.targetReps,
+            completedReps: CalibrationDefaults.targetReps,
+            startedAt: now.addingTimeInterval(-90),
+            completedAt: now.addingTimeInterval(-30),
+            visibilityPassed: true,
+            averageFormScore: 92,
+            notes: "Repository privacy payload fixture.",
+            syncMetadata: SyncMetadata(
+                localUpdatedAt: now.addingTimeInterval(-30),
+                lastSyncedAt: nil,
+                serverVersion: nil,
+                syncState: .pendingUpload,
+                pendingOperationId: operationId
+            )
+        )
+    }
+
+    private func makePlan(id: UUID, title: String) -> WorkoutPlanV2 {
+        WorkoutPlanV2(
+            id: id,
+            title: title,
+            subtitle: "Repository payload fixture",
+            goal: "Keep sync private.",
+            estimatedMinutes: 7,
+            difficulty: .beginner,
+            coach: .good,
+            blocks: [
+                WorkoutBlock(
+                    title: "Main",
+                    type: .main,
+                    exercises: [
+                        PlannedExercise(
+                            exerciseType: .squat,
+                            sets: [
+                                PlannedSet(setIndex: 1, target: .reps(10)),
+                                PlannedSet(setIndex: 2, target: .reps(10))
+                            ],
+                            restSeconds: 45,
+                            coachingFocus: "Depth and control.",
+                            cameraPosition: .front,
+                            allowSwap: true
+                        )
+                    ]
+                )
+            ],
+            generatedAt: now,
+            planReason: "Stable repository payload fixture.",
+            source: .generatedLocal
+        )
+    }
+
+    private func assertRepositoryWriteCoverage(
+        _ writes: [InMemoryFirestoreDocumentDatabase.AppliedWrite],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(
+            writes.count,
+            15,
+            "Unexpected repository write count.\n\(writeCoverageSummary(writes))",
+            file: file,
+            line: line
+        )
+
+        XCTAssertTrue(
+            writes.contains {
+                isSetWrite($0, merge: true) &&
+                    $0.path.hasSuffix("/profile/current") &&
+                    $0.payload["profileId"] != nil
+            },
+            "Missing full profile save payload.",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            writes.contains {
+                isSetWrite($0, merge: true) &&
+                    $0.path.hasSuffix("/profile/current") &&
+                    $0.payload["selectedTheme"] != nil &&
+                    $0.payload["profileId"] == nil
+            },
+            "Missing profile-backed theme patch payload.",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            writes.contains {
+                isSetWrite($0, merge: true) &&
+                    $0.path.hasSuffix("/calibration/status") &&
+                    $0.payload["calibrationId"] != nil
+            },
+            "Missing calibration save payload.",
+            file: file,
+            line: line
+        )
+
+        let planSetWrites = writes.filter {
+            isSetWrite($0, merge: true) &&
+                $0.path.contains("/plans/") &&
+                $0.payload["planId"] != nil &&
+                $0.payload["active"] as? Bool == true
+        }
+        XCTAssertEqual(planSetWrites.count, 2, "Expected two active plan save payloads.", file: file, line: line)
+        XCTAssertTrue(
+            writes.contains {
+                isUpdateWrite($0) &&
+                    $0.path.contains("/plans/") &&
+                    $0.payload.keys.sorted() == ["active"] &&
+                    $0.payload["active"] as? Bool == false
+            },
+            "Missing inactive-plan update payload.",
+            file: file,
+            line: line
+        )
+
+        XCTAssertTrue(
+            writes.contains {
+                isSetWrite($0, merge: true) &&
+                    isWorkoutDocumentPath($0.path) &&
+                    $0.payload["workoutId"] != nil
+            },
+            "Missing workout summary save payload.",
+            file: file,
+            line: line
+        )
+        let setWrites = writes.filter {
+            isSetWrite($0, merge: true) &&
+                $0.path.contains("/sets/") &&
+                $0.payload["setId"] != nil
+        }
+        XCTAssertEqual(setWrites.count, 2, "Expected two workout set save payloads.", file: file, line: line)
+        XCTAssertTrue(
+            writes.contains {
+                isUpdateWrite($0) &&
+                    isWorkoutDocumentPath($0.path) &&
+                    $0.payload["deletedAt"] != nil &&
+                    $0.payload["workoutId"] == nil
+            },
+            "Missing workout tombstone update payload.",
+            file: file,
+            line: line
+        )
+
+        XCTAssertTrue(
+            writes.contains {
+                isSetWrite($0, merge: false) &&
+                    $0.path.contains("/trophyEvents/") &&
+                    $0.payload["eventId"] != nil
+            },
+            "Missing trophy event append payload.",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            writes.contains {
+                isSetWrite($0, merge: true) &&
+                    $0.path.contains("/insights/") &&
+                    $0.payload["insightId"] != nil
+            },
+            "Missing full insight save payload.",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            writes.contains {
+                isSetWrite($0, merge: true) &&
+                    $0.path.contains("/insights/") &&
+                    $0.payload["deletedAt"] != nil &&
+                    $0.payload["insightId"] == nil
+            },
+            "Missing insight tombstone payload.",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            writes.contains {
+                isSetWrite($0, merge: true) &&
+                    $0.path.contains("/insightDelivery/") &&
+                    $0.payload["firstPresentedAt"] != nil
+            },
+            "Missing insight delivery payload.",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            writes.contains {
+                isSetWrite($0, merge: true) &&
+                    $0.path.contains("/insightEngagement/") &&
+                    $0.payload["engagementCounts"] != nil
+            },
+            "Missing insight engagement payload.",
+            file: file,
+            line: line
+        )
+    }
+
+    private func isSetWrite(
+        _ write: InMemoryFirestoreDocumentDatabase.AppliedWrite,
+        merge expectedMerge: Bool
+    ) -> Bool {
+        guard case .set(let merge) = write.kind else { return false }
+        return merge == expectedMerge
+    }
+
+    private func isUpdateWrite(_ write: InMemoryFirestoreDocumentDatabase.AppliedWrite) -> Bool {
+        guard case .update = write.kind else { return false }
+        return true
+    }
+
+    private func isWorkoutDocumentPath(_ path: String) -> Bool {
+        path.contains("/workouts/") && !path.contains("/sets/")
+    }
+
+    private func writeCoverageSummary(
+        _ writes: [InMemoryFirestoreDocumentDatabase.AppliedWrite]
+    ) -> String {
+        writes
+            .map { write in
+                "\(write.kind.description) \(write.path) keys=\(write.payload.keys.sorted().joined(separator: ","))"
+            }
+            .joined(separator: "\n")
+    }
+
     private func makeWorkoutSummary(
         id: UUID,
         sets: [ExerciseSetSummary]? = nil,
@@ -588,6 +895,326 @@ final class FirestoreRepositoryTests: XCTestCase {
     private func fixedUUID(_ value: Int) -> UUID {
         UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", value)) ?? UUID()
     }
+
+    private func assertNoForbiddenKeys(
+        in payload: [String: Any],
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        try FirestorePrivacyValidator.validate(payload)
+        let forbiddenKeys: Set<String> = [
+            "rawvideo",
+            "videoframe",
+            "cameraframe",
+            "faceimage",
+            "rawposestream",
+            "rawposetimeline",
+            "rawlandmarks",
+            "rawfaceblendshapestream",
+            "biometricfacedata",
+            "imagedata",
+            "pixelbuffer",
+            "apikey",
+            "privatekey",
+            "serviceaccount"
+        ]
+        let offendingKeys = allPayloadKeys(in: payload)
+            .map(normalizedPayloadKey)
+            .filter { forbiddenKeys.contains($0) }
+
+        XCTAssertTrue(
+            offendingKeys.isEmpty,
+            "Forbidden Firestore payload keys \(offendingKeys) in \(context)",
+            file: file,
+            line: line
+        )
+    }
+
+    private func assertNoUnexpectedKeys(
+        in value: Any,
+        allowedKeys: Set<String>,
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        if let dictionary = value as? [String: Any] {
+            let actualKeys = Set(dictionary.keys)
+            let unexpectedKeys = actualKeys.subtracting(allowedKeys)
+            XCTAssertTrue(
+                unexpectedKeys.isEmpty,
+                "Unexpected Firestore payload keys \(unexpectedKeys.sorted()) in \(context)",
+                file: file,
+                line: line
+            )
+
+            for (key, nestedValue) in dictionary where !dynamicMapPayloadKeys.contains(key) {
+                guard let childKeys = childPublishedKeys(forPayloadKey: key) else { continue }
+                assertNoUnexpectedKeys(
+                    in: nestedValue,
+                    allowedKeys: childKeys,
+                    context: "\(context).\(key)",
+                    file: file,
+                    line: line
+                )
+            }
+            return
+        }
+
+        if let array = value as? [Any] {
+            for (index, element) in array.enumerated() {
+                assertNoUnexpectedKeys(
+                    in: element,
+                    allowedKeys: allowedKeys,
+                    context: "\(context)[\(index)]",
+                    file: file,
+                    line: line
+                )
+            }
+        }
+    }
+
+    private func allowedTopLevelKeys(forFirestorePath path: String) -> Set<String> {
+        if path.hasSuffix("/profile/current") {
+            return publishedKeys(of: mapToProfileDocument(makeProfile(updatedAt: now)))
+        }
+        if path.hasSuffix("/calibration/status") {
+            return publishedKeys(of: mapToCalibrationDocument(makeCalibrationRecord(operationId: fixedUUID(160_821))))
+        }
+        if path.contains("/workouts/") && path.contains("/sets/") {
+            return publishedKeys(
+                of: mapToWorkoutSetDocument(
+                    makeSetSummary(exerciseType: .squat, setIndex: 0, formScores: [90]),
+                    accountId: accountId,
+                    workoutId: fixedUUID(160_822),
+                    setId: "squat-set-0",
+                    operationId: fixedUUID(160_823)
+                )
+            )
+        }
+        if path.contains("/workouts/") {
+            return publishedKeys(
+                of: mapToWorkoutDocument(
+                    makeWorkoutSummary(id: fixedUUID(160_824), operationId: fixedUUID(160_825))
+                )
+            )
+        }
+        if path.contains("/trophyEvents/") {
+            return publishedKeys(of: mapToTrophyEventDocument(makeTrophyEvent(earnedAt: now)))
+        }
+        if path.contains("/insights/") {
+            return publishedKeys(of: mapToInsightDocument(makeInsight(dedupeKey: "published-keys")))
+        }
+        if path.contains("/insightDelivery/") {
+            return publishedKeys(
+                of: mapToInsightDeliveryDocument(
+                    InsightDeliveryRecord(
+                        accountId: accountId,
+                        dedupeKey: "published-delivery",
+                        firstPresentedAt: now,
+                        lastPresentedAt: now,
+                        presentationCount: 1,
+                        surfaceLastPresentedAt: [InsightSurface.dashboard.rawValue: now]
+                    )
+                )
+            )
+        }
+        if path.contains("/insightEngagement/") {
+            var record = InsightEngagementRecord(accountId: accountId, dedupeKey: "published-engagement")
+            record.record(.opened, at: now)
+            return publishedKeys(of: mapToInsightEngagementDocument(record))
+        }
+        if path.contains("/plans/") {
+            return publishedKeys(
+                of: mapToPlanDocument(
+                    makePlan(id: fixedUUID(160_826), title: "Published Keys Plan"),
+                    accountId: accountId,
+                    active: true,
+                    savedAt: now,
+                    operationId: fixedUUID(160_827)
+                )
+            )
+        }
+
+        XCTFail("No DTO key allowlist registered for Firestore path \(path)")
+        return []
+    }
+
+    private func childPublishedKeys(forPayloadKey key: String) -> Set<String>? {
+        switch key {
+        case "syncMetadata":
+            return publishedKeys(
+                of: FirestoreSyncMetadataFields(
+                    localUpdatedAt: now,
+                    lastSyncedAt: now,
+                    serverVersion: "version",
+                    syncState: SyncState.synced.rawValue,
+                    pendingOperationId: fixedUUID(160_841).uuidString.lowercased()
+                )
+            )
+        case "topCueSummary", "cueEvents":
+            return publishedKeys(
+                of: FirestoreCueEventDTO(
+                    id: fixedUUID(160_842).uuidString.lowercased(),
+                    timestamp: now,
+                    exerciseType: ExerciseType.squat.rawValue,
+                    cueMessage: "Keep the rep smooth.",
+                    severity: CoachCue.Severity.warning.rawValue,
+                    setIndex: 0,
+                    repIndex: 1,
+                    secondsIntoSet: 4,
+                    formScoreAtEvent: 86,
+                    metricKey: "kneeAngle",
+                    metricValue: 88
+                )
+            )
+        case "target":
+            return publishedKeys(of: FirestoreWorkoutTargetDTO(kind: "reps", value: 10))
+        case "qualitySummary":
+            return publishedKeys(
+                of: FirestoreSetQualitySummaryDTO(
+                    totalScoredReps: 1,
+                    goodFormReps: 1,
+                    excellentFormReps: 0,
+                    minFormScore: 86,
+                    maxFormScore: 86,
+                    averageFormScore: 86,
+                    firstHalfAverageFormScore: 86,
+                    secondHalfAverageFormScore: 86,
+                    breakdownRepIndex: nil,
+                    improvementRepIndex: nil,
+                    highSeverityCueCount: 0,
+                    mostRepeatedCue: nil,
+                    qualityTrend: SetQualityTrend.stable.rawValue
+                )
+            )
+        case "repQualityEvents":
+            return publishedKeys(
+                of: FirestoreRepQualityEventDTO(
+                    id: fixedUUID(160_843).uuidString.lowercased(),
+                    exerciseType: ExerciseType.squat.rawValue,
+                    setIndex: 0,
+                    repIndex: 1,
+                    timestamp: now,
+                    secondsIntoSet: 4,
+                    formScore: 86,
+                    formGrade: FormScore.Grade.B.rawValue,
+                    phase: RepPhase.up.rawValue,
+                    cueMessageNearRep: "Keep the rep smooth.",
+                    cueSeverityNearRep: CoachCue.Severity.warning.rawValue,
+                    effortAtRep: 0.5
+                )
+            )
+        case "structuredEffortSummary":
+            return publishedKeys(
+                of: FirestoreStructuredEffortSummaryDTO(
+                    averageEffort: 0.4,
+                    peakEffort: 0.5,
+                    trend: EffortTrend.steady.rawValue,
+                    source: EffortSource.faceBlendshapeProxy.rawValue
+                )
+            )
+        case "evidence":
+            return publishedKeys(
+                of: FirestoreInsightEvidenceDTO(
+                    id: "evidence",
+                    metric: "weeklyConsistency",
+                    value: "2 sessions",
+                    comparison: "up from 1",
+                    workoutId: fixedUUID(160_844).uuidString.lowercased(),
+                    exerciseType: ExerciseType.squat.rawValue,
+                    setIndex: 0,
+                    repIndex: 1,
+                    signalId: "signal",
+                    confidence: 0.9
+                )
+            )
+        case "blocks":
+            return publishedKeys(
+                of: FirestoreWorkoutBlockDTO(
+                    title: "Main",
+                    type: WorkoutBlockType.main.rawValue,
+                    exercises: []
+                )
+            )
+        case "exercises":
+            return publishedKeys(
+                of: FirestorePlannedExerciseDTO(
+                    exerciseType: ExerciseType.squat.rawValue,
+                    sets: [],
+                    restSeconds: 45,
+                    coachingFocus: "Depth and control.",
+                    cameraPosition: CameraPosition.front.rawValue,
+                    allowSwap: true
+                )
+            )
+        case "sets":
+            return publishedKeys(
+                of: FirestorePlannedSetDTO(
+                    setIndex: 1,
+                    target: FirestoreWorkoutTargetDTO(kind: "reps", value: 10)
+                )
+            )
+        case "progress":
+            return publishedKeys(
+                of: FirestoreTrophyProgressDTO(
+                    trophyId: TrophyDefinitionCatalog.ID.spark,
+                    currentValue: 1,
+                    targetValue: 1,
+                    earned: true,
+                    earnedAt: now,
+                    lastUpdatedAt: now,
+                    confidence: TrophyProgressConfidence.exact.rawValue,
+                    progressLabel: "Earned",
+                    accountId: accountId,
+                    syncMetadata: nil
+                )
+            )
+        default:
+            return nil
+        }
+    }
+
+    private var dynamicMapPayloadKeys: Set<String> {
+        [
+            "surfaceLastPresentedAt",
+            "engagementCounts",
+            "lastEngagementDates"
+        ]
+    }
+
+    private func publishedKeys(of dto: Any) -> Set<String> {
+        Set(
+            Mirror(reflecting: dto).children.compactMap { child in
+                child.label.map(publishedPayloadKeyName)
+            }
+        )
+    }
+
+    private func publishedPayloadKeyName(_ label: String) -> String {
+        switch label {
+        case "topCue":
+            return "topCueSummary"
+        default:
+            return label
+        }
+    }
+
+    private func allPayloadKeys(in value: Any) -> [String] {
+        if let dictionary = value as? [String: Any] {
+            return dictionary.flatMap { key, nestedValue in
+                [key] + allPayloadKeys(in: nestedValue)
+            }
+        }
+        if let array = value as? [Any] {
+            return array.flatMap(allPayloadKeys)
+        }
+        return []
+    }
+
+    private func normalizedPayloadKey(_ key: String) -> String {
+        key.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
 }
 
 @MainActor
@@ -597,6 +1224,27 @@ private final class InMemoryFirestoreDocumentDatabase: FirestoreDocumentDatabase
     private var listeners: [String: [UUID: (Result<FirestoreStoredDocument?, Error>) -> Void]] = [:]
     private var queryListeners: [UUID: QueryListener] = [:]
     private var versionCounter = 0
+    private(set) var appliedWrites: [AppliedWrite] = []
+
+    struct AppliedWrite {
+        enum Kind: CustomStringConvertible {
+            case set(merge: Bool)
+            case update
+
+            var description: String {
+                switch self {
+                case .set(let merge):
+                    return merge ? "setData(merge: true)" : "setData(merge: false)"
+                case .update:
+                    return "updateData"
+                }
+            }
+        }
+
+        let path: String
+        let payload: [String: Any]
+        let kind: Kind
+    }
 
     private struct QueryListener {
         let collectionPath: String
@@ -769,6 +1417,7 @@ private final class InMemoryFirestoreDocumentDatabase: FirestoreDocumentDatabase
         let updateTime = Date(timeIntervalSince1970: 1_779_300_000 + TimeInterval(versionCounter))
         switch write.kind {
         case .set(let payload, let merge):
+            self.appliedWrites.append(AppliedWrite(path: write.path, payload: payload, kind: .set(merge: merge)))
             let existing = merge ? documents[write.path]?.data ?? [:] : [:]
             documents[write.path] = FirestoreStoredDocument(
                 path: write.path,
@@ -779,6 +1428,7 @@ private final class InMemoryFirestoreDocumentDatabase: FirestoreDocumentDatabase
                 updateTime: updateTime
             )
         case .update(let payload):
+            self.appliedWrites.append(AppliedWrite(path: write.path, payload: payload, kind: .update))
             let existing = documents[write.path]?.data ?? [:]
             documents[write.path] = FirestoreStoredDocument(
                 path: write.path,
@@ -819,10 +1469,7 @@ private final class InMemoryFirestoreDocumentDatabase: FirestoreDocumentDatabase
             }
             return filters.allSatisfy { filter in
                 guard let value = document.data[filter.field] else { return false }
-                if value is NSNull, filter.value is NSNull {
-                    return true
-                }
-                return String(describing: value) == String(describing: filter.value)
+                return filterValue(value, matches: filter.value)
             }
         }
 
@@ -876,10 +1523,7 @@ private final class InMemoryFirestoreDocumentDatabase: FirestoreDocumentDatabase
             }
             return filters.allSatisfy { filter in
                 guard let value = document.data[filter.field] else { return false }
-                if value is NSNull, filter.value is NSNull {
-                    return true
-                }
-                return String(describing: value) == String(describing: filter.value)
+                return filterValue(value, matches: filter.value)
             }
         }
 
@@ -901,6 +1545,19 @@ private final class InMemoryFirestoreDocumentDatabase: FirestoreDocumentDatabase
         payload.reduce(into: [String: Any]()) { result, pair in
             result[pair.key] = normalizeWriteValue(pair.value, updateTime: updateTime)
         }
+    }
+
+    private func filterValue(_ value: Any, matches expectedValue: Any) -> Bool {
+        if value is NSNull, expectedValue is NSNull {
+            return true
+        }
+        if let number = value as? NSNumber, let expectedBool = expectedValue as? Bool {
+            return number.boolValue == expectedBool
+        }
+        if let bool = value as? Bool, let expectedNumber = expectedValue as? NSNumber {
+            return bool == expectedNumber.boolValue
+        }
+        return String(describing: value) == String(describing: expectedValue)
     }
 
     private func normalizeWriteValue(_ value: Any, updateTime: Date) -> Any {

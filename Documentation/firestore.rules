@@ -1,0 +1,107 @@
+rules_version = '2';
+
+// TODO(Phase 16J): add schema-level field validation for required fields and types.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function owns(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+    function isString(v) { return v is string; }
+    function nonEmpty(v) { return isString(v) && v.size() > 0; }
+    function hasAccountId(uid) {
+      return request.resource.data.accountId == uid;
+    }
+
+    // Forbid raw-sensor field names anywhere in the user tree.
+    function noRawData() {
+      return !(
+        "rawVideo" in request.resource.data ||
+        "videoFrame" in request.resource.data ||
+        "cameraFrame" in request.resource.data ||
+        "faceImage" in request.resource.data ||
+        "rawPoseStream" in request.resource.data ||
+        "rawPoseTimeline" in request.resource.data ||
+        "rawLandmarks" in request.resource.data ||
+        "rawFaceBlendshapeStream" in request.resource.data ||
+        "biometricFaceData" in request.resource.data ||
+        "imageData" in request.resource.data ||
+        "pixelBuffer" in request.resource.data ||
+        "apiKey" in request.resource.data ||
+        "privateKey" in request.resource.data ||
+        "serviceAccount" in request.resource.data
+      );
+    }
+
+    match /users/{uid} {
+      allow read, write: if owns(uid);
+
+      match /profile/{doc} {
+        allow read: if owns(uid);
+        allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();
+        allow delete: if false;  // delete-by-tombstone only
+      }
+
+      match /workouts/{workoutId} {
+        allow read: if owns(uid);
+        allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();
+        allow delete: if false;
+
+        match /sets/{setId} {
+          allow read: if owns(uid);
+          allow create, update: if owns(uid) && noRawData();
+          allow delete: if false;
+        }
+      }
+
+      match /trophyEvents/{eventId} {
+        allow read: if owns(uid);
+        allow create: if owns(uid) && hasAccountId(uid) && noRawData();
+        allow update: if false;  // append-only
+        allow delete: if false;
+      }
+      match /trophyProgress/{doc} {
+        allow read: if owns(uid);
+        allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();
+        allow delete: if false;
+      }
+
+      match /insights/{dedupeKey} {
+        allow read: if owns(uid);
+        allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();
+        allow delete: if false;
+      }
+      match /insightDelivery/{dedupeKey} {
+        allow read: if owns(uid);
+        allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();
+        allow delete: if false;
+      }
+      match /insightEngagement/{dedupeKey} {
+        allow read: if owns(uid);
+        allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();
+        allow delete: if false;
+      }
+
+      match /calibration/{doc} {
+        allow read: if owns(uid);
+        allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();
+        allow delete: if false;
+      }
+
+      match /plans/{planId} {
+        allow read: if owns(uid);
+        allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();
+        allow delete: if owns(uid);  // plans may be cleared by user
+      }
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

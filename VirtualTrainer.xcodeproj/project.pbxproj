@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D602ED292FB1D9B0001756A5 /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = D602ED282FB1D9B0001756A5 /* FirebaseAppCheck */; };
 		D602ED1B2FB1B302001756A5 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = D602ED1A2FB1B302001756A5 /* FirebaseAuth */; };
 		D602ED1F2FB1B302001756A5 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = D602ED1E2FB1B302001756A5 /* FirebaseCore */; };
 		D602ED252FB1B302001756A5 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = D602ED242FB1B302001756A5 /* FirebaseFirestore */; };
@@ -61,6 +62,7 @@
 			files = (
 				E225019135E3CA83388DC560 /* Pods_VirtualTrainer.framework in Frameworks */,
 				D602ED1F2FB1B302001756A5 /* FirebaseCore in Frameworks */,
+				D602ED292FB1D9B0001756A5 /* FirebaseAppCheck in Frameworks */,
 				D602ED1B2FB1B302001756A5 /* FirebaseAuth in Frameworks */,
 				D602ED252FB1B302001756A5 /* FirebaseFirestore in Frameworks */,
 			);
@@ -637,6 +639,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		D602ED282FB1D9B0001756A5 /* FirebaseAppCheck */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D602ED0B2FB1B302001756A5 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAppCheck;
+		};
 		D602ED1A2FB1B302001756A5 /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D602ED0B2FB1B302001756A5 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
