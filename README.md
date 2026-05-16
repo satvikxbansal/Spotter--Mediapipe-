@@ -37,19 +37,20 @@ Spotter can currently:
 - Track insight impressions and lightweight engagement separately, so cooldowns start when an insight is actually shown.
 - Let users open evidence sheets from insight cards and workout detail cards.
 - Show a 12-week profile heatmap with day drill-ins, workout detail links, and a local share poster.
-- Let local-mode users export their data as a human-readable JSON folder and delete their local account data from Profile before cloud accounts exist.
+- Let users export their data as a human-readable JSON folder and delete account data from Profile in both local mode and Firebase mode.
 - Delete saved workouts safely by hiding them from normal history while keeping a tombstone for future sync.
 - Keep local records ready for future accounts through account ownership, sync metadata, server-time placeholders, and idempotent write operation IDs.
 - Preserve trophy unlocks as a canonical event log instead of only a recalculated progress snapshot.
 - Keep insight delivery, cooldown, and helpful/not-helpful records ready for cross-device merge.
 - Route backend-shaped reads and writes through repository contracts for auth, profile, plans, workouts, trophies, insights, theme, and calibration while preserving the existing local JSON stores.
 - Provide Firebase-mode sync for auth, profile, profile-backed theme, calibration, active plan cache, trophy unlock events/progress, insight documents, insight delivery, and insight engagement without changing the live camera product flow.
+- Provide Firebase-mode account export and account deletion initiation for Apple account-deletion compliance, with local wipe continuing even if cloud cleanup needs the server-side deletion function.
 - Document the planned Firestore shape and sync conflict rules before adding Firebase.
 - Document the secrets policy, add environment-scoped xcconfig placeholders, and add a secret-scan config before accepting Firebase client files.
 - Keep a no-network LLM rewrite seam behind a default-off feature flag for future coach-copy experiments.
 - Keep raw camera frames, raw video, raw face images, and raw pose streams out of persistent storage.
 
-The product is still not finished. The local data foundation, repository layer, and first Firebase sync surfaces are now in place, but the next big work is workout-history sync, backend-mode compliance flows, the final design-system revamp, beta hardening, and a careful Running Analysis research phase.
+The product is still not finished. The local data foundation, repository layer, first Firebase sync surfaces, and backend-mode compliance scaffolding are now in place, but the next big work is Cloud Functions deployment, the final design-system revamp, beta hardening, and a careful Running Analysis research phase.
 
 ## Why Spotter Exists
 
@@ -622,7 +623,7 @@ What has been prepared:
 - Local account identity: local mode now has a stable anonymous account ID that can be reused across launches. Signing out clears the current local account context, but it does not erase local data unless the user uses the deletion flow.
 - Sync orchestrator scaffold: `SyncOrchestrator` has the statuses and entry points needed for broader sync, but in local mode its full sync, remote observation, and dirty-write enqueue steps intentionally succeed as no-ops.
 - Theme source-of-truth decision: local `Theme.json` remains a fast boot/cache path. In Firebase mode, the remote source of truth is `UserProfile.selectedTheme`, not a second competing remote theme document.
-- Local compliance controls: Profile now has Export My Data and Delete My Account and Data in local mode. Export creates a readable temporary JSON folder with profile, workouts, trophies, trophy events, insights, insight delivery, insight engagement, calibration, theme, schema versions, and a plain-English README. Delete clears the local profile, workouts, trophies, insights, calibration, theme, write journal, generated export cache, and share-image cache, then returns the app to onboarding.
+- Compliance controls: Profile now has Export My Data and Delete My Account and Data in both local mode and Firebase mode. Local export creates a readable temporary JSON folder with profile, workouts, trophies, trophy events, insights, insight delivery, insight engagement, calibration, theme, plans, schema versions, and a plain-English README. Firebase export adds matching `*.remote.json` files for the latest server-side copies where available. Delete clears the local profile, workouts, trophies, insights, calibration, theme, plan cache, write journal, generated export cache, and share-image cache, then returns the app to onboarding. In Firebase mode it also stops sync listeners, attempts Firebase Auth deletion, and performs the small client-allowed plan cleanup while leaving full recursive cleanup to Cloud Functions.
 - PII registry: the app now has a simple local registry that names profile fields and health-adjacent sensitivity fields in user-readable language, including limitations, age, height, weight, timezone, reminder preference, account ID, and derived effort summaries.
 - Conflict policy: `Documentation/SyncConflictResolution.md` defines how each major record should merge when local and remote copies disagree, and when the app should mark a record as conflicted instead of guessing.
 - Firestore shape: `Documentation/FirestoreShape.md` measures a synthetic worst-case workout and chooses a compact workout document plus per-set documents. This keeps history queries light while preserving detailed rep and cue evidence safely under Firestore document limits.
@@ -639,8 +640,7 @@ Workout history, derived analytics, and the live analysis stack still stay local
 
 Still remaining before a backend beta:
 
-- Workout history, set-detail, and deletion sync.
-- Backend-mode account deletion and backend-mode data export wiring.
+- Deploy and verify the account-deletion Cloud Function from the separate `spotter-functions` repo.
 - Firestore security rules, App Check, and Firebase console indexes for the new collections.
 - Repository-level pagination and listener backpressure for large remote histories.
 - Backend-mode QA for account switching, tombstones, conflicts, retries, and missing config.
@@ -762,7 +762,7 @@ AccountContext and AccountOwnership
   -> how local data is scoped to local-only mode or a future signed-in account
 
 PIIRegistry, DataExportService, and AccountDeletionService
-  -> how local-mode users can understand, export, and delete local account data before Firebase exists
+  -> how users can understand, export, and initiate deletion for local and Firebase account data
 
 SyncMetadata, WriteOperation, and LocalWriteJournal
   -> how local records become retry-safe and sync-ready without adding a backend SDK yet
@@ -936,6 +936,10 @@ Documentation/FirestoreShape.md
 Documentation/SECRETS.md
   Secrets policy, Firebase client config mapping, local developer setup, and secret-scan workflow.
 
+Documentation/FirebaseFunctionsPlan.md
+  Plan for the separate `spotter-functions` repo to recursively delete user data, vacuum tombstones,
+  optionally dedupe operations, and proxy future LLM rewrites without shipping server secrets in iOS.
+
 Configurations/
   Debug, Beta, and Release xcconfig placeholders for environment-scoped client config.
 ```
@@ -1084,6 +1088,7 @@ Done or mostly done:
 - Profile heatmap hardening: 12-week intensity view, day drill-ins, collapsed month snapshot, and local share poster
 - Pre-backend readiness: account ownership, sync metadata, soft-delete tombstones, workout delete, insight invalidation, idempotent write journal, actor-isolated local persistence, server-time fields, canonical trophy unlock event log, sync-ready insight records, local data export, local account/data deletion, PII registry, conflict rules, measured Firestore shape, secrets policy, environment xcconfigs, and secret-scan config
 - Phase 15: backend abstraction protocols, local repositories, local anonymous account identity, app dependency container, and a local-mode no-op sync orchestrator
+- Phase 16I: backend-mode data export, Apple account-deletion initiation, local plan-cache compliance cleanup, and Cloud Functions deletion plan documentation
 
 Next work:
 

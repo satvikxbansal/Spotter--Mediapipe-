@@ -3,7 +3,7 @@
 Structured incident log for build failures, crashes, and bug fixes. **Format and categories:** `.cursor/rules/debugging.mdc` (section A).
 
 - Append only — do not delete or rewrite past entries.
-- Next entry ID: **DL-054** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
+- Next entry ID: **DL-061** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
 
 ---
 
@@ -1836,3 +1836,101 @@ Protected live camera pipeline files were not modified.
 Repository privacy tests must prove both payload shape and path coverage. Do not accept aggregate write counts as coverage for multi-repository fixtures; assert the expected path/kind/category for every intended write. In-memory Firestore doubles must compare filtered values by Firestore semantics, not only string descriptions, especially for `Bool`, `NSNull`, server timestamp stand-ins, and future typed query values. After a context compaction, lost stream, or command failure, re-run the exact focused assertion that would fail if the missed path were absent before trusting a full-suite green result.
 
 **Pattern Tags:** #audit #test-coverage #firestore #repository-tests #privacy #plans #local-first #compaction #verification
+
+---
+
+### [DL-059] Add Firebase-Mode Account Deletion And Remote Export
+**Date:** 2026-05-16
+**Severity:** warning
+**Category:** privacy-compliance
+**File(s):** `VirtualTrainer/Services/AccountDeletionService.swift`, `VirtualTrainer/Services/DataExportService.swift`, `VirtualTrainer/UI/ProfileView.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreDocumentDatabase.swift`, `VirtualTrainerTests/ComplianceServicesTests.swift`, `VirtualTrainerTests/FirestoreRepositoryTests.swift`, `Documentation/FirebaseFunctionsPlan.md`, `Documentation/FirebaseConsoleChecklist.md`, `README.md`, `DEBUG_LOG.md`
+
+**Error:**
+Phase 16I needed the in-app Apple account deletion path to work in Firebase mode, including automatically created anonymous accounts. Before this phase, the visible Profile account controls were effectively local-file compliance tools: they wiped the device and exported local JSON, but they did not coordinate Firebase auth deletion, sync listener shutdown, bounded client-side Firestore cleanup, or remote export labeling.
+
+**Root Cause:**
+The backend mode layer had already been introduced for repositories and sync, but the compliance services still treated account deletion and export as device-only operations. Firestore rules intentionally allow the iOS client to hard-delete only limited user-owned plan documents; durable profile, workout, trophy, insight, theme, and calibration cleanup needs an Auth-triggered Cloud Function using Admin SDK privileges. The local plan cache also lived outside the original export/delete file list, so a device wipe could leave `WorkoutPlans.json` behind even though planned workouts are now a core persisted flow.
+
+**Fix Applied:**
+Made `AccountDeletionService.deleteAccountAndData` mode-aware. Local and current Supabase placeholder modes keep the local wipe path, while Firebase mode stops sync listeners, waits for all local store writes including plans, attempts `Auth.auth().currentUser.delete()` through `FirebaseAuthRepository.deleteAccount()`, performs a bounded client-allowed Firestore delete of `users/{uid}/plans`, wipes local files, clears `AccountContext`, and returns a non-blocking cloud-delay notice if any cloud step partially fails. Made deletion idempotent so a second run after account clear still wipes local state and clears context.
+
+Extended `DataExportService` so local exports include plans and Firebase exports add server-side snapshots as clearly labeled `*.remote.json` files for profile, workouts with sets, trophy events, insights with delivery and engagement, calibration, theme, and plans. Per-category remote failures now leave the archive successful with a README note instead of blocking the user. Updated Profile Account UI to always expose Export and Delete, require typing `DELETE` for destructive deletion, show local vs Firebase subtitles, and route back to onboarding after deletion. Added `Documentation/FirebaseFunctionsPlan.md` documenting the future `spotter-functions` repo plan for `onAuthUserDelete`, nightly tombstone vacuum, optional operation-id dedupe, and future LLM rewrite proxy, with an explicit rule that service account keys never ship in the iOS repo.
+
+**Verification:**
+Toolchain paths resolve under XcodeDefault:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Focused compliance and Firestore cleaner tests passed before the full run:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData -only-testing:VirtualTrainerTests/ComplianceServicesTests -only-testing:VirtualTrainerTests/FirestoreRepositoryTests/testAccountDeletionCleanerDeletesOnlyClientAllowedPlansWithinBound`
+
+Required build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required test suite passed:
+
+- Passed: 399
+- Failed: 0
+- Skipped: 0
+
+The required test command was:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Local-only no-plist build passed after temporarily moving the ignored Firebase client plist out of the repo and restoring it immediately afterward:
+
+`SPOTTER_BACKEND_MODE=local xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerNoFirebaseDerivedData16I`
+
+`gitleaks` was not installed locally, so a redacted fallback scan over changed and new files checked common Firebase, OpenAI, GitHub, Slack, password, and private-key credential formats and found no secret-like patterns. Protected live camera pipeline files were not modified.
+
+**Prevention Rule:**
+Future compliance changes must branch by `BackendMode` explicitly and preserve the local no-plist path before adding cloud behavior. Client-side Firestore deletion must stay bounded to rule-allowed data and must never pretend to replace the Auth-triggered server-side fan-out. Every persisted local store added to a training flow must be included in both account deletion and data export, with backwards-compatible empty exports for missing legacy files. Remote export failures should be reported in the archive README, not turned into a user-blocking export failure.
+
+**Pattern Tags:** #privacy-compliance #account-deletion #firebase #firestore #data-export #cloud-functions #local-first #backend-mode #apple-compliance #no-plist
+
+---
+
+### [DL-060] Audit Phase 16I After Compaction And Lost Stream
+**Date:** 2026-05-16
+**Severity:** warning
+**Category:** audit
+**File(s):** `VirtualTrainer/UI/ProfileView.swift`, `VirtualTrainer/Services/DataExportService.swift`, `Documentation/FirebaseFunctionsPlan.md`, `DEBUG_LOG.md`
+
+**Error:**
+The post-implementation audit found that Phase 16I's core service behavior was present and passing tests, but one user-facing requirement was not actually robust in the live UI: when Firebase deletion had a partial cloud failure, `AccountDeletionService` returned the required "Some cloud data may take up to 7 days to delete" notice, and `ProfileView` assigned it to `accountStatusMessage`, but the same success path immediately reset onboarding. That routes the user away from Profile, so the notice could disappear before being seen. The audit also found two documentation/privacy-consistency nits: the export `schemaVersions.json` privacy boundary did not mention raw face blendshape streams even though the README text did, and the Functions plan described service account handling a little more broadly than the prompt's explicit Firebase project secret requirement.
+
+**Root Cause:**
+The implementation resumed after a context compaction and lost stream with a green focused-test result and a summary of the intended work. That made it too easy to validate service-level return values and command-level success while under-checking the UI lifetime of those values. The existing tests asserted that the notice was produced by the service, not that the notice survived the Profile-to-onboarding route transition. The docs nit happened because the privacy boundary text exists in multiple places (`README.txt`, `schemaVersions.json`, Firestore docs, and Functions docs), and the first pass updated the user-readable README path but did not compare every repeated privacy phrase byte-for-byte. The service account wording was safe, but it was not as literal as the user's requested Functions plan language.
+
+**Fix Applied:**
+Added a post-deletion completion alert in `ProfileView` for partial cloud-deletion notices. The app now dismisses the destructive confirmation sheet, shows the cloud-delay message in an alert, and only routes back to onboarding after the user taps Continue. Successful no-warning deletion still routes immediately. Updated the export schema privacy boundary to include raw face blendshape streams, matching README wording. Tightened `Documentation/FirebaseFunctionsPlan.md` to state that any dedicated service account material belongs only in Firebase project secrets and never in the iOS repository.
+
+**Verification:**
+Required build passed after the audit patch:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required test suite passed after the audit patch:
+
+- Passed: 399
+- Failed: 0
+- Skipped: 0
+
+The required test command was:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Local-only no-plist build passed after temporarily moving the ignored Firebase client plist out of the repo and restoring it immediately afterward:
+
+`SPOTTER_BACKEND_MODE=local xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerNoFirebaseDerivedData16I`
+
+`git diff --check` passed. `gitleaks` was not installed locally, so a redacted fallback scan over changed and new files checked common Firebase, OpenAI, GitHub, Slack, service-account JSON, password, and private-key credential formats and found no secret-like patterns. Protected live camera pipeline files were not modified.
+
+**Prevention Rule:**
+After any context compaction, lost stream, or large generated patch, re-audit every user-facing requirement at the presentation boundary, not only at the service/API boundary. If a requirement says "surface" or "route", prove the value is still visible after state changes and navigation. Repeated privacy and secrets-policy phrases must be searched globally and updated consistently across export metadata, README text, docs, and tests. Green tests are not enough when no test observes the UI lifetime of a returned service result.
+
+**Pattern Tags:** #audit #compaction #lost-stream #account-deletion #firebase #ui-routing #privacy-boundary #documentation #verification

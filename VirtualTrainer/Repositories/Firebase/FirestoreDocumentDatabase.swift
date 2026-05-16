@@ -30,6 +30,7 @@ nonisolated protocol FirestoreRepositoryTransaction: AnyObject {
 nonisolated protocol FirestoreRepositoryBatch: AnyObject {
     func setData(_ data: [String: Any], path: String, merge: Bool) throws
     func updateData(_ data: [String: Any], path: String) throws
+    func deleteDocument(path: String) throws
 }
 
 @MainActor
@@ -346,6 +347,10 @@ private final class FirebaseFirestoreBatchAdapter: FirestoreRepositoryBatch {
 
     func updateData(_ data: [String: Any], path: String) throws {
         batch.updateData(data, forDocument: firestore.document(path))
+    }
+
+    func deleteDocument(path: String) throws {
+        batch.deleteDocument(firestore.document(path))
     }
 }
 

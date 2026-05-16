@@ -12,7 +12,7 @@ Phase 16H keeps Firebase available for internal testing only. Do not turn on bro
 - App Check: do not enable enforcement for Auth, Firestore, Storage, Functions, or any other service yet.
 - Storage: keep disabled.
 - Realtime Database: keep disabled.
-- Functions: do not deploy functions yet.
+- Functions: do not deploy functions yet. Phase 16I documents the future plan in `Documentation/FirebaseFunctionsPlan.md`; implementation lives later in the separate `spotter-functions` repo.
 
 ## Firestore Index Log
 

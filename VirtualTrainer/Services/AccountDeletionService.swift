@@ -50,6 +50,10 @@ nonisolated struct LocalModeDataContainer: Equatable {
         storageDirectory.appendingPathComponent("Theme.json")
     }
 
+    var plansURL: URL {
+        storageDirectory.appendingPathComponent("WorkoutPlans.json")
+    }
+
     var writeJournalURL: URL {
         storageDirectory.appendingPathComponent("LocalWriteJournal.json")
     }
@@ -72,64 +76,183 @@ nonisolated struct LocalModeDataContainer: Equatable {
             insightsURL,
             calibrationURL,
             themeURL,
+            plansURL,
             writeJournalURL,
             generatedExportCacheDirectory,
             shareImageCacheDirectory
         ]
     }
-}
 
-nonisolated enum AccountDeletionBackendMode: Equatable {
-    case local
-    case firebase
+    var localStoreFileURLs: [URL] {
+        [
+            profileURL,
+            workoutsURL,
+            trophiesURL,
+            insightsURL,
+            calibrationURL,
+            themeURL,
+            plansURL,
+            writeJournalURL
+        ]
+    }
 }
 
 nonisolated struct AccountDeletionResult: Equatable {
     let deletedURLs: [URL]
     let alreadyMissingURLs: [URL]
+    let clientDeletedRemoteDocumentCount: Int
+    let cloudFailureMessages: [String]
 
     var removedItemCount: Int {
         deletedURLs.count
     }
-}
 
-enum AccountDeletionServiceError: Error, LocalizedError {
-    case firebaseDeletionNotImplemented
-
-    var errorDescription: String? {
-        switch self {
-        case .firebaseDeletionNotImplemented:
-            return "Firebase account deletion is not wired yet. Local mode deletion is available now."
-        }
+    var cloudDeletionNotice: String? {
+        cloudFailureMessages.isEmpty
+            ? nil
+            : "Some cloud data may take up to 7 days to delete."
     }
 }
 
+nonisolated struct AccountDeletionRemoteCleanupResult: Equatable {
+    let deletedDocumentCount: Int
+    let boundedDocumentLimit: Int
+}
+
+@MainActor
+protocol AccountDeletionSyncManaging: AnyObject {
+    func stopListeners() async throws
+}
+
+@MainActor
+protocol AccountDeletionContextClearing: AnyObject {
+    func clearAccount()
+}
+
+@MainActor
+protocol AccountDeletionRemoteCleaning: AnyObject {
+    func deleteClientAllowedAccountData(accountId: String) async throws -> AccountDeletionRemoteCleanupResult
+}
+
+nonisolated protocol AccountDeletionLocalDataCoordinating {
+    var localAccountDeletionURLs: [URL] { get }
+    func waitForStoreWrites() async
+    func wipeLocalData() async throws -> AccountDeletionResult
+}
+
 nonisolated struct AccountDeletionService {
-    let container: LocalModeDataContainer
-    let persistenceActor: PersistenceActor
+    private let localDataCoordinator: any AccountDeletionLocalDataCoordinating
 
     init(
         container: LocalModeDataContainer = LocalModeDataContainer(),
         persistenceActor: PersistenceActor = .shared
     ) {
-        self.container = container
-        self.persistenceActor = persistenceActor
+        self.localDataCoordinator = FileAccountDeletionLocalDataCoordinator(
+            container: container,
+            persistenceActor: persistenceActor
+        )
     }
 
-    /// Future Firebase mode should call the auth provider deletion endpoint, remove
-    /// remote account-scoped documents through repositories, then run this local
-    /// cleanup as the final on-device step. Until that phase exists, only local
-    /// account/data deletion is supported.
-    func deleteAccountAndData(mode: AccountDeletionBackendMode = .local) async throws -> AccountDeletionResult {
+    init(localDataCoordinator: any AccountDeletionLocalDataCoordinating) {
+        self.localDataCoordinator = localDataCoordinator
+    }
+
+    @MainActor
+    func deleteAccountAndData(
+        mode: BackendMode = .local,
+        currentAccountId: String? = nil,
+        authRepository: (any AuthRepository)? = nil,
+        syncOrchestrator: (any AccountDeletionSyncManaging)? = nil,
+        remoteCleaner: (any AccountDeletionRemoteCleaning)? = nil,
+        accountContext: (any AccountDeletionContextClearing)? = nil
+    ) async throws -> AccountDeletionResult {
         switch mode {
-        case .local:
-            return try await deleteLocalAccountAndData()
+        case .local, .supabase:
+            let result = try await deleteLocalAccountAndData()
+            accountContext?.clearAccount()
+            return result
         case .firebase:
-            throw AccountDeletionServiceError.firebaseDeletionNotImplemented
+            return try await deleteFirebaseAccountAndData(
+                currentAccountId: currentAccountId ?? authRepository?.currentAccountId,
+                authRepository: authRepository,
+                syncOrchestrator: syncOrchestrator,
+                remoteCleaner: remoteCleaner,
+                accountContext: accountContext
+            )
         }
     }
 
     func deleteLocalAccountAndData() async throws -> AccountDeletionResult {
+        try await localDataCoordinator.wipeLocalData()
+    }
+
+    @MainActor
+    private func deleteFirebaseAccountAndData(
+        currentAccountId: String?,
+        authRepository: (any AuthRepository)?,
+        syncOrchestrator: (any AccountDeletionSyncManaging)?,
+        remoteCleaner: (any AccountDeletionRemoteCleaning)?,
+        accountContext: (any AccountDeletionContextClearing)?
+    ) async throws -> AccountDeletionResult {
+        var cloudFailures: [String] = []
+        let uid = AccountOwnership.normalizedAccountId(currentAccountId)
+
+        do {
+            try await syncOrchestrator?.stopListeners()
+        } catch {
+            cloudFailures.append("Sync listeners could not be stopped before deletion.")
+        }
+
+        await localDataCoordinator.waitForStoreWrites()
+
+        if uid != nil {
+            do {
+                try await authRepository?.deleteAccount()
+            } catch {
+                cloudFailures.append("Firebase Auth account deletion could not be completed immediately.")
+            }
+        }
+
+        var remoteDocumentDeleteCount = 0
+        if let uid, let remoteCleaner {
+            do {
+                let cleanup = try await remoteCleaner.deleteClientAllowedAccountData(accountId: uid)
+                remoteDocumentDeleteCount = cleanup.deletedDocumentCount
+            } catch {
+                cloudFailures.append("Client-allowed Firestore cleanup could not be completed immediately.")
+            }
+        }
+
+        let localResult = try await localDataCoordinator.wipeLocalData()
+        accountContext?.clearAccount()
+
+        return AccountDeletionResult(
+            deletedURLs: localResult.deletedURLs,
+            alreadyMissingURLs: localResult.alreadyMissingURLs,
+            clientDeletedRemoteDocumentCount: remoteDocumentDeleteCount,
+            cloudFailureMessages: cloudFailures
+        )
+    }
+}
+
+extension SyncOrchestrator: AccountDeletionSyncManaging {}
+extension AccountContext: AccountDeletionContextClearing {}
+
+nonisolated struct FileAccountDeletionLocalDataCoordinator: AccountDeletionLocalDataCoordinating {
+    let container: LocalModeDataContainer
+    let persistenceActor: PersistenceActor
+
+    var localAccountDeletionURLs: [URL] {
+        container.localAccountDeletionURLs
+    }
+
+    func waitForStoreWrites() async {
+        for url in uniqueURLs(container.localStoreFileURLs) {
+            await persistenceActor.waitForWrites(to: url)
+        }
+    }
+
+    func wipeLocalData() async throws -> AccountDeletionResult {
         var deletedURLs: [URL] = []
         var alreadyMissingURLs: [URL] = []
 
@@ -149,7 +272,9 @@ nonisolated struct AccountDeletionService {
 
         return AccountDeletionResult(
             deletedURLs: deletedURLs,
-            alreadyMissingURLs: alreadyMissingURLs
+            alreadyMissingURLs: alreadyMissingURLs,
+            clientDeletedRemoteDocumentCount: 0,
+            cloudFailureMessages: []
         )
     }
 
@@ -181,5 +306,49 @@ nonisolated struct AccountDeletionService {
             seenPaths.insert(path)
             return true
         }
+    }
+}
+
+@MainActor
+final class FirestoreAccountDeletionRemoteCleaner: AccountDeletionRemoteCleaning {
+    private let database: any FirestoreDocumentDatabase
+    private let planDeleteLimit: Int
+
+    init(
+        database: (any FirestoreDocumentDatabase)? = nil,
+        planDeleteLimit: Int = 50
+    ) {
+        self.database = database ?? FirebaseFirestoreDocumentDatabase()
+        self.planDeleteLimit = planDeleteLimit
+    }
+
+    func deleteClientAllowedAccountData(accountId: String) async throws -> AccountDeletionRemoteCleanupResult {
+        let uid = try FirestoreRepositorySupport.requiredAccountId(accountId)
+        let collectionPath = try FirestorePathBuilder.plansCollection(uid: uid)
+        let documents = try await database.queryDocuments(
+            collectionPath: collectionPath,
+            filters: [],
+            orderBy: "savedAt",
+            descending: true,
+            limit: planDeleteLimit
+        )
+
+        guard !documents.isEmpty else {
+            return AccountDeletionRemoteCleanupResult(
+                deletedDocumentCount: 0,
+                boundedDocumentLimit: planDeleteLimit
+            )
+        }
+
+        try await database.commitBatch { batch in
+            for document in documents {
+                try batch.deleteDocument(path: document.path)
+            }
+        }
+
+        return AccountDeletionRemoteCleanupResult(
+            deletedDocumentCount: documents.count,
+            boundedDocumentLimit: planDeleteLimit
+        )
     }
 }

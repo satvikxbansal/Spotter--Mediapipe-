@@ -242,6 +242,43 @@ final class FirestoreRepositoryTests: XCTestCase {
         XCTAssertFalse(loaded.contains { $0.dedupeKey == insight.dedupeKey })
     }
 
+    func testAccountDeletionCleanerDeletesOnlyClientAllowedPlansWithinBound() async throws {
+        let database = InMemoryFirestoreDocumentDatabase()
+        let cleaner = FirestoreAccountDeletionRemoteCleaner(database: database, planDeleteLimit: 1)
+        let firstPlan = makePlan(id: fixedUUID(160_551), title: "Deletion Plan A")
+        let secondPlan = makePlan(id: fixedUUID(160_552), title: "Deletion Plan B")
+        let firstPlanPath = try FirestorePathBuilder.plan(uid: accountId, planId: firstPlan.id)
+        let secondPlanPath = try FirestorePathBuilder.plan(uid: accountId, planId: secondPlan.id)
+        let profilePath = try FirestorePathBuilder.profileDocument(uid: accountId)
+
+        try database.seed(
+            path: firstPlanPath,
+            dto: mapToPlanDocument(firstPlan, accountId: accountId, active: true, savedAt: now.addingTimeInterval(10)),
+            updateTime: now.addingTimeInterval(10)
+        )
+        try database.seed(
+            path: secondPlanPath,
+            dto: mapToPlanDocument(secondPlan, accountId: accountId, active: false, savedAt: now),
+            updateTime: now
+        )
+        try database.seed(
+            path: profilePath,
+            dto: mapToProfileDocument(makeProfile(updatedAt: now)),
+            updateTime: now
+        )
+
+        let result = try await cleaner.deleteClientAllowedAccountData(accountId: accountId)
+
+        XCTAssertEqual(result.deletedDocumentCount, 1)
+        XCTAssertNil(database.document(at: firstPlanPath))
+        XCTAssertNotNil(database.document(at: secondPlanPath))
+        XCTAssertNotNil(database.document(at: profilePath))
+        XCTAssertTrue(database.appliedWrites.contains { write in
+            guard case .delete = write.kind else { return false }
+            return write.path == firstPlanPath
+        })
+    }
+
     func testFirestoreInsightInvalidationWritesTombstoneWhenDocumentIsMissing() async throws {
         let database = InMemoryFirestoreDocumentDatabase()
         let repository = FirestoreInsightRepository(database: database)
@@ -1230,6 +1267,7 @@ private final class InMemoryFirestoreDocumentDatabase: FirestoreDocumentDatabase
         enum Kind: CustomStringConvertible {
             case set(merge: Bool)
             case update
+            case delete
 
             var description: String {
                 switch self {
@@ -1237,6 +1275,8 @@ private final class InMemoryFirestoreDocumentDatabase: FirestoreDocumentDatabase
                     return merge ? "setData(merge: true)" : "setData(merge: false)"
                 case .update:
                     return "updateData"
+                case .delete:
+                    return "deleteDocument"
                 }
             }
         }
@@ -1438,6 +1478,9 @@ private final class InMemoryFirestoreDocumentDatabase: FirestoreDocumentDatabase
                 ),
                 updateTime: updateTime
             )
+        case .delete:
+            self.appliedWrites.append(AppliedWrite(path: write.path, payload: [:], kind: .delete))
+            documents.removeValue(forKey: write.path)
         }
         writeCounts[write.path, default: 0] += 1
         notifyListeners(for: write.path)
@@ -1592,6 +1635,7 @@ private final class InMemoryFirestoreRepositoryTransaction: FirestoreRepositoryT
     enum WriteKind {
         case set([String: Any], merge: Bool)
         case update([String: Any])
+        case delete
     }
 
     struct Write {
@@ -1617,6 +1661,10 @@ private final class InMemoryFirestoreRepositoryTransaction: FirestoreRepositoryT
     func updateData(_ data: [String: Any], path: String) throws {
         writes.append(Write(path: path, kind: .update(data)))
     }
+
+    func deleteDocument(path: String) throws {
+        writes.append(Write(path: path, kind: .delete))
+    }
 }
 
 private final class InMemoryFirestoreRepositoryBatch: FirestoreRepositoryBatch {
@@ -1636,6 +1684,15 @@ private final class InMemoryFirestoreRepositoryBatch: FirestoreRepositoryBatch {
             InMemoryFirestoreRepositoryTransaction.Write(
                 path: path,
                 kind: .update(data)
+            )
+        )
+    }
+
+    func deleteDocument(path: String) throws {
+        writes.append(
+            InMemoryFirestoreRepositoryTransaction.Write(
+                path: path,
+                kind: .delete
             )
         )
     }

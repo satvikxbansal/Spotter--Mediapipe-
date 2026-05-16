@@ -27,6 +27,7 @@ struct ProfileView: View {
     @State private var isPresentingAccountDeletion = false
     @State private var deletionConfirmationText = ""
     @State private var isDeletingAccountData = false
+    @State private var accountDeletionCompletionAlert: AccountDeletionCompletionAlert?
     @State private var isRunningFirebaseAuthAction = false
     @State private var firebaseAuthMessage: String?
     @State private var isRunningFirestoreSyncAction = false
@@ -62,6 +63,7 @@ struct ProfileView: View {
             .sheet(isPresented: $isPresentingAccountDeletion) {
                 AccountDeletionConfirmationSheet(
                     confirmationText: $deletionConfirmationText,
+                    subtitle: accountDeletionSubtitle,
                     isDeleting: isDeletingAccountData,
                     onCancel: {
                         isPresentingAccountDeletion = false
@@ -70,6 +72,17 @@ struct ProfileView: View {
                 )
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+            }
+            .alert(item: $accountDeletionCompletionAlert) { alert in
+                Alert(
+                    title: Text("Account Deletion"),
+                    message: Text(alert.message),
+                    dismissButton: .default(Text("Continue")) {
+                        Task {
+                            await finishAccountDeletionRouting(statusMessage: alert.message)
+                        }
+                    }
+                )
             }
             .confirmationDialog(
                 "Delete Workout?",
@@ -238,7 +251,8 @@ struct ProfileView: View {
                 )
 
                 AccountDataSection(
-                    isLocalOnly: accountContext.isLocalOnly,
+                    backendMode: backendStatusStore.activeBackendMode,
+                    hasAccount: accountContext.currentAccountId != nil,
                     isExporting: isExportingData,
                     isDeleting: isDeletingAccountData,
                     statusMessage: accountStatusMessage,
@@ -507,20 +521,39 @@ struct ProfileView: View {
     }
 
     private func exportMyData() {
-        guard accountContext.isLocalOnly else {
-            accountStatusMessage = "Cloud account export will be wired during the Firebase phase."
-            return
-        }
-
         guard !isExportingData else { return }
         isExportingData = true
         accountStatusMessage = nil
 
         Task {
             do {
-                let result = try await DataExportService().exportLocalData()
+                let service = DataExportService()
+                let result: DataExportResult
+                if backendStatusStore.activeBackendMode == .firebase {
+                    guard let uid = accountContext.currentAccountId else {
+                        accountStatusMessage = "Firebase export needs an active account. Try again after sign-in finishes."
+                        isExportingData = false
+                        return
+                    }
+                    result = try await service.exportLocalAndRemoteData(
+                        accountId: uid,
+                        repositories: RemoteDataExportRepositories(
+                            profile: appDependencies.profile,
+                            workouts: appDependencies.workouts,
+                            trophies: appDependencies.trophies,
+                            insights: appDependencies.insights,
+                            theme: appDependencies.theme,
+                            calibration: appDependencies.calibration,
+                            plans: appDependencies.plans
+                        )
+                    )
+                } else {
+                    result = try await service.exportLocalData()
+                }
                 exportSharePayload = AccountExportPayload(url: result.archiveURL)
-                accountStatusMessage = "Export ready: \(result.fileNames.count) files."
+                accountStatusMessage = result.remoteWarnings.isEmpty
+                    ? "Export ready: \(result.fileNames.count) files."
+                    : "Export ready with remote notes in README.txt."
                 HapticsEngine.shared.successRipple()
             } catch {
                 accountStatusMessage = error.localizedDescription
@@ -530,11 +563,6 @@ struct ProfileView: View {
     }
 
     private func beginAccountDeletion() {
-        guard accountContext.isLocalOnly else {
-            accountStatusMessage = "Cloud account deletion will be wired during the Firebase phase."
-            return
-        }
-
         deletionConfirmationText = ""
         isPresentingAccountDeletion = true
     }
@@ -546,29 +574,48 @@ struct ProfileView: View {
 
         Task {
             do {
-                _ = try await AccountDeletionService().deleteAccountAndData(mode: .local)
-                accountContext.clearAccount()
-                await onboardingStore.resetOnboarding()
-                await calibrationStore.resetForDebug()
-                historyStore.reload()
-                trophyStore.reload()
-                themeStore.reload()
-                insightStore.reload()
-                selectedSummary = nil
-                selectedInsightEvidence = nil
-                pendingDeleteSummary = nil
-                profileInsights = []
-                weeklyRecap = nil
-                exportSharePayload = nil
+                let result = try await AccountDeletionService().deleteAccountAndData(
+                    mode: backendStatusStore.activeBackendMode,
+                    currentAccountId: accountContext.currentAccountId,
+                    authRepository: appDependencies.auth,
+                    syncOrchestrator: syncOrchestrator,
+                    remoteCleaner: backendStatusStore.activeBackendMode == .firebase
+                        ? FirestoreAccountDeletionRemoteCleaner()
+                        : nil,
+                    accountContext: accountContext
+                )
                 isPresentingAccountDeletion = false
                 deletionConfirmationText = ""
                 isDeletingAccountData = false
-                HapticsEngine.shared.successRipple()
+                let completionMessage = result.cloudDeletionNotice ?? "Account and data deleted."
+                if result.cloudDeletionNotice != nil {
+                    accountDeletionCompletionAlert = AccountDeletionCompletionAlert(message: completionMessage)
+                } else {
+                    await finishAccountDeletionRouting(statusMessage: completionMessage)
+                }
             } catch {
                 accountStatusMessage = error.localizedDescription
                 isDeletingAccountData = false
             }
         }
+    }
+
+    @MainActor
+    private func finishAccountDeletionRouting(statusMessage: String) async {
+        await onboardingStore.resetOnboarding()
+        await calibrationStore.resetForDebug()
+        historyStore.reload()
+        trophyStore.reload()
+        themeStore.reload()
+        insightStore.reload()
+        selectedSummary = nil
+        selectedInsightEvidence = nil
+        pendingDeleteSummary = nil
+        profileInsights = []
+        weeklyRecap = nil
+        exportSharePayload = nil
+        accountStatusMessage = statusMessage
+        HapticsEngine.shared.successRipple()
     }
 
     private func signInAnonymouslyWithFirebase() {
@@ -828,11 +875,25 @@ struct ProfileView: View {
                 options: .regularExpression
             )
     }
+
+    private var accountDeletionSubtitle: String {
+        switch backendStatusStore.activeBackendMode {
+        case .firebase:
+            return "This deletes this device and your synced cloud data. Some cloud data may take up to 7 days to fully delete."
+        case .local, .supabase:
+            return "This clears all data on this device."
+        }
+    }
 }
 
 private struct AccountExportPayload: Identifiable {
     let id = UUID()
     let url: URL
+}
+
+private struct AccountDeletionCompletionAlert: Identifiable {
+    let id = UUID()
+    let message: String
 }
 
 private struct ProfileHeaderView: View {
@@ -1707,7 +1768,8 @@ private struct ProfileWorkoutHistoryRow: View {
 }
 
 private struct AccountDataSection: View {
-    let isLocalOnly: Bool
+    let backendMode: BackendMode
+    let hasAccount: Bool
     let isExporting: Bool
     let isDeleting: Bool
     let statusMessage: String?
@@ -1719,14 +1781,19 @@ private struct AccountDataSection: View {
             ProfileSectionHeader(title: "Account")
 
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                ProfileInfoRow(label: "Mode", value: isLocalOnly ? "Local only" : "Signed in")
+                ProfileInfoRow(label: "Mode", value: modeLabel)
+
+                Text(subtitle)
+                    .caption()
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: Theme.Spacing.sm) {
                     AccountActionButton(
                         title: isExporting ? "Exporting" : "Export My Data",
                         systemImage: "square.and.arrow.up",
                         tint: Theme.Colors.accent,
-                        isDisabled: !isLocalOnly || isExporting || isDeleting,
+                        isDisabled: isExporting || isDeleting,
                         action: onExport
                     )
 
@@ -1734,7 +1801,7 @@ private struct AccountDataSection: View {
                         title: isDeleting ? "Deleting" : "Delete My Account and Data",
                         systemImage: "trash.fill",
                         tint: Theme.Colors.danger,
-                        isDisabled: !isLocalOnly || isExporting || isDeleting,
+                        isDisabled: isExporting || isDeleting,
                         action: onDelete
                     )
                 }
@@ -1760,9 +1827,28 @@ private struct AccountDataSection: View {
     private func statusColor(for message: String) -> Color {
         message.localizedCaseInsensitiveContains("could not") ||
             message.localizedCaseInsensitiveContains("not wired") ||
+            message.localizedCaseInsensitiveContains("notes") ||
             message.localizedCaseInsensitiveContains("failed")
             ? Theme.Colors.danger
             : Theme.Colors.positive
+    }
+
+    private var modeLabel: String {
+        switch backendMode {
+        case .firebase:
+            return hasAccount ? "Firebase" : "Firebase pending sign-in"
+        case .local, .supabase:
+            return "Local mode"
+        }
+    }
+
+    private var subtitle: String {
+        switch backendMode {
+        case .firebase:
+            return "Firebase mode: deletes this device AND your synced cloud data. Some cloud data may take up to 7 days to fully delete."
+        case .local, .supabase:
+            return "Local mode: clears all data on this device."
+        }
     }
 }
 
@@ -1801,6 +1887,7 @@ private struct AccountActionButton: View {
 
 private struct AccountDeletionConfirmationSheet: View {
     @Binding var confirmationText: String
+    let subtitle: String
     let isDeleting: Bool
     let onCancel: () -> Void
     let onDelete: () -> Void
@@ -1817,7 +1904,7 @@ private struct AccountDeletionConfirmationSheet: View {
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("This clears the local profile, workouts, trophies, insights, calibration, theme, write journal, and generated caches on this device.")
+                Text(subtitle)
                     .caption()
                     .fixedSize(horizontal: false, vertical: true)
             }
