@@ -497,7 +497,7 @@ final class OnboardingStore: ObservableObject {
                     _ = await self?.applyRemoteProfileCache(remoteProfile)
                 }
             } catch {
-                await self?.setRemoteProfileError(error)
+                self?.setRemoteProfileError(error)
             }
         }
     }

@@ -49,7 +49,7 @@ Spotter must build and run in local-only mode without a Firebase plist. For Fire
 GoogleService-Info-Dev.plist
 ```
 
-Debug builds read `GOOGLE_SERVICE_INFO_PLIST` from `Configurations/Debug.xcconfig` and copy the first available candidate into the app bundle as `GoogleService-Info.plist`. The committed `GoogleService-Info.example.plist` shows the expected shape with placeholder values only.
+Debug builds read `GOOGLE_SERVICE_INFO_PLIST` from `Configurations/Debug.xcconfig` and copy the configured plist into the app bundle as `GoogleService-Info.plist`. A legacy ignored `GoogleService-Info.plist` fallback is accepted for Debug only. Beta and Release builds only use their configured environment plist names, so a generic local debug plist cannot silently become a non-debug Firebase config. The committed `GoogleService-Info.example.plist` shows the expected shape with placeholder values only.
 
 Do not commit real `GoogleService-Info*.plist` files, service account JSON, private keys, `.p8`, `.pem`, or third-party provider secrets.
 
@@ -61,7 +61,7 @@ Debug currently defaults to:
 SPOTTER_BACKEND_MODE = local
 ```
 
-Phase 16A will wire the Debug backend-mode switch so Firebase bootstrap only happens when the desired mode is `firebase`. Until then, local mode remains the default and the app's planning, trophies, stats, trends, recaps, heatmaps, and insights continue to run from local data.
+Firebase bootstrap only runs when the desired backend mode is `firebase` and a valid client plist is bundled. Local mode remains the default, and the app's planning, trophies, stats, trends, recaps, heatmaps, and insights continue to run from local data with no Firebase plist.
 
 ## DerivedData Hygiene
 

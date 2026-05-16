@@ -242,7 +242,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -e\nPLIST_NAME=\"${GOOGLE_SERVICE_INFO_PLIST:-GoogleService-Info.plist}\"\nCANDIDATES=(\n    \"${SRCROOT}/${PLIST_NAME}\"\n    \"${SRCROOT}/${PLIST_NAME%.plist}-Dev.plist\"\n    \"${SRCROOT}/GoogleService-Info.plist\"\n)\nFOUND_PATH=\"\"\nfor path in \"${CANDIDATES[@]}\"; do\n    if [ -f \"$path\" ]; then\n        FOUND_PATH=\"$path\"\n        break\n    fi\ndone\nDEST=\"${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleService-Info.plist\"\nif [ -n \"$FOUND_PATH\" ]; then\n    install -m 0644 \"$FOUND_PATH\" \"$DEST\"\n    echo \"warning: Copied Firebase client config from $FOUND_PATH\"\nelse\n    echo \"warning: No Firebase client config found; building in local-only mode.\"\nfi\n";
+			shellScript = "set -e\nPLIST_NAME=\"${GOOGLE_SERVICE_INFO_PLIST:-GoogleService-Info.plist}\"\nCANDIDATES=(\"${SRCROOT}/${PLIST_NAME}\")\nif [ \"$PLIST_NAME\" = \"GoogleService-Info.plist\" ]; then\n    CANDIDATES+=(\"${SRCROOT}/GoogleService-Info-Dev.plist\")\nfi\nif [ \"${CONFIGURATION}\" = \"Debug\" ]; then\n    CANDIDATES+=(\"${SRCROOT}/GoogleService-Info.plist\")\nfi\nFOUND_PATH=\"\"\nfor path in \"${CANDIDATES[@]}\"; do\n    if [ -f \"$path\" ]; then\n        FOUND_PATH=\"$path\"\n        break\n    fi\ndone\nDEST=\"${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleService-Info.plist\"\nif [ -n \"$FOUND_PATH\" ]; then\n    install -m 0644 \"$FOUND_PATH\" \"$DEST\"\n    echo \"warning: Copied Firebase client config from $FOUND_PATH\"\nelse\n    echo \"warning: No Firebase client config found; building in local-only mode.\"\nfi\n";
 			showEnvVarsInLog = 0;
 		};
 		F7A883401DB67F0F10677480 /* [CP] Check Pods Manifest.lock */ = {

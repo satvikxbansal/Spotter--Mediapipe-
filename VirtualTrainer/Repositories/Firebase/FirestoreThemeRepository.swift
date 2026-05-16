@@ -61,12 +61,9 @@ final class FirestoreThemeRepository: ThemeRepository {
         let path = try FirestorePathBuilder.profileDocument(uid: uid)
 
         return AsyncStream { continuation in
-            var debounceTask: Task<Void, Never>?
+            let debouncer = FirestoreObserverDebouncer()
             let listener = database.listenDocument(path: path) { result in
-                debounceTask?.cancel()
-                debounceTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: FirestoreRepositorySupport.observerDebounceNanoseconds)
-                    guard !Task.isCancelled else { return }
+                debouncer.schedule(after: FirestoreRepositorySupport.observerDebounceNanoseconds) {
                     switch result {
                     case .success(let storedDocument):
                         do {
@@ -85,7 +82,7 @@ final class FirestoreThemeRepository: ThemeRepository {
                 }
             }
             continuation.onTermination = { _ in
-                debounceTask?.cancel()
+                debouncer.cancel()
                 listener.remove()
             }
         }

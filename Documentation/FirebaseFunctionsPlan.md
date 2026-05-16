@@ -81,6 +81,6 @@ This proxy is not part of Phase 16I.
 
 ## iOS Responsibility In Phase 16I
 
-The iOS app initiates deletion in Firebase mode, stops sync listeners, waits for local writes, requests Firebase Auth account deletion, attempts the small client-allowed plan cleanup, wipes local files, clears `AccountContext`, and routes the user back to onboarding.
+The iOS app initiates deletion in Firebase mode, stops sync listeners, waits for local writes, attempts the small client-allowed plan cleanup while the Firebase user is still authenticated, requests Firebase Auth account deletion, wipes local files, clears `AccountContext`, and routes the user back to onboarding.
 
 Any cloud cleanup that the client cannot do immediately is intentionally left to `onAuthUserDelete`, with user-facing copy that some cloud data may take up to 7 days to delete.

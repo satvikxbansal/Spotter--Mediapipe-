@@ -191,7 +191,7 @@ final class ThemeStore: ObservableObject {
                     _ = await self?.applyThemeCache(remoteTheme, accountId: currentAccountId)
                 }
             } catch {
-                await self?.setRemoteThemeError(error)
+                self?.setRemoteThemeError(error)
             }
         }
     }

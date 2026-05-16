@@ -307,7 +307,7 @@ final class CalibrationStore: ObservableObject {
                     _ = await self?.applyRemoteCalibrationCache(remoteRecord)
                 }
             } catch {
-                await self?.setRemoteCalibrationError(error)
+                self?.setRemoteCalibrationError(error)
             }
         }
     }

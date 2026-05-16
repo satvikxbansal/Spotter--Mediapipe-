@@ -2072,7 +2072,7 @@ final class TrophyStore: ObservableObject {
                     _ = await self?.applyRemoteTrophyEvents(remoteEvents)
                 }
             } catch {
-                await self?.setRemoteTrophyError(error)
+                self?.setRemoteTrophyError(error)
             }
         }
     }

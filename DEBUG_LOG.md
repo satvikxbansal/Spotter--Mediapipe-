@@ -3,7 +3,7 @@
 Structured incident log for build failures, crashes, and bug fixes. **Format and categories:** `.cursor/rules/debugging.mdc` (section A).
 
 - Append only — do not delete or rewrite past entries.
-- Next entry ID: **DL-061** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
+- Next entry ID: **DL-063** (after each append, the next agent reads the latest `### [DL-XXX]` and increments).
 
 ---
 
@@ -1934,3 +1934,85 @@ Local-only no-plist build passed after temporarily moving the ignored Firebase c
 After any context compaction, lost stream, or large generated patch, re-audit every user-facing requirement at the presentation boundary, not only at the service/API boundary. If a requirement says "surface" or "route", prove the value is still visible after state changes and navigation. Repeated privacy and secrets-policy phrases must be searched globally and updated consistently across export metadata, README text, docs, and tests. Green tests are not enough when no test observes the UI lifetime of a returned service result.
 
 **Pattern Tags:** #audit #compaction #lost-stream #account-deletion #firebase #ui-routing #privacy-boundary #documentation #verification
+
+---
+
+### [DL-061] Re-Audit Firebase Deletion Order, Config Fallbacks, And Observer Concurrency
+**Date:** 2026-05-16
+**Severity:** crash-prevention
+**Category:** firebase, compliance, concurrency, xcode-config
+**File(s):** `VirtualTrainer/Services/AccountDeletionService.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreDocumentDatabase.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreRepositorySupport.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreCalibrationRepository.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreInsightRepository.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreProfileRepository.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreThemeRepository.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreTrophyRepository.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreWorkoutRepository.swift`, `VirtualTrainer/Models/CalibrationStore.swift`, `VirtualTrainer/Models/InsightStore.swift`, `VirtualTrainer/Models/OnboardingStore.swift`, `VirtualTrainer/Models/ThemeStore.swift`, `VirtualTrainer/Models/TrophyModels.swift`, `VirtualTrainer/Models/WorkoutHistoryStore.swift`, `VirtualTrainer.xcodeproj/project.pbxproj`, `VirtualTrainerTests/ComplianceServicesTests.swift`, `Documentation/DEVELOPMENT_SETUP.md`, `Documentation/FirebaseFunctionsPlan.md`, `README.md`
+
+**Error:**
+The deep Phase 15/16 audit found Firebase wiring present, but several high-confidence failure edges remained: Firebase-mode account deletion attempted Auth deletion before the bounded client-allowed Firestore cleanup, Firestore query/listener wrappers could pass a non-positive limit to the Firebase SDK, Release/Beta builds could silently fall back to a generic local debug `GoogleService-Info.plist`, and Firebase observer streams used mutable captured `debounceTask` locals that Xcode warned would become Swift 6 language-mode errors. Release also surfaced redundant `await` warnings in store observation error handlers.
+
+**Root Cause:**
+Account deletion ordering treated Firebase Auth deletion as an early step even though owner-only Firestore rules require the user to still be authenticated for the small client-side plan cleanup. Repository callers already normalized invalid limits to zero, but the Firebase adapter forwarded zero into Firestore query construction instead of returning an empty result/listener. The Firebase config copy phase had an over-broad generic fallback and a malformed dev-candidate derivation (`${PLIST_NAME%.plist}-Dev.plist`), so non-debug builds could bundle a local ignored debug plist when the environment plist was absent. The observer debounce implementation stored a mutable task variable inside escaping listener closures that may be invoked concurrently by the SDK. The redundant `await`s were leftover from earlier actor-isolation churn: the tasks already execute in the inherited main-actor context, and the error setters are synchronous.
+
+**Fix Applied:**
+Reordered Firebase account deletion to stop listeners, wait for local writes, perform bounded Firestore cleanup while auth is still alive, then delete the Auth account, wipe local data, and clear account context. Added a regression test that proves the remote cleaner still sees the current Firebase account during cleanup. Made Firebase Firestore query/listener calls return empty results and no-op listeners for non-positive limits instead of touching `limit(to:)`. Tightened the Firebase config copy script so generic `GoogleService-Info.plist` is a Debug-only fallback; Release/Beta now use only their configured environment plist names and otherwise build local-only. Replaced the per-observer captured mutable debounce task with a small locked `FirestoreObserverDebouncer`, then removed redundant `await`s from synchronous observation error setters. Updated setup and Firebase Functions docs to match the corrected deletion and config behavior.
+
+**Verification:**
+Full final test suite passed on iPhone 17 Pro simulator:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerAuditFullDerivedDataFinal`
+
+- Passed: 400
+- Failed: 0
+- Skipped: 0
+
+Focused Firebase/compliance/backend tests also passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerAuditDerivedData -only-testing:VirtualTrainerTests/FirestoreRepositoryTests -only-testing:VirtualTrainerTests/ComplianceServicesTests -only-testing:VirtualTrainerTests/BackendRepositoryTests`
+
+Release simulator build passed and proved the non-debug config fallback is closed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -configuration Release -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerAuditReleaseDerivedData`
+
+The Release log only showed the intentional Firebase config message, `No Firebase client config found; building in local-only mode.`, and no longer showed the captured-var or redundant-await warning families. `git diff --check` passed. `gitleaks` is not installed locally, so a redacted fallback scan over changed tracked files checked common Firebase, OpenAI, GitHub, Slack, password/token/API-key, authorization, and private-key patterns and found no matches. Static crash-surface search found only a planned Firestore-rules TODO and the existing programmer-error `preconditionFailure` for an invalid static privacy regex; neither is a live user crash path. Live Firebase smoke against a remote project was not run because this audit did not use live project credentials.
+
+**Prevention Rule:**
+For account deletion, keep client-allowed Firestore cleanup before Auth deletion whenever security rules depend on `request.auth.uid`; leave recursive cleanup to Cloud Functions. Treat zero or negative repository limits as empty results before calling SDK query builders. Non-debug builds must never fall back to generic local debug Firebase plist names. Firebase listener state must live behind an explicit synchronization boundary, not a mutable captured local. When Release introduces Swift concurrency warnings, clear high-confidence ones immediately because they often represent future build failures.
+
+**Pattern Tags:** #firebase #account-deletion #firestore #config #concurrency #crash-prevention #rca
+
+---
+
+### [DL-062] Post-Compaction Re-Audit Of Firebase Edge Cases
+**Date:** 2026-05-16
+**Severity:** crash-prevention
+**Category:** audit, firebase, concurrency, account-deletion
+**File(s):** `VirtualTrainer/Repositories/Firebase/FirestoreRepositorySupport.swift`, `VirtualTrainer/Services/AccountDeletionService.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreInsightRepository.swift`, `VirtualTrainerTests/FirestoreRepositoryTests.swift`, `VirtualTrainerTests/ComplianceServicesTests.swift`, `DEBUG_LOG.md`
+
+**Error:**
+The follow-up audit after context compaction found two additional high-confidence edges that could affect Firebase downstream behavior. The shared Firestore observer debouncer canceled the previous task, but a task that had already awakened could still win a rapid-listener-update race and yield a stale event. Firebase account deletion also trusted the UI/account-context account ID first; if the context was stale or nil while Firebase Auth still had a current user, client-allowed Firestore cleanup and Auth deletion could be skipped. The focused build also surfaced an unused Firestore transaction return-value warning.
+
+**Root Cause:**
+The first pass correctly removed mutable captured debounce-task locals, but cancellation alone was not a complete generation check for listener interleavings. The deletion flow correctly moved Firestore cleanup before Auth deletion, but it still treated `AccountContext` as the source of truth even though owner-scoped Firestore rules and Auth deletion depend on Firebase Auth's live current user. The transaction warning was a leftover from an intentionally ignored SDK result.
+
+**Fix Applied:**
+Made `FirestoreObserverDebouncer` generation-aware under its lock, so only the most recent scheduled listener operation can yield and cancellation invalidates all pending generations. Changed Firebase deletion to prefer the live Auth repository account ID and fall back to the context account ID only when Auth has no current account. Marked the intentionally unused transaction result with `_ =`. Added regression coverage for latest-only debouncing, cancel-dropping pending debounced operations, and stale account-context deletion using the live Auth UID.
+
+**Verification:**
+Focused compliance and Firestore repository tests passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerCompactionAuditDerivedData -only-testing:VirtualTrainerTests/ComplianceServicesTests -only-testing:VirtualTrainerTests/FirestoreRepositoryTests`
+
+Release simulator build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -configuration Release -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerCompactionReleaseDerivedData`
+
+Full final test suite passed on iPhone 17 Pro simulator:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerCompactionFullDerivedData`
+
+- Passed: 403
+- Failed: 0
+- Skipped: 0
+
+`git diff --check` passed. `gitleaks` is not installed locally, so a redacted fallback scan over changed tracked files checked common Firebase, OpenAI, GitHub, Slack, password/token/API-key, authorization, and private-key patterns and found no matches. Live Firebase smoke against a remote project was not run because this audit did not use live project credentials.
+
+**Prevention Rule:**
+After context compaction, re-audit timing and state-source boundaries in addition to the visible patch diff. Listener debouncers should use a generation token, not cancellation alone, when callbacks can arrive rapidly. Cloud cleanup and Auth deletion should prefer the live Auth identity whenever Firestore rules or SDK operations depend on the authenticated user.
+
+**Pattern Tags:** #audit #compaction #firebase #firestore #account-deletion #concurrency #crash-prevention #rca

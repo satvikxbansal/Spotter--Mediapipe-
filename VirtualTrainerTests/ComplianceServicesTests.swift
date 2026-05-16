@@ -96,11 +96,61 @@ final class ComplianceServicesTests: XCTestCase {
 
         XCTAssertEqual(
             recorder.events,
-            ["stopListeners", "waitForWrites", "auth.delete", "remote.planDelete", "localWipe", "context.clear"]
+            ["stopListeners", "waitForWrites", "remote.planDelete", "auth.delete", "localWipe", "context.clear"]
         )
         XCTAssertEqual(result.removedItemCount, 1)
         XCTAssertEqual(result.clientDeletedRemoteDocumentCount, 2)
         XCTAssertNil(result.cloudDeletionNotice)
+    }
+
+    func testFirebaseDeleteKeepsAuthAliveUntilClientAllowedFirestoreCleanupCompletes() async throws {
+        let recorder = AccountDeletionRecorder()
+        let localCoordinator = RecordingLocalDeletionCoordinator(recorder: recorder)
+        let auth = RecordingDeletionAuthRepository(accountId: "firebase-delete-account", recorder: recorder)
+        let service = AccountDeletionService(localDataCoordinator: localCoordinator)
+        let remoteCleaner = RecordingRemoteDeletionCleaner(
+            recorder: recorder,
+            requiredAuthRepository: auth
+        )
+
+        _ = try await service.deleteAccountAndData(
+            mode: .firebase,
+            currentAccountId: "firebase-delete-account",
+            authRepository: auth,
+            syncOrchestrator: RecordingDeletionSyncManager(recorder: recorder),
+            remoteCleaner: remoteCleaner,
+            accountContext: RecordingDeletionContext(recorder: recorder)
+        )
+
+        XCTAssertEqual(remoteCleaner.accountIdSeenDuringCleanup, "firebase-delete-account")
+        XCTAssertNil(auth.currentAccountId)
+    }
+
+    func testFirebaseDeleteUsesLiveAuthAccountWhenAccountContextIsStale() async throws {
+        let recorder = AccountDeletionRecorder()
+        let localCoordinator = RecordingLocalDeletionCoordinator(recorder: recorder)
+        let auth = RecordingDeletionAuthRepository(accountId: "firebase-live-account", recorder: recorder)
+        let remoteCleaner = RecordingRemoteDeletionCleaner(
+            recorder: recorder,
+            requiredAuthRepository: auth
+        )
+        let service = AccountDeletionService(localDataCoordinator: localCoordinator)
+
+        _ = try await service.deleteAccountAndData(
+            mode: .firebase,
+            currentAccountId: nil,
+            authRepository: auth,
+            syncOrchestrator: RecordingDeletionSyncManager(recorder: recorder),
+            remoteCleaner: remoteCleaner,
+            accountContext: RecordingDeletionContext(recorder: recorder)
+        )
+
+        XCTAssertEqual(
+            recorder.events,
+            ["stopListeners", "waitForWrites", "remote.planDelete", "auth.delete", "localWipe", "context.clear"]
+        )
+        XCTAssertEqual(remoteCleaner.accountIdSeenDuringCleanup, "firebase-live-account")
+        XCTAssertNil(auth.currentAccountId)
     }
 
     func testFirebaseDeleteContinuesLocalWipeAndReturnsNoticeWhenCloudStepsFail() async throws {
@@ -640,14 +690,26 @@ private final class RecordingDeletionAuthRepository: AuthRepository {
 private final class RecordingRemoteDeletionCleaner: AccountDeletionRemoteCleaning {
     private let recorder: AccountDeletionRecorder
     private let error: Error?
+    private weak var requiredAuthRepository: RecordingDeletionAuthRepository?
+    private(set) var accountIdSeenDuringCleanup: String?
 
-    init(recorder: AccountDeletionRecorder, error: Error? = nil) {
+    init(
+        recorder: AccountDeletionRecorder,
+        error: Error? = nil,
+        requiredAuthRepository: RecordingDeletionAuthRepository? = nil
+    ) {
         self.recorder = recorder
         self.error = error
+        self.requiredAuthRepository = requiredAuthRepository
     }
 
     func deleteClientAllowedAccountData(accountId: String) async throws -> AccountDeletionRemoteCleanupResult {
         recorder.record("remote.planDelete")
+        accountIdSeenDuringCleanup = requiredAuthRepository?.currentAccountId
+        if let requiredAuthRepository,
+           requiredAuthRepository.currentAccountId == nil {
+            throw RepositoryError.unauthorized
+        }
         if let error {
             throw error
         }

@@ -76,6 +76,36 @@ final class FirestoreRepositoryTests: XCTestCase {
         XCTAssertEqual(observedChanged?.displayName, "Changed Athlete")
     }
 
+    func testFirestoreObserverDebouncerRunsOnlyLatestScheduledOperation() async throws {
+        let debouncer = FirestoreObserverDebouncer()
+        var firedOperations: [String] = []
+
+        debouncer.schedule(after: 20_000_000) {
+            firedOperations.append("first")
+        }
+        debouncer.schedule(after: 5_000_000) {
+            firedOperations.append("second")
+        }
+
+        try await Task.sleep(nanoseconds: 80_000_000)
+
+        XCTAssertEqual(firedOperations, ["second"])
+    }
+
+    func testFirestoreObserverDebouncerCancelDropsPendingOperation() async throws {
+        let debouncer = FirestoreObserverDebouncer()
+        var didFire = false
+
+        debouncer.schedule(after: 50_000_000) {
+            didFire = true
+        }
+        debouncer.cancel()
+
+        try await Task.sleep(nanoseconds: 90_000_000)
+
+        XCTAssertFalse(didFire)
+    }
+
     func testFirebasePartialUsesPhase16GFirestoreRepositories() async {
         let dependencies = AppDependencies.firebasePartial()
 

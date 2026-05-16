@@ -1593,7 +1593,7 @@ extension InsightStore {
                     _ = await self?.applyRemoteInsights(remoteInsights)
                 }
             } catch {
-                await self?.setRemoteInsightError(error)
+                self?.setRemoteInsightError(error)
             }
         }
 
@@ -1607,7 +1607,7 @@ extension InsightStore {
                     _ = await self?.applyRemoteDeliveryRecords(remoteRecords)
                 }
             } catch {
-                await self?.setRemoteInsightError(error)
+                self?.setRemoteInsightError(error)
             }
         }
 
@@ -1621,7 +1621,7 @@ extension InsightStore {
                     _ = await self?.applyRemoteEngagementRecords(remoteRecords)
                 }
             } catch {
-                await self?.setRemoteInsightError(error)
+                self?.setRemoteInsightError(error)
             }
         }
     }

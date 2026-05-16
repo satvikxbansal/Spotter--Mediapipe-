@@ -35,3 +35,56 @@ nonisolated enum FirestoreRepositorySupport {
         pendingOperationId == operationId
     }
 }
+
+nonisolated final class FirestoreObserverDebouncer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var scheduledTask: Task<Void, Never>?
+    private var generation: UInt64 = 0
+
+    func schedule(
+        after nanoseconds: UInt64,
+        operation: @escaping @MainActor () -> Void
+    ) {
+        lock.lock()
+        generation &+= 1
+        let scheduledGeneration = generation
+        let previousTask = scheduledTask
+        let nextTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled,
+                  self.isCurrentGeneration(scheduledGeneration) else {
+                return
+            }
+            operation()
+            self.clearTaskIfCurrentGeneration(scheduledGeneration)
+        }
+        scheduledTask = nextTask
+        lock.unlock()
+
+        previousTask?.cancel()
+    }
+
+    func cancel() {
+        lock.lock()
+        generation &+= 1
+        let task = scheduledTask
+        scheduledTask = nil
+        lock.unlock()
+
+        task?.cancel()
+    }
+
+    private func isCurrentGeneration(_ candidate: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return generation == candidate
+    }
+
+    private func clearTaskIfCurrentGeneration(_ candidate: UInt64) {
+        lock.lock()
+        if generation == candidate {
+            scheduledTask = nil
+        }
+        lock.unlock()
+    }
+}

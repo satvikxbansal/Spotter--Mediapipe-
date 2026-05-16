@@ -104,7 +104,7 @@ final class FirestoreTrophyRepository: TrophyRepository {
         let collectionPath = try FirestorePathBuilder.trophyEventsCollection(uid: uid)
 
         return AsyncStream { continuation in
-            var debounceTask: Task<Void, Never>?
+            let debouncer = FirestoreObserverDebouncer()
             let listener = database.listenCollection(
                 collectionPath: collectionPath,
                 filters: activeDocumentFilters(),
@@ -112,10 +112,7 @@ final class FirestoreTrophyRepository: TrophyRepository {
                 descending: false,
                 limit: nil
             ) { result in
-                debounceTask?.cancel()
-                debounceTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: Self.observerDebounceNanoseconds)
-                    guard !Task.isCancelled else { return }
+                debouncer.schedule(after: Self.observerDebounceNanoseconds) {
                     switch result {
                     case .success(let storedDocuments):
                         let events = storedDocuments
@@ -129,7 +126,7 @@ final class FirestoreTrophyRepository: TrophyRepository {
                 }
             }
             continuation.onTermination = { _ in
-                debounceTask?.cancel()
+                debouncer.cancel()
                 listener.remove()
             }
         }

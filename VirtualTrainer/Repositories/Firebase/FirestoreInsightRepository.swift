@@ -102,7 +102,7 @@ final class FirestoreInsightRepository: InsightRepository {
         let collectionPath = try FirestorePathBuilder.insightsCollection(uid: uid)
 
         return AsyncStream { continuation in
-            var debounceTask: Task<Void, Never>?
+            let debouncer = FirestoreObserverDebouncer()
             let listener = database.listenCollection(
                 collectionPath: collectionPath,
                 filters: [],
@@ -110,10 +110,7 @@ final class FirestoreInsightRepository: InsightRepository {
                 descending: true,
                 limit: nil
             ) { result in
-                debounceTask?.cancel()
-                debounceTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: Self.observerDebounceNanoseconds)
-                    guard !Task.isCancelled else { return }
+                debouncer.schedule(after: Self.observerDebounceNanoseconds) {
                     switch result {
                     case .success(let storedDocuments):
                         let now = Date()
@@ -128,7 +125,7 @@ final class FirestoreInsightRepository: InsightRepository {
                 }
             }
             continuation.onTermination = { _ in
-                debounceTask?.cancel()
+                debouncer.cancel()
                 listener.remove()
             }
         }
@@ -296,7 +293,7 @@ final class FirestoreInsightRepository: InsightRepository {
             ]
         ]
         try FirestorePrivacyValidator.validate(payload)
-        try await database.runTransaction { transaction in
+        _ = try await database.runTransaction { transaction in
             let current = try transaction.getDocument(path: path)
             if let current,
                let currentDocument = try? FirestoreRepositorySupport.decode(
@@ -326,7 +323,7 @@ final class FirestoreInsightRepository: InsightRepository {
         isIncluded: @escaping (T) -> Bool
     ) -> AsyncStream<[T]> {
         AsyncStream { continuation in
-            var debounceTask: Task<Void, Never>?
+            let debouncer = FirestoreObserverDebouncer()
             let listener = database.listenCollection(
                 collectionPath: collectionPath,
                 filters: [],
@@ -334,10 +331,7 @@ final class FirestoreInsightRepository: InsightRepository {
                 descending: descending,
                 limit: nil
             ) { result in
-                debounceTask?.cancel()
-                debounceTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: Self.observerDebounceNanoseconds)
-                    guard !Task.isCancelled else { return }
+                debouncer.schedule(after: Self.observerDebounceNanoseconds) {
                     switch result {
                     case .success(let storedDocuments):
                         continuation.yield(storedDocuments.compactMap(mapper).filter(isIncluded))
@@ -347,7 +341,7 @@ final class FirestoreInsightRepository: InsightRepository {
                 }
             }
             continuation.onTermination = { _ in
-                debounceTask?.cancel()
+                debouncer.cancel()
                 listener.remove()
             }
         }

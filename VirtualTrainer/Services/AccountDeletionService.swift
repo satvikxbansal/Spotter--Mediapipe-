@@ -195,7 +195,8 @@ nonisolated struct AccountDeletionService {
         accountContext: (any AccountDeletionContextClearing)?
     ) async throws -> AccountDeletionResult {
         var cloudFailures: [String] = []
-        let uid = AccountOwnership.normalizedAccountId(currentAccountId)
+        let uid = AccountOwnership.normalizedAccountId(authRepository?.currentAccountId)
+            ?? AccountOwnership.normalizedAccountId(currentAccountId)
 
         do {
             try await syncOrchestrator?.stopListeners()
@@ -205,14 +206,6 @@ nonisolated struct AccountDeletionService {
 
         await localDataCoordinator.waitForStoreWrites()
 
-        if uid != nil {
-            do {
-                try await authRepository?.deleteAccount()
-            } catch {
-                cloudFailures.append("Firebase Auth account deletion could not be completed immediately.")
-            }
-        }
-
         var remoteDocumentDeleteCount = 0
         if let uid, let remoteCleaner {
             do {
@@ -220,6 +213,14 @@ nonisolated struct AccountDeletionService {
                 remoteDocumentDeleteCount = cleanup.deletedDocumentCount
             } catch {
                 cloudFailures.append("Client-allowed Firestore cleanup could not be completed immediately.")
+            }
+        }
+
+        if uid != nil {
+            do {
+                try await authRepository?.deleteAccount()
+            } catch {
+                cloudFailures.append("Firebase Auth account deletion could not be completed immediately.")
             }
         }
 

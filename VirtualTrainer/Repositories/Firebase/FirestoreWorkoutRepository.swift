@@ -154,7 +154,7 @@ final class FirestoreWorkoutRepository: WorkoutRepository, WorkoutTombstoneRepos
         let collectionPath = try FirestorePathBuilder.workoutsCollection(uid: uid)
 
         return AsyncStream { continuation in
-            var debounceTask: Task<Void, Never>?
+            let debouncer = FirestoreObserverDebouncer()
             let listener = database.listenQuery(
                 collectionPath: collectionPath,
                 filters: Self.activeWorkoutFilters,
@@ -162,10 +162,7 @@ final class FirestoreWorkoutRepository: WorkoutRepository, WorkoutTombstoneRepos
                 descending: true,
                 limit: max(limit, 0)
             ) { result in
-                debounceTask?.cancel()
-                debounceTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: FirestoreRepositorySupport.observerDebounceNanoseconds)
-                    guard !Task.isCancelled else { return }
+                debouncer.schedule(after: FirestoreRepositorySupport.observerDebounceNanoseconds) {
                     switch result {
                     case .success(let storedDocuments):
                         do {
@@ -185,7 +182,7 @@ final class FirestoreWorkoutRepository: WorkoutRepository, WorkoutTombstoneRepos
                 }
             }
             continuation.onTermination = { _ in
-                debounceTask?.cancel()
+                debouncer.cancel()
                 listener.remove()
             }
         }

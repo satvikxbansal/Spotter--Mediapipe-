@@ -79,12 +79,9 @@ final class FirestoreCalibrationRepository: CalibrationRepository {
         let path = try FirestorePathBuilder.calibration(uid: uid)
 
         return AsyncStream { continuation in
-            var debounceTask: Task<Void, Never>?
+            let debouncer = FirestoreObserverDebouncer()
             let listener = database.listenDocument(path: path) { result in
-                debounceTask?.cancel()
-                debounceTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: FirestoreRepositorySupport.observerDebounceNanoseconds)
-                    guard !Task.isCancelled else { return }
+                debouncer.schedule(after: FirestoreRepositorySupport.observerDebounceNanoseconds) {
                     switch result {
                     case .success(let storedDocument):
                         do {
@@ -99,7 +96,7 @@ final class FirestoreCalibrationRepository: CalibrationRepository {
                 }
             }
             continuation.onTermination = { _ in
-                debounceTask?.cancel()
+                debouncer.cancel()
                 listener.remove()
             }
         }

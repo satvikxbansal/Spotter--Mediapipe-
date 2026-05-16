@@ -91,6 +91,10 @@ final class FirebaseFirestoreDocumentDatabase: FirestoreDocumentDatabase {
         descending: Bool,
         limit: Int?
     ) async throws -> [FirestoreStoredDocument] {
+        if let limit, limit <= 0 {
+            return []
+        }
+
         let query = try resolvedQuery(
             collectionPath: collectionPath,
             filters: filters,
@@ -124,6 +128,11 @@ final class FirebaseFirestoreDocumentDatabase: FirestoreDocumentDatabase {
         limit: Int?,
         onChange: @escaping (Result<[FirestoreStoredDocument], Error>) -> Void
     ) -> FirestoreListenerHandle {
+        if let limit, limit <= 0 {
+            onChange(.success([]))
+            return FirebaseFirestoreNoopListenerHandle()
+        }
+
         let firestore: Firestore
         do {
             firestore = try resolvedFirestore()
@@ -228,6 +237,11 @@ final class FirebaseFirestoreDocumentDatabase: FirestoreDocumentDatabase {
         limit: Int?,
         onChange: @escaping (Result<[FirestoreStoredDocument], Error>) -> Void
     ) -> FirestoreListenerHandle {
+        if let limit, limit <= 0 {
+            onChange(.success([]))
+            return FirebaseFirestoreNoopListenerHandle()
+        }
+
         let query: Query
         do {
             query = try resolvedQuery(
@@ -302,7 +316,7 @@ final class FirebaseFirestoreDocumentDatabase: FirestoreDocumentDatabase {
         if let orderBy {
             query = query.order(by: orderBy, descending: descending)
         }
-        if let limit {
+        if let limit, limit > 0 {
             query = query.limit(to: limit)
         }
         return query

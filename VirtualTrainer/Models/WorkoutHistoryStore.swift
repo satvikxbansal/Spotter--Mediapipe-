@@ -440,7 +440,7 @@ final class WorkoutHistoryStore: ObservableObject {
                     _ = await self?.mergeRemoteWorkoutCache(remoteSummaries)
                 }
             } catch {
-                await self?.setRemoteWorkoutError(error)
+                self?.setRemoteWorkoutError(error)
             }
         }
     }
