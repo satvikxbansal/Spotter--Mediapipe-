@@ -9,6 +9,7 @@ struct TrainingHeatmapView: View {
     let accent: Color
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @EnvironmentObject private var appDependencies: AppDependencies
     @State private var selectedDay: DayIntensitySummary?
     @State private var sharePayload: SharePayload?
     @State private var isRenderingShareCard = false
@@ -246,6 +247,7 @@ struct TrainingHeatmapView: View {
             )
             isRenderingShareCard = false
             if let image {
+                appDependencies.analytics.trackShareCardRendered(kind: .heatmap)
                 sharePayload = SharePayload(image: image)
             }
         }
@@ -481,6 +483,7 @@ private func durationText(_ seconds: Int) -> String {
     .padding()
     .background(Theme.Colors.background)
     .preferredColorScheme(.dark)
+    .environmentObject(AppDependencies.local())
 }
 
 private enum TrainingHeatmapPreviewData {

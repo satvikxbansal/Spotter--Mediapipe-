@@ -1,6 +1,6 @@
 # App Check Rollout
 
-Phase 16H installs the App Check debug provider in DEBUG builds before Firebase configures. This prepares Firebase mode for App Check testing without enforcing App Check yet.
+Phase 16J keeps App Check installed but unenforced. DEBUG builds use Firebase's debug provider for simulator and development-device smoke tests. Release builds install App Attest on iOS 14.5+ before Firebase configures, so the app is ready for production telemetry without changing Firebase Console enforcement yet.
 
 ## Debug Token Setup
 
@@ -10,10 +10,29 @@ Phase 16H installs the App Check debug provider in DEBUG builds before Firebase 
 4. In Firebase Console, open App Check for the iOS app, choose debug token management, and add the copied token with a short device/developer label.
 5. Re-launch the app and verify Auth/Firestore continue to work in Firebase mode.
 
+## Staged Firestore Enforcement
+
+### Stage 1: Monitoring Mode
+
+1. In Firebase Console, open App Check.
+2. Select Firestore.
+3. Keep enforcement set to Unenforced.
+4. Collect App Check request metrics for at least 7 days across simulator debug-token testing and release/TestFlight physical-device testing.
+5. Confirm anonymous sign-in, basic two-simulator sync, owner-only Firestore reads/writes, listener startup, listener teardown, and account deletion still work.
+6. Investigate any invalid, missing, or unknown-token traffic before moving to enforcement.
+
+### Stage 2: Enforce
+
+1. Complete Phase 19 physical-device validation with App Attest.
+2. In Firebase Console, open App Check.
+3. Select Firestore.
+4. Change enforcement from Unenforced to Enforced.
+5. Watch App Check, Firestore, Analytics, and Crashlytics dashboards during the first rollout window.
+
 ## Why Enforcement Stays Off
 
-Do not enable App Check enforcement in Phase 16H. The current Firebase path is still internal and partial, Firestore rules are being published for owner-only access, and the team still needs emulator/live-dev verification for cross-uid denial, listener behavior, and debug-token onboarding. Enforcing now could block legitimate developer testing before those checks are automated.
+Do not enable App Check enforcement in Phase 16J. The app is instrumented and release-ready, but enforcement belongs to Phase 19 after physical-device App Attest validation. Enforcing early could block legitimate developer, TestFlight, or simulator verification even though the code path is now installed.
 
 ## Production Path
 
-For production, replace the DEBUG debug-provider setup with an App Attest provider path on iOS 14.5 and newer. Keep DeviceCheck or another reviewed fallback only if product support requires older OS coverage. Turn on enforcement service by service after App Attest telemetry is healthy, denial/error rates are understood, and Phase 17/19 backend QA signs off.
+Release builds use App Attest on supported devices. Keep DeviceCheck fallback only for older OS support if product requirements change; Spotter currently targets iOS 17, so App Attest is the expected production path. Turn on enforcement service by service only after telemetry is healthy and backend QA signs off.

@@ -137,11 +137,15 @@ nonisolated final class QuickStartPlanDeckService {
     func generateDeck(
         profile: UserProfile,
         recentWorkoutHistory: [RecentWorkoutHistoryItem] = [],
-        now: Date = Date()
+        now: Date = Date(),
+        generationVersion: String = QuickStartPlanDeckService.generationVersion
     ) -> QuickStartDeck {
         let dayStart = calendar.startOfDay(for: now)
         let dayKey = dayKey(for: dayStart)
-        let dailySeed = seed(profile: profile, dayKey: dayKey)
+        let versionedDayKey = generationVersion == Self.generationVersion
+            ? dayKey
+            : "\(generationVersion)|\(dayKey)"
+        let dailySeed = seed(profile: profile, dayKey: versionedDayKey)
         let orderedSpecs = dailyOrderedSpecs(
             profile: profile,
             dayStart: dayStart
@@ -174,14 +178,14 @@ nonisolated final class QuickStartPlanDeckService {
             return QuickStartDeck.single(
                 plan: fallback,
                 generatedForDay: dayStart,
-                generationVersion: Self.generationVersion
+                generationVersion: generationVersion
             )
         }
 
         return QuickStartDeck(
             id: DeterministicHash.uuid(from: "\(dailySeed)|deck").uuidString,
             generatedForDay: dayStart,
-            generationVersion: Self.generationVersion,
+            generationVersion: generationVersion,
             variants: variants
         )
     }

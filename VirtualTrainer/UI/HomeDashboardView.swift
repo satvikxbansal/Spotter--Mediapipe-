@@ -12,6 +12,7 @@ struct HomeDashboardView: View {
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
     @EnvironmentObject private var trophyStore: TrophyStore
     @EnvironmentObject private var insightStore: InsightStore
+    @EnvironmentObject private var featureFlagService: RemoteFeatureFlagService
 
     @State private var dashboardContent: DashboardContent?
     @State private var dashboardInsight: AIInsight?
@@ -68,7 +69,7 @@ struct HomeDashboardView: View {
                     summaries: historyStore.summaries
                 ) { kind in
                     Task {
-                        await insightStore.recordEngagement(insight, kind: kind)
+                        await recordInsightEngagement(insight, kind: kind)
                     }
                 }
                 .presentationDetents([.large])
@@ -87,6 +88,11 @@ struct HomeDashboardView: View {
                 }
             }
             .onChange(of: historyStore.summaries) {
+                Task {
+                    await refreshDashboard()
+                }
+            }
+            .onChange(of: featureFlagService.flags) {
                 Task {
                     await refreshDashboard()
                 }
@@ -132,11 +138,15 @@ struct HomeDashboardView: View {
                             onAppear: {
                                 Task {
                                     await insightStore.recordImpression(dashboardInsight, on: .dashboard)
+                                    appDependencies.analytics.trackInsightImpression(
+                                        type: dashboardInsight.type,
+                                        surface: .dashboard
+                                    )
                                 }
                             },
                             onOpen: {
                                 Task {
-                                    await insightStore.recordEngagement(dashboardInsight, kind: .opened)
+                                    await recordInsightEngagement(dashboardInsight, kind: .opened)
                                 }
                                 selectedInsightEvidence = dashboardInsight
                             }
@@ -189,7 +199,8 @@ struct HomeDashboardView: View {
             now: now,
             recentWorkoutHistory: historyStore.recentWorkoutHistoryItems(),
             currentStreakDayCount: historyStore.aggregateStats(now: now).currentStreak,
-            trophySnapshot: trophyStore.snapshot
+            trophySnapshot: trophyStore.snapshot,
+            featureFlags: featureFlagService.flags
         )
         weeklyRecap = makeWeeklyRecap(profile: profile, now: now)
         dashboardInsight = await makeDashboardInsight(profile: profile, now: now)
@@ -213,7 +224,7 @@ struct HomeDashboardView: View {
             trophies: trophyStore.snapshot,
             context: SignalGenerationContext(historySessionCount: historyStore.summaries.count)
         )
-        let generated = await InsightEngine().generateDashboardInsights(
+        let generated = await InsightEngine(featureFlags: featureFlagService.flags).generateDashboardInsights(
             profile: profile,
             trendSnapshot: trendSnapshot,
             signals: signals,
@@ -252,6 +263,7 @@ struct HomeDashboardView: View {
 
     private func cacheActivePlanIfNeeded(_ plan: WorkoutPlanV2) {
         guard appDependencies.backendMode == .firebase,
+              featureFlagService.allowsBackendSync,
               let accountId = accountContext.currentAccountId else {
             return
         }
@@ -284,6 +296,18 @@ struct HomeDashboardView: View {
         case .trophies:
             isShowingTrophyTeaser = true
         case .runningAnalysis, nil:
+            break
+        }
+    }
+
+    private func recordInsightEngagement(_ insight: AIInsight, kind: InsightEngagementKind) async {
+        await insightStore.recordEngagement(insight, kind: kind)
+        switch kind {
+        case .helpful:
+            appDependencies.analytics.trackInsightHelpful(type: insight.type)
+        case .notHelpful:
+            appDependencies.analytics.trackInsightNotHelpful(type: insight.type)
+        case .opened, .dismissed:
             break
         }
     }
@@ -732,9 +756,12 @@ private extension View {
 
 #Preview {
     HomeDashboardView()
+        .environmentObject(AccountContext())
+        .environmentObject(AppDependencies.local())
         .environmentObject(OnboardingStore())
         .environmentObject(CalibrationStore())
         .environmentObject(WorkoutHistoryStore())
         .environmentObject(TrophyStore())
         .environmentObject(InsightStore())
+        .environmentObject(RemoteFeatureFlagService.local())
 }

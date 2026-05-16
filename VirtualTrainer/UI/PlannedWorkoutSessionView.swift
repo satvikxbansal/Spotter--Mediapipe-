@@ -2,11 +2,13 @@ import SwiftUI
 
 struct PlannedWorkoutSessionView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appDependencies: AppDependencies
     @EnvironmentObject private var onboardingStore: OnboardingStore
     @EnvironmentObject private var calibrationStore: CalibrationStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
     @EnvironmentObject private var trophyStore: TrophyStore
     @EnvironmentObject private var insightStore: InsightStore
+    @EnvironmentObject private var featureFlagService: RemoteFeatureFlagService
     @State private var coordinator: PlannedWorkoutCoordinator
     @State private var didSaveHistorySummary = false
     @State private var savedHistorySummary: WorkoutSessionSummary?
@@ -115,6 +117,8 @@ struct PlannedWorkoutSessionView: View {
             history: historyStore.summaries,
             calibrationStatus: calibrationStore.status
         )
+        appDependencies.analytics.trackWorkoutSaved(mode: .plannedWorkout)
+        appDependencies.analytics.trackTrophyUnlocks(newlyEarnedTrophyEvents)
         nearestTrophyProgress = trophyStore.snapshot.nearestInProgress
         workoutInsight = await makeWorkoutInsight(for: summary)
         didSaveHistorySummary = true
@@ -137,7 +141,7 @@ struct PlannedWorkoutSessionView: View {
             trophies: trophyStore.snapshot,
             context: SignalGenerationContext(historySessionCount: historyStore.summaries.count)
         )
-        let generated = await InsightEngine().generateWorkoutInsights(
+        let generated = await InsightEngine(featureFlags: featureFlagService.flags).generateWorkoutInsights(
             profile: profile,
             summary: summary,
             plan: coordinator.plan,
@@ -168,4 +172,6 @@ struct PlannedWorkoutSessionView: View {
     .environmentObject(WorkoutHistoryStore())
     .environmentObject(TrophyStore())
     .environmentObject(InsightStore())
+    .environmentObject(AppDependencies.local())
+    .environmentObject(RemoteFeatureFlagService.local())
 }

@@ -384,6 +384,7 @@ struct OnboardingCoachThemeView: View {
 // ────────────────────────────────────────────────────────────────────
 
 struct OnboardingCompletionView: View {
+    @EnvironmentObject private var appDependencies: AppDependencies
     @ObservedObject var store: OnboardingStore
     let onBack: () -> Void
 
@@ -414,7 +415,9 @@ struct OnboardingCompletionView: View {
 
             Button("Continue to calibration") {
                 Task {
-                    await store.completeOnboarding()
+                    if await store.completeOnboarding() {
+                        appDependencies.analytics.trackOnboardingCompleted()
+                    }
                 }
             }
             .buttonStyle(PrimaryCTAStyle())
@@ -675,4 +678,5 @@ private struct FlowLayout: Layout {
 #Preview {
     OnboardingFlowView()
         .environmentObject(OnboardingStore())
+        .environmentObject(AppDependencies.local())
 }

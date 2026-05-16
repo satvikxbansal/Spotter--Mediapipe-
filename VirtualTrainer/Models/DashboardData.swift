@@ -105,12 +105,14 @@ nonisolated final class DashboardContentFactory {
         now: Date = Date(),
         recentWorkoutHistory: [RecentWorkoutHistoryItem] = [],
         currentStreakDayCount: Int? = nil,
-        trophySnapshot: TrophyProgressSnapshot? = nil
+        trophySnapshot: TrophyProgressSnapshot? = nil,
+        featureFlags: FeatureFlags = .default
     ) -> DashboardContent {
         let smartStartDeck = planService.generateQuickStartDeck(
             profile: profile,
             recentWorkoutHistory: recentWorkoutHistory,
-            now: now
+            now: now,
+            featureFlags: featureFlags
         )
         let smartStartFallback = smartStartDeck.variants.first?.plan ?? planService.generateSmartStart(
             profile: profile,
@@ -134,41 +136,43 @@ nonisolated final class DashboardContentFactory {
             selectedSmartStartIndex: 0,
             smartStartFallback: DashboardPlanSummary(plan: smartStartFallback),
             dailyPlan: DashboardPlanSummary(plan: dailyPlan),
-            quickActions: Self.quickActions,
+            quickActions: Self.quickActions(featureFlags: featureFlags),
             trophyTeaserText: Self.trophyTeaserText(from: trophySnapshot),
             recentWorkout: mostRecentWorkout(from: recentWorkoutHistory)
         )
     }
 
-    static let quickActions: [DashboardQuickAction] = [
-        DashboardQuickAction(
-            kind: .formCheck,
-            title: "Form Check",
-            subtitle: "Single move",
-            systemImage: "camera.viewfinder",
-            isEnabled: true,
-            statusLabel: nil,
-            destination: .formCheckSelection
-        ),
-        DashboardQuickAction(
-            kind: .runningAnalysis,
-            title: "Running Analysis",
-            subtitle: "Gait and stride",
-            systemImage: "figure.run",
-            isEnabled: false,
-            statusLabel: "Coming Soon",
-            destination: .runningAnalysis
-        ),
-        DashboardQuickAction(
-            kind: .trophies,
-            title: "Trophies",
-            subtitle: "Milestones",
-            systemImage: "trophy.fill",
-            isEnabled: true,
-            statusLabel: "Teaser",
-            destination: .trophies
-        ),
-    ]
+    static func quickActions(featureFlags: FeatureFlags = .default) -> [DashboardQuickAction] {
+        [
+            DashboardQuickAction(
+                kind: .formCheck,
+                title: "Form Check",
+                subtitle: "Single move",
+                systemImage: "camera.viewfinder",
+                isEnabled: true,
+                statusLabel: nil,
+                destination: .formCheckSelection
+            ),
+            DashboardQuickAction(
+                kind: .runningAnalysis,
+                title: "Running Analysis",
+                subtitle: "Gait and stride",
+                systemImage: "figure.run",
+                isEnabled: false,
+                statusLabel: featureFlags.runningAnalysisEnabled ? "Preview" : "Coming Soon",
+                destination: .runningAnalysis
+            ),
+            DashboardQuickAction(
+                kind: .trophies,
+                title: "Trophies",
+                subtitle: "Milestones",
+                systemImage: "trophy.fill",
+                isEnabled: true,
+                statusLabel: "Teaser",
+                destination: .trophies
+            ),
+        ]
+    }
 
     private func timeBasedGreeting(at date: Date) -> String {
         let hour = calendar.component(.hour, from: date)

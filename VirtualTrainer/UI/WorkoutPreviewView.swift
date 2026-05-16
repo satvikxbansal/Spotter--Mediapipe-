@@ -7,6 +7,7 @@ struct WorkoutPreviewView: View {
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
     @EnvironmentObject private var trophyStore: TrophyStore
     @EnvironmentObject private var insightStore: InsightStore
+    @EnvironmentObject private var featureFlagService: RemoteFeatureFlagService
 
     @State private var previewState: WorkoutPreviewState
     @State private var activePlan: WorkoutPlanV2?
@@ -63,7 +64,7 @@ struct WorkoutPreviewView: View {
                 summaries: historyStore.summaries
             ) { kind in
                 Task {
-                    await insightStore.recordEngagement(insight, kind: kind)
+                    await recordInsightEngagement(insight, kind: kind)
                 }
             }
             .presentationDetents([.large])
@@ -81,6 +82,11 @@ struct WorkoutPreviewView: View {
             }
         }
         .onChange(of: trophyStore.snapshot) {
+            Task {
+                await refreshPlanInsight()
+            }
+        }
+        .onChange(of: featureFlagService.flags) {
             Task {
                 await refreshPlanInsight()
             }
@@ -188,13 +194,13 @@ struct WorkoutPreviewView: View {
             if let planInsight {
                 InsightEvidenceButton {
                     Task {
-                        await insightStore.recordEngagement(planInsight, kind: .opened)
+                        await recordInsightEngagement(planInsight, kind: .opened)
                     }
                     selectedInsightEvidence = planInsight
                 }
                 InsightEngagementPrompt { kind in
                     Task {
-                        await insightStore.recordEngagement(planInsight, kind: kind)
+                        await recordInsightEngagement(planInsight, kind: kind)
                     }
                 }
             }
@@ -205,6 +211,10 @@ struct WorkoutPreviewView: View {
             if let planInsight {
                 Task {
                     await insightStore.recordImpression(planInsight, on: .workoutPreview)
+                    appDependencies.analytics.trackInsightImpression(
+                        type: planInsight.type,
+                        surface: .workoutPreview
+                    )
                 }
             }
         }
@@ -339,6 +349,7 @@ struct WorkoutPreviewView: View {
 
     private func cacheActivePlanIfNeeded(_ plan: WorkoutPlanV2) {
         guard appDependencies.backendMode == .firebase,
+              featureFlagService.allowsBackendSync,
               let accountId = accountContext.currentAccountId else {
             return
         }
@@ -373,7 +384,7 @@ struct WorkoutPreviewView: View {
             trophies: trophyStore.snapshot,
             context: SignalGenerationContext(historySessionCount: historyStore.summaries.count)
         )
-        let generated = await InsightEngine().generatePlanInsights(
+        let generated = await InsightEngine(featureFlags: featureFlagService.flags).generatePlanInsights(
             profile: profile,
             plan: plan,
             trendSnapshot: trendSnapshot,
@@ -389,6 +400,18 @@ struct WorkoutPreviewView: View {
             limit: 1,
             now: now
         ).first
+    }
+
+    private func recordInsightEngagement(_ insight: AIInsight, kind: InsightEngagementKind) async {
+        await insightStore.recordEngagement(insight, kind: kind)
+        switch kind {
+        case .helpful:
+            appDependencies.analytics.trackInsightHelpful(type: insight.type)
+        case .notHelpful:
+            appDependencies.analytics.trackInsightNotHelpful(type: insight.type)
+        case .opened, .dismissed:
+            break
+        }
     }
 }
 
@@ -686,8 +709,11 @@ private extension View {
             profile: profile
         )
     }
+    .environmentObject(AccountContext())
+    .environmentObject(AppDependencies.local())
     .environmentObject(OnboardingStore())
     .environmentObject(WorkoutHistoryStore())
     .environmentObject(TrophyStore())
     .environmentObject(InsightStore())
+    .environmentObject(RemoteFeatureFlagService.local())
 }

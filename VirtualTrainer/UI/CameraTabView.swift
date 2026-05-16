@@ -417,6 +417,7 @@ struct CameraReadinessView: View {
 struct FreeAnalysisSummaryView: View {
     let summary: FreeAnalysisSummary
 
+    @EnvironmentObject private var appDependencies: AppDependencies
     @EnvironmentObject private var calibrationStore: CalibrationStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
     @EnvironmentObject private var trophyStore: TrophyStore
@@ -501,6 +502,8 @@ struct FreeAnalysisSummaryView: View {
             history: historyStore.summaries,
             calibrationStatus: calibrationStore.status
         )
+        appDependencies.analytics.trackWorkoutSaved(mode: .freeAnalysis)
+        appDependencies.analytics.trackTrophyUnlocks(newlyEarnedTrophyEvents)
         nearestTrophyProgress = trophyStore.snapshot.nearestInProgress
         didSave = true
         savedHistorySummary = historySummary
@@ -590,4 +593,5 @@ private extension BodyCategory {
         .environmentObject(CalibrationStore())
         .environmentObject(WorkoutHistoryStore())
         .environmentObject(TrophyStore())
+        .environmentObject(AppDependencies.local())
 }

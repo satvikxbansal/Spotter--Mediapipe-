@@ -1,8 +1,6 @@
+import FirebaseAppCheck
 import FirebaseCore
 import Foundation
-#if DEBUG
-import FirebaseAppCheck
-#endif
 
 nonisolated enum FirebaseBootstrapState: Equatable {
     case notAttempted
@@ -40,6 +38,8 @@ nonisolated enum FirebaseBootstrap {
         do {
 #if DEBUG
             AppCheck.setAppCheckProviderFactory(AppCheckDebugProviderFactory())
+#else
+            AppCheck.setAppCheckProviderFactory(ReleaseAppCheckProviderFactory())
 #endif
             try configurator(options)
         } catch {
@@ -82,5 +82,14 @@ nonisolated enum FirebaseBootstrap {
         }
 
         return sanitizedValue
+    }
+}
+
+private final class ReleaseAppCheckProviderFactory: NSObject, AppCheckProviderFactory {
+    func createProvider(with app: FirebaseApp) -> AppCheckProvider? {
+        if #available(iOS 14.5, *) {
+            return AppAttestProvider(app: app)
+        }
+        return DeviceCheckProvider(app: app)
     }
 }

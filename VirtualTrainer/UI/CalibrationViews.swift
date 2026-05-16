@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CalibrationIntroView: View {
+    @EnvironmentObject private var appDependencies: AppDependencies
     @EnvironmentObject private var calibrationStore: CalibrationStore
 
     var body: some View {
@@ -53,9 +54,11 @@ struct CalibrationIntroView: View {
 
                     Button("Skip for now") {
                         Task {
-                            await calibrationStore.saveSkipped(
+                            if await calibrationStore.saveSkipped(
                                 notes: "Skipped during first-run calibration."
-                            )
+                            ) {
+                                appDependencies.analytics.trackCalibrationCompleted(outcome: .skipped)
+                            }
                         }
                     }
                     .buttonStyle(SecondaryCTAStyle())
@@ -88,6 +91,7 @@ struct CalibrationIntroView: View {
 }
 
 struct CalibrationSessionView: View {
+    @EnvironmentObject private var appDependencies: AppDependencies
     @EnvironmentObject private var onboardingStore: OnboardingStore
     @EnvironmentObject private var calibrationStore: CalibrationStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
@@ -101,16 +105,20 @@ struct CalibrationSessionView: View {
             onCompleted: { record in
                 Task {
                     if await calibrationStore.saveCompleted(record) {
-                        await trophyStore.updateAll(
+                        let events = await trophyStore.updateAll(
                             history: historyStore.summaries,
                             calibrationStatus: calibrationStore.status
                         )
+                        appDependencies.analytics.trackCalibrationCompleted(outcome: .completed)
+                        appDependencies.analytics.trackTrophyUnlocks(events)
                     }
                 }
             },
             onFailed: { record in
                 Task {
-                    await calibrationStore.saveFailed(record)
+                    if await calibrationStore.saveFailed(record) {
+                        appDependencies.analytics.trackCalibrationCompleted(outcome: .failed)
+                    }
                 }
             }
         )
@@ -155,4 +163,5 @@ private struct CalibrationInfoRow: View {
         .environmentObject(CalibrationStore())
         .environmentObject(WorkoutHistoryStore())
         .environmentObject(TrophyStore())
+        .environmentObject(AppDependencies.local())
 }

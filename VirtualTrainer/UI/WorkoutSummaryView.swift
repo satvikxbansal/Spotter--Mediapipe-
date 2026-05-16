@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WorkoutSummaryView: View {
+    @EnvironmentObject private var appDependencies: AppDependencies
     @EnvironmentObject private var insightStore: InsightStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
 
@@ -85,7 +86,7 @@ struct WorkoutSummaryView: View {
                 summaries: evidenceSummaries
             ) { kind in
                 Task {
-                    await insightStore.recordEngagement(insight, kind: kind)
+                    await recordInsightEngagement(insight, kind: kind)
                 }
             }
             .presentationDetents([.large])
@@ -248,13 +249,13 @@ struct WorkoutSummaryView: View {
 
                     InsightEvidenceButton {
                         Task {
-                            await insightStore.recordEngagement(coachInsight, kind: .opened)
+                            await recordInsightEngagement(coachInsight, kind: .opened)
                         }
                         selectedInsightEvidence = coachInsight
                     }
                     InsightEngagementPrompt { kind in
                         Task {
-                            await insightStore.recordEngagement(coachInsight, kind: kind)
+                            await recordInsightEngagement(coachInsight, kind: kind)
                         }
                     }
                 }
@@ -272,6 +273,10 @@ struct WorkoutSummaryView: View {
             if let coachInsight {
                 Task {
                     await insightStore.recordImpression(coachInsight, on: .workoutSummary)
+                    appDependencies.analytics.trackInsightImpression(
+                        type: coachInsight.type,
+                        surface: .workoutSummary
+                    )
                 }
             }
         }
@@ -299,6 +304,18 @@ struct WorkoutSummaryView: View {
             summaries.append(historySummary)
         }
         return summaries
+    }
+
+    private func recordInsightEngagement(_ insight: AIInsight, kind: InsightEngagementKind) async {
+        await insightStore.recordEngagement(insight, kind: kind)
+        switch kind {
+        case .helpful:
+            appDependencies.analytics.trackInsightHelpful(type: insight.type)
+        case .notHelpful:
+            appDependencies.analytics.trackInsightNotHelpful(type: insight.type)
+        case .opened, .dismissed:
+            break
+        }
     }
 }
 
@@ -516,4 +533,5 @@ private struct WorkoutSummaryExerciseRow: View {
     .environmentObject(WorkoutHistoryStore())
     .environmentObject(CalibrationStore())
     .environmentObject(TrophyStore())
+    .environmentObject(AppDependencies.local())
 }

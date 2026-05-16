@@ -329,7 +329,9 @@ final class BackendRepositoryTests: XCTestCase {
             insights: LocalInsightRepository(fileURL: urls.insights, accountId: accountId),
             theme: LocalThemeRepository(fileURL: urls.theme, accountId: accountId),
             calibration: LocalCalibrationRepository(fileURL: urls.calibration, accountId: accountId),
-            plans: LocalPlanRepository(fileURL: urls.plans)
+            plans: LocalPlanRepository(fileURL: urls.plans),
+            analytics: NoopAnalyticsService(),
+            crashReporting: NoopCrashReportingService()
         )
         let orchestrator = SyncOrchestrator(dependencies: dependencies)
 

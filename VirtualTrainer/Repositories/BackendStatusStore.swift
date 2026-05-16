@@ -1,6 +1,12 @@
 import Combine
 import Foundation
 
+nonisolated private func defaultFirebaseBootstrapState(in bundle: Bundle) -> FirebaseBootstrapState {
+    AppRuntime.isRunningUnitTests
+        ? .notAttempted
+        : FirebaseBootstrap.configureIfAvailable(in: bundle)
+}
+
 @MainActor
 final class BackendStatusStore: ObservableObject {
     @Published private(set) var desiredBackendMode: BackendMode
@@ -21,7 +27,7 @@ final class BackendStatusStore: ObservableObject {
     init(
         bundle: Bundle = .main,
         userDefaults: UserDefaults = .standard,
-        firebaseBootstrapper: (Bundle) -> FirebaseBootstrapState = { FirebaseBootstrap.configureIfAvailable(in: $0) }
+        firebaseBootstrapper: (Bundle) -> FirebaseBootstrapState = defaultFirebaseBootstrapState
     ) {
         self.userDefaults = userDefaults
 

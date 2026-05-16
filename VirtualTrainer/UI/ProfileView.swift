@@ -11,6 +11,7 @@ struct ProfileView: View {
     @EnvironmentObject private var backendStatusStore: BackendStatusStore
     @EnvironmentObject private var appDependencies: AppDependencies
     @EnvironmentObject private var syncOrchestrator: SyncOrchestrator
+    @EnvironmentObject private var featureFlagService: RemoteFeatureFlagService
 
     @State private var selectedSummary: WorkoutSessionSummary?
     @State private var isShowingAllHistory = false
@@ -104,7 +105,7 @@ struct ProfileView: View {
                     summaries: historyStore.summaries
                 ) { kind in
                     Task {
-                        await insightStore.recordEngagement(insight, kind: kind)
+                        await recordInsightEngagement(insight, kind: kind)
                     }
                 }
                 .presentationDetents([.large])
@@ -128,6 +129,11 @@ struct ProfileView: View {
             .onChange(of: onboardingStore.profile) {
                 Task {
                     await themeStore.sync(with: onboardingStore.profile)
+                    await refreshProfileData()
+                }
+            }
+            .onChange(of: featureFlagService.flags) {
+                Task {
                     await refreshProfileData()
                 }
             }
@@ -225,16 +231,20 @@ struct ProfileView: View {
                     onAppear: { insight in
                         Task {
                             await insightStore.recordImpression(insight, on: .profile)
+                            appDependencies.analytics.trackInsightImpression(
+                                type: insight.type,
+                                surface: .profile
+                            )
                         }
                     },
                     onEngagement: { insight, kind in
                         Task {
-                            await insightStore.recordEngagement(insight, kind: kind)
+                            await recordInsightEngagement(insight, kind: kind)
                         }
                     },
                     onOpenEvidence: { insight in
                         Task {
-                            await insightStore.recordEngagement(insight, kind: .opened)
+                            await recordInsightEngagement(insight, kind: .opened)
                         }
                         selectedInsightEvidence = insight
                     }
@@ -354,7 +364,7 @@ struct ProfileView: View {
             trophies: trophyStore.snapshot,
             context: SignalGenerationContext(historySessionCount: historyStore.summaries.count)
         )
-        let generated = await InsightEngine().generateProfileInsights(
+        let generated = await InsightEngine(featureFlags: featureFlagService.flags).generateProfileInsights(
             profile: profile,
             trendSnapshot: trendSnapshot,
             signals: signals,
@@ -382,6 +392,18 @@ struct ProfileView: View {
             now: now
         ) else { return nil }
         return insightStore.canPresentOnce(dedupeKey: recap.dedupeKey, on: .profile) ? recap : nil
+    }
+
+    private func recordInsightEngagement(_ insight: AIInsight, kind: InsightEngagementKind) async {
+        await insightStore.recordEngagement(insight, kind: kind)
+        switch kind {
+        case .helpful:
+            appDependencies.analytics.trackInsightHelpful(type: insight.type)
+        case .notHelpful:
+            appDependencies.analytics.trackInsightNotHelpful(type: insight.type)
+        case .opened, .dismissed:
+            break
+        }
     }
 
     private func updateTheme(_ theme: SpotterThemeOption) {
@@ -815,6 +837,10 @@ struct ProfileView: View {
             firestoreSyncMessage = "Firebase mode is not active for this launch."
             return
         }
+        guard featureFlagService.allowsBackendSync else {
+            firestoreSyncMessage = "Backend sync is disabled by Remote Config for this launch."
+            return
+        }
         guard !isRunningFirestoreSyncAction else { return }
 
         isRunningFirestoreSyncAction = true
@@ -825,6 +851,7 @@ struct ProfileView: View {
                 firestoreSyncMessage = try await action()
                 HapticsEngine.shared.successRipple()
             } catch {
+                appDependencies.analytics.trackSyncError(domain: (error as NSError).domain)
                 firestoreSyncMessage = "Sync test failed: \(sanitizedDebugMessage(for: error))"
                 HapticsEngine.shared.warningPulse()
             }
@@ -2849,6 +2876,7 @@ private enum LocalUITestingSampleData {
         .environmentObject(BackendStatusStore())
         .environmentObject(dependencies)
         .environmentObject(SyncOrchestrator(dependencies: dependencies))
+        .environmentObject(RemoteFeatureFlagService.local())
 }
 
 @MainActor

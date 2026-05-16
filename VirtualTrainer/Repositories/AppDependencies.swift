@@ -16,6 +16,8 @@ final class AppDependencies: ObservableObject {
     let theme: any ThemeRepository
     let calibration: any CalibrationRepository
     let plans: any PlanRepository
+    let analytics: any AnalyticsService
+    let crashReporting: any CrashReportingService
 
     init(
         backendMode: BackendMode,
@@ -26,7 +28,9 @@ final class AppDependencies: ObservableObject {
         insights: any InsightRepository,
         theme: any ThemeRepository,
         calibration: any CalibrationRepository,
-        plans: any PlanRepository
+        plans: any PlanRepository,
+        analytics: any AnalyticsService,
+        crashReporting: any CrashReportingService
     ) {
         self.backendMode = backendMode
         self.auth = auth
@@ -37,6 +41,8 @@ final class AppDependencies: ObservableObject {
         self.theme = theme
         self.calibration = calibration
         self.plans = plans
+        self.analytics = analytics
+        self.crashReporting = crashReporting
     }
 
     static func local() -> AppDependencies {
@@ -58,7 +64,13 @@ final class AppDependencies: ObservableObject {
             insights: FirestoreInsightRepository(database: firestore),
             theme: FirestoreThemeRepository(database: firestore),
             calibration: FirestoreCalibrationRepository(database: firestore),
-            plans: FirestorePlanRepository(database: firestore)
+            plans: FirestorePlanRepository(database: firestore),
+            analytics: (AppRuntime.isRunningUnitTests
+                ? NoopAnalyticsService() as any AnalyticsService
+                : FirebaseAnalyticsService() as any AnalyticsService),
+            crashReporting: (AppRuntime.isRunningUnitTests
+                ? NoopCrashReportingService() as any CrashReportingService
+                : FirebaseCrashReportingService() as any CrashReportingService)
         )
     }
 
@@ -84,7 +96,9 @@ final class AppDependencies: ObservableObject {
             insights: LocalInsightRepository(),
             theme: LocalThemeRepository(),
             calibration: LocalCalibrationRepository(),
-            plans: LocalPlanRepository()
+            plans: LocalPlanRepository(),
+            analytics: NoopAnalyticsService(),
+            crashReporting: NoopCrashReportingService()
         )
     }
 }

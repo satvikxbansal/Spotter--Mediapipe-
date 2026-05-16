@@ -18,19 +18,27 @@ struct VirtualTrainerApp: App {
     @StateObject private var trophyStore = TrophyStore()
     @StateObject private var themeStore = ThemeStore()
     @StateObject private var insightStore = InsightStore()
+    @StateObject private var featureFlagService: RemoteFeatureFlagService
+    @State private var didTrackAppOpen = false
+    @State private var didAttemptInitialFeatureFlagRefresh = false
 
     init() {
         let statusStore = BackendStatusStore()
 #if DEBUG
-        if statusStore.activeBackendMode == .firebase {
+        if statusStore.activeBackendMode == .firebase, !AppRuntime.isRunningUnitTests {
             FirebaseSmokeVerifier.runIfRequested()
         }
 #endif
 
         let dependencies = AppDependencies.from(statusStore)
+        let featureFlags = statusStore.activeBackendMode == .firebase
+            ? RemoteFeatureFlagService.firebase()
+            : RemoteFeatureFlagService.local()
+        dependencies.crashReporting.configureLaunchContext(backendMode: dependencies.backendMode)
         _backendStatusStore = StateObject(wrappedValue: statusStore)
         _appDependencies = StateObject(wrappedValue: dependencies)
         _syncOrchestrator = StateObject(wrappedValue: SyncOrchestrator(dependencies: dependencies))
+        _featureFlagService = StateObject(wrappedValue: featureFlags)
     }
 
     var body: some Scene {
@@ -54,10 +62,12 @@ struct VirtualTrainerApp: App {
             .environmentObject(backendStatusStore)
             .environmentObject(appDependencies)
             .environmentObject(syncOrchestrator)
+            .environmentObject(featureFlagService)
             .onAppear {
-                configureStoreRemoteSync()
+                trackAppOpenIfNeeded()
                 syncStoresWithAccount()
                 Task {
+                    await refreshFeatureFlagsForLaunch()
                     await themeStore.sync(with: onboardingStore.profile)
                 }
             }
@@ -75,12 +85,18 @@ struct VirtualTrainerApp: App {
             .task(id: backendStatusStore.activeBackendMode) {
                 await observeFirebaseAuthChangesIfNeeded()
             }
+            .onChange(of: featureFlagService.flags.backendSyncEnabled) { _, isEnabled in
+                Task {
+                    await handleBackendSyncFlagChange(isEnabled)
+                }
+            }
         }
     }
 
     @MainActor
     private func observeFirebaseAuthChangesIfNeeded() async {
         guard backendStatusStore.activeBackendMode == .firebase else { return }
+        await refreshFeatureFlagsForLaunch()
 
         let coordinator = AccountClaimCoordinator(
             accountContext: accountContext,
@@ -92,16 +108,52 @@ struct VirtualTrainerApp: App {
             let authChanges = try await appDependencies.auth.observeAuthChanges()
             for await uid in authChanges {
                 await coordinator.handleAuthChange(uid)
+                appDependencies.crashReporting.setAccountId(uid)
                 if let uid {
-                    try? await syncOrchestrator.performFullSync(accountId: uid)
+                    guard featureFlagService.allowsBackendSync else {
+                        await stopSyncListenersForRemoteDisable()
+                        continue
+                    }
+                    await performFullSync(accountId: uid)
                 } else {
-                    try? await syncOrchestrator.stopListeners()
+                    await stopSyncListenersForRemoteDisable()
                 }
             }
         } catch {
             accountContext.clearAccount()
             syncStoresWithAccount()
-            try? await syncOrchestrator.stopListeners()
+            appDependencies.crashReporting.setAccountId(nil)
+            appDependencies.analytics.trackSyncError(domain: (error as NSError).domain)
+            await stopSyncListenersForRemoteDisable()
+        }
+    }
+
+    @MainActor
+    private func handleBackendSyncFlagChange(_ isEnabled: Bool) async {
+        guard backendStatusStore.activeBackendMode == .firebase else { return }
+        configureStoreRemoteSync()
+        if isEnabled, let accountId = accountContext.currentAccountId {
+            await performFullSync(accountId: accountId)
+        } else {
+            await stopSyncListenersForRemoteDisable()
+        }
+    }
+
+    @MainActor
+    private func performFullSync(accountId: String) async {
+        do {
+            try await syncOrchestrator.performFullSync(accountId: accountId)
+        } catch {
+            appDependencies.analytics.trackSyncError(domain: (error as NSError).domain)
+        }
+    }
+
+    @MainActor
+    private func stopSyncListenersForRemoteDisable() async {
+        do {
+            try await syncOrchestrator.stopListeners()
+        } catch {
+            appDependencies.analytics.trackSyncError(domain: (error as NSError).domain)
         }
     }
 
@@ -128,33 +180,36 @@ struct VirtualTrainerApp: App {
     }
 
     private func configureStoreRemoteSync() {
+        let effectiveBackendMode = featureFlagService.allowsBackendSync
+            ? appDependencies.backendMode
+            : .local
         onboardingStore.configureRemoteSync(
-            backendMode: appDependencies.backendMode,
+            backendMode: effectiveBackendMode,
             profileRepository: appDependencies.profile,
             autoObserve: false
         )
         themeStore.configureRemoteSync(
-            backendMode: appDependencies.backendMode,
+            backendMode: effectiveBackendMode,
             themeRepository: appDependencies.theme,
             autoObserve: false
         )
         calibrationStore.configureRemoteSync(
-            backendMode: appDependencies.backendMode,
+            backendMode: effectiveBackendMode,
             calibrationRepository: appDependencies.calibration,
             autoObserve: false
         )
         workoutHistoryStore.configureRemoteSync(
-            backendMode: appDependencies.backendMode,
+            backendMode: effectiveBackendMode,
             workoutRepository: appDependencies.workouts,
             autoObserve: false
         )
         trophyStore.configureRemoteSync(
-            backendMode: appDependencies.backendMode,
+            backendMode: effectiveBackendMode,
             trophyRepository: appDependencies.trophies,
             autoObserve: false
         )
         insightStore.configureRemoteSync(
-            backendMode: appDependencies.backendMode,
+            backendMode: effectiveBackendMode,
             insightRepository: appDependencies.insights,
             autoObserve: false
         )
@@ -166,5 +221,20 @@ struct VirtualTrainerApp: App {
             trophyStore: trophyStore,
             insightStore: insightStore
         )
+    }
+
+    private func trackAppOpenIfNeeded() {
+        guard !didTrackAppOpen else { return }
+        didTrackAppOpen = true
+        appDependencies.analytics.trackAppOpen()
+    }
+
+    @MainActor
+    private func refreshFeatureFlagsForLaunch() async {
+        if !didAttemptInitialFeatureFlagRefresh {
+            await featureFlagService.refresh()
+            didAttemptInitialFeatureFlagRefresh = true
+        }
+        configureStoreRemoteSync()
     }
 }

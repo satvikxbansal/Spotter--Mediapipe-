@@ -2016,3 +2016,99 @@ Full final test suite passed on iPhone 17 Pro simulator:
 After context compaction, re-audit timing and state-source boundaries in addition to the visible patch diff. Listener debouncers should use a generation token, not cancellation alone, when callbacks can arrive rapidly. Cloud cleanup and Auth deletion should prefer the live Auth identity whenever Firestore rules or SDK operations depend on the authenticated user.
 
 **Pattern Tags:** #audit #compaction #firebase #firestore #account-deletion #concurrency #crash-prevention #rca
+
+---
+
+### [DL-063] Phase 16J Remote Config, Analytics, Crashlytics, And App Check Readiness
+**Date:** 2026-05-16
+**Severity:** feature-readiness
+**Category:** firebase, remote-config, analytics, crashlytics, app-check, privacy
+**File(s):** `VirtualTrainer/Services/FeatureFlags.swift`, `VirtualTrainer/Services/RemoteFeatureFlagService.swift`, `VirtualTrainer/Services/AnalyticsService.swift`, `VirtualTrainer/Services/CrashReportingService.swift`, `VirtualTrainer/Services/AppRuntime.swift`, `VirtualTrainer/Services/FirebaseBootstrap.swift`, `VirtualTrainer/Repositories/AppDependencies.swift`, `VirtualTrainer/Repositories/BackendStatusStore.swift`, `VirtualTrainer/VirtualTrainerApp.swift`, `VirtualTrainer/Models/DashboardData.swift`, `VirtualTrainer/Services/PlanService.swift`, `VirtualTrainer/Services/QuickStartPlanDeckService.swift`, `VirtualTrainer/UI/CameraTabView.swift`, `VirtualTrainer/UI/HomeDashboardView.swift`, `VirtualTrainer/UI/OnboardingViews.swift`, `VirtualTrainer/UI/CalibrationViews.swift`, `VirtualTrainer/UI/WorkoutPreviewView.swift`, `VirtualTrainer/UI/PlannedWorkoutSessionView.swift`, `VirtualTrainer/UI/WorkoutSummaryView.swift`, `VirtualTrainer/UI/ProfileView.swift`, `VirtualTrainer/UI/TrainingHeatmapView.swift`, `VirtualTrainerTests/Phase16JServicesTests.swift`, `VirtualTrainerTests/BackendRepositoryTests.swift`, `Documentation/AppCheckRollout.md`, `Documentation/FirebaseConsoleChecklist.md`, `VirtualTrainer.xcodeproj/project.pbxproj`
+
+**Error:**
+Phase 16J required Firebase Remote Config, Analytics, Crashlytics, and App Check enforcement readiness after the core Auth/Firestore sync path was stable. The app still needed to keep `BackendMode.local` fully usable without `GoogleService-Info.plist`, avoid Firebase calls in unit tests/local mode, preserve deterministic local planning defaults, and avoid collecting raw camera, pose, face, or PII payloads.
+
+**Root Cause:**
+The Phase 16A-G Firebase work intentionally focused on Auth/Firestore sync first. Feature flags were static local Codable values, telemetry had no privacy-bounded service abstraction, Crashlytics launch context was not centralized, and App Check had only the DEBUG debug-provider path. Unit tests also needed a hard guard around Firebase bootstrap because SDK initialization can emit diagnostics and reach runtime code that is outside the deterministic local test boundary.
+
+**Fix Applied:**
+Added `RemoteFeatureFlagService` with bundled `FeatureFlags.default` defaults and Firebase Remote Config overrides that apply only after a successful fetch. Added backwards-compatible Codable defaults for new flags: `backendSyncEnabled`, `coachInsightLLMRewrite`, `quickStartDeckVersion`, `trophyCatalogVersion`, `runningAnalysisEnabled`, and `designSystemV2Enabled`. Added privacy-bounded `AnalyticsService` implementations for Firebase and local/test no-op mode, with a fixed no-PII event taxonomy for app open, onboarding, calibration, workout saves, trophies, insights, share-card rendering, and sync errors. Added `CrashReportingService` with Firebase and no-op implementations, launch custom keys for backend mode/schema versions, and SHA-256 account-id prefixing instead of display-name identifiers. Updated Firebase bootstrap to keep DEBUG App Check debug provider support and use App Attest on iOS 14.5+ release devices, with DeviceCheck fallback, while leaving enforcement to the Firebase Console. Added documentation for staged App Check rollout and Firebase console setup. Preserved the live camera analysis stack by only wiring analytics at flow boundaries and leaving the protected pipeline files unchanged.
+
+**Verification:**
+Toolchain paths resolved under `XcodeDefault.xctoolchain`:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Required simulator build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 408
+- Failed: 0
+- Skipped: 0
+
+Focused Phase 16J service tests passed before the full run. `git diff --check` passed. `gitleaks` is not installed locally, so a redacted fallback scan over changed and untracked files checked common Firebase, OpenAI, GitHub, Slack, password/token/API-key, authorization, and private-key patterns and found no matches. Static diff search confirmed no changes to the protected live camera pipeline files listed in the Phase 16J prompt.
+
+**Prevention Rule:**
+Firebase observability features must sit behind local/test-safe protocols before UI flows call them. Remote Config must never be required for app launch or deterministic local planning; failed fetches keep bundled defaults. Analytics payloads must be enumerated and privacy-guarded, never raw rep streams, raw pose timelines, raw camera frames, raw face data, display names, age, gender, or secret-like values. App Check enforcement remains a console rollout step after physical-device App Attest validation.
+
+**Pattern Tags:** #phase16j #remote-config #analytics #crashlytics #app-check #privacy #local-mode #firebase
+
+---
+
+### [DL-064] Post-Compaction Phase 16J Safety Audit And Kill-Switch Hardening
+**Date:** 2026-05-16
+**Severity:** crash-prevention
+**Category:** audit, remote-config, firebase, privacy, launch-sequencing
+**File(s):** `VirtualTrainer/Services/FeatureFlags.swift`, `VirtualTrainer/Services/RemoteFeatureFlagService.swift`, `VirtualTrainer/Services/AnalyticsService.swift`, `VirtualTrainer/Repositories/AppDependencies.swift`, `VirtualTrainer/VirtualTrainerApp.swift`, `VirtualTrainer/UI/HomeDashboardView.swift`, `VirtualTrainer/UI/WorkoutPreviewView.swift`, `VirtualTrainer/UI/ProfileView.swift`, `VirtualTrainerTests/Phase16JServicesTests.swift`, `DEBUG_LOG.md`
+
+**Error:**
+The post-compaction audit found that Phase 16J's `backendSyncEnabled` Remote Config kill switch stopped full sync/listeners, but store-level remote save paths and direct active-plan cache writes could still reach Firebase repositories after the flag changed. There was also a startup edge where Firebase sync could begin before the first Remote Config attempt completed, a backwards-compatibility gap for older `FeatureFlags` JSON files that still used the legacy `enabledFlags` shape, an analytics privacy guard that matched only exact forbidden key spellings, and two new synchronous unit tests that crashed during teardown when XCTest deallocated main-actor repository-backed `AppDependencies`.
+
+**Root Cause:**
+The first Phase 16J pass treated the kill switch mostly as a sync-orchestrator concern, but the app also has local stores configured with remote repositories and direct plan-cache writes from dashboard/preview flows. Remote Config defaults were correctly local-first, but there was no explicit "initial Remote Config attempt completed" state to prevent early Firebase writes before a fetched kill-switch value could apply. The new `FeatureFlags` `Codable` implementation replaced synthesized decoding without preserving the old private `enabledFlags` storage key. The analytics privacy guard compared raw parameter keys, so separator/case variants such as `display_name` were not normalized. The XCTest crash was a test-harness lifetime issue caused by creating and dropping `@MainActor` dependency graphs inside synchronous test methods.
+
+**Fix Applied:**
+Made `RemoteFeatureFlagService` publish `hasCompletedInitialRefresh` and expose `allowsBackendSync`, which requires both an initial Remote Config attempt and `backendSyncEnabled=true`. Launch now refreshes feature flags before configuring store remote repositories or observing Firebase auth changes, and store remote sync is configured as local when `allowsBackendSync` is false. Dashboard, workout preview, and debug sync tools now use the same guard before direct Firebase plan/sync actions. Restored legacy `FeatureFlags` decoding from `enabledFlags` while keeping explicit new keys authoritative. Normalized analytics privacy key checks by stripping non-alphanumerics and lowercasing before comparison. Kept Firebase Analytics and Crashlytics no-op in unit tests even when a test forces Firebase mode, and converted the affected dependency-wiring tests to async XCTest methods to match the repo's existing main-actor dependency test pattern.
+
+**Verification:**
+Toolchain paths resolved under `XcodeDefault.xctoolchain`:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Focused Phase 16J tests passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerPhase16JAuditFocusedDerivedData -only-testing:VirtualTrainerTests/Phase16JServicesTests`
+
+Required simulator build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 413
+- Failed: 0
+- Skipped: 0
+
+No-plist local fallback build passed after temporarily moving local ignored Firebase client plist files out of the workspace and restoring them with a shell trap:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerNoPlistDerivedData`
+
+The build printed the expected local-only warning and did not require `GoogleService-Info.plist`.
+
+`git diff --check` passed. `gitleaks` is not installed locally, so a redacted `.gitleaks.toml`-aligned fallback scan over changed and untracked files checked common Firebase, OpenAI, GitHub, Slack, password/token/API-key, authorization, private-key, and App Check debug-token-context patterns and found no candidate secrets. A static diff search confirmed no changes to the protected live camera pipeline files listed in the Phase 16J prompt. Firebase SDK entrypoint search confirmed Remote Config, Analytics, Crashlytics, and App Check SDK calls remain inside service/bootstrap wrappers instead of UI or live camera pipeline files.
+
+**Prevention Rule:**
+Remote kill switches must gate every write path, not only orchestrator-level listeners. For Firebase startup, wait for the first Remote Config attempt before enabling backend writes so remote-off values can win before sync begins; failed fetches may then fall back to bundled defaults. When replacing synthesized `Codable` on persisted local types, explicitly decode the previous storage shape. Privacy guards should normalize keys before denylist checks, and unit tests should exercise main-actor dependency graphs through async XCTest methods.
+
+**Pattern Tags:** #phase16j #post-compaction-audit #remote-config #kill-switch #firebase #privacy #codable #xctest #local-mode

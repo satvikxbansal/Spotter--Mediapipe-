@@ -45,12 +45,14 @@ nonisolated final class PlanService {
     func generateQuickStartDeck(
         profile: UserProfile,
         recentWorkoutHistory: [RecentWorkoutHistoryItem] = [],
-        now: Date = Date()
+        now: Date = Date(),
+        featureFlags: FeatureFlags = .default
     ) -> QuickStartDeck {
         quickStartDeckService.generateDeck(
             profile: profile,
             recentWorkoutHistory: recentWorkoutHistory,
-            now: now
+            now: now,
+            generationVersion: featureFlags.quickStartDeckVersion
         )
     }
 
