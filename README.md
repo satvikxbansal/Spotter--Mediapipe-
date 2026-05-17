@@ -638,10 +638,19 @@ Firebase mode now syncs selected account, preference, plan, compact workout hist
 Derived analytics and the live analysis stack still stay local/client-side: for example, a saved workout can sync to another simulator, while heatmaps, recaps, FPS-sensitive camera analysis, and rep feedback are still computed from local derived records.
 ```
 
+Recent backend hardening tightened the Firestore boundary further:
+
+- `users/{uid}` is now reserved for a tiny owner-only metadata document: account id, schema version, created/updated timestamps, and optional last-seen timestamp only.
+- Workout deletes use merge tombstones, so a workout created offline and deleted before upload can still sync a minimal hidden delete marker instead of failing because the remote doc never existed.
+- Firestore payload validation rejects binary `Data` fields by default. No remote DTO currently allowlists binary upload.
+- Firestore rules have a local emulator test script for owner checks, root-doc schema, raw sensor field denial, workout tombstones, trophy append-only behavior, and insight delete denial.
+
+After merging rule changes, paste and publish the exact contents of `Documentation/firestore.rules` in Firebase Console before using a shared Firebase project.
+
 Still remaining before a backend beta:
 
 - Deploy and verify the account-deletion Cloud Function from the separate `spotter-functions` repo.
-- Firestore security rules, App Check, and Firebase console indexes for the new collections.
+- Firebase Console publication of the latest Firestore rules, App Check monitoring/enforcement rollout, and any Firebase-suggested indexes that appear during emulator/internal beta testing.
 - Repository-level pagination and listener backpressure for large remote histories.
 - Backend-mode QA for account switching, tombstones, conflicts, retries, missing config, emulator coverage, and internal beta cost checks.
 
@@ -1022,6 +1031,14 @@ xcodebuild test \
   -scheme VirtualTrainer \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
+
+Run Firestore rules tests locally when rules change:
+
+```sh
+Scripts/test-firestore-rules.sh
+```
+
+That script starts the Firestore emulator and runs `@firebase/rules-unit-testing` against `Documentation/firestore.rules`.
 
 ## Privacy Boundary
 

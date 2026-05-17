@@ -202,6 +202,56 @@ final class FirestoreTranslationLayerTests: XCTestCase {
         )
     }
 
+    func testPrivacyValidatorRejectsAnyDataFieldByDefault() {
+        XCTAssertThrowsError(
+            try FirestorePrivacyValidator.validate([
+                "thumbnail": Data()
+            ])
+        )
+        XCTAssertThrowsError(
+            try FirestorePrivacyValidator.validate([
+                "nested": [
+                    "safeLookingBinary": Data(repeating: 1, count: 32)
+                ]
+            ])
+        )
+        XCTAssertThrowsError(
+            try FirestorePrivacyValidator.validate([
+                "smallBlob": Data(repeating: 2, count: 16)
+            ])
+        )
+    }
+
+    func testPrivacyValidatorAllowsExplicitDataAllowlistOnly() {
+        XCTAssertNoThrow(
+            try FirestorePrivacyValidator.validate(
+                ["reviewedThumbnail": Data(repeating: 3, count: 128)],
+                allowedDataFieldPaths: ["reviewedThumbnail"]
+            )
+        )
+        XCTAssertThrowsError(
+            try FirestorePrivacyValidator.validate(
+                ["reviewedThumbnail": Data(repeating: 3, count: 4_097)],
+                allowedDataFieldPaths: ["reviewedThumbnail"]
+            )
+        )
+    }
+
+    func testPrivacyValidatorRejectsForbiddenKeysCaseInsensitively() {
+        XCTAssertThrowsError(
+            try FirestorePrivacyValidator.validate([
+                "Raw_Pose_Stream": "derived tests still reject forbidden key variants"
+            ])
+        )
+        XCTAssertThrowsError(
+            try FirestorePrivacyValidator.validate([
+                "nested": [
+                    "Private-Key": "not a real key, but the field name is forbidden"
+                ]
+            ])
+        )
+    }
+
     func testPrivacyValidatorAllowsFullyPopulatedWorkoutDTO() throws {
         let summary = makeWorkoutSummary(serverEndedAt: now.addingTimeInterval(140))
         let document = mapToWorkoutDocument(summary)
@@ -219,6 +269,36 @@ final class FirestoreTranslationLayerTests: XCTestCase {
 
         XCTAssertTrue(String(describing: type(of: serverEndedAt)).contains("FieldValue"))
         XCTAssertEqual(payload["operationId"] as? String, document.operationId.uuidString.lowercased())
+    }
+
+    func testWorkoutDocumentDecoderDefaultsOnlyDeletedTombstones() throws {
+        let workoutId = fixedUUID(2_050)
+        let deletedAt = now.addingTimeInterval(240)
+        let tombstone = try FirestoreEncodingHelpers.decode(
+            FirestoreWorkoutDocument.self,
+            from: [
+                "accountId": accountId,
+                "workoutId": workoutId.uuidString.lowercased(),
+                "deletedAt": FirestoreVersionStrings.string(from: deletedAt)
+            ]
+        )
+
+        XCTAssertEqual(tombstone.accountId, accountId)
+        XCTAssertEqual(tombstone.workoutId, workoutId.uuidString.lowercased())
+        XCTAssertEqual(tombstone.title, "Deleted workout")
+        XCTAssertEqual(tombstone.deletedAt, deletedAt)
+        XCTAssertEqual(tombstone.serverEndedAt, deletedAt)
+        XCTAssertEqual(tombstone.durationSeconds, 0)
+
+        XCTAssertThrowsError(
+            try FirestoreEncodingHelpers.decode(
+                FirestoreWorkoutDocument.self,
+                from: [
+                    "accountId": accountId,
+                    "workoutId": workoutId.uuidString.lowercased()
+                ]
+            )
+        )
     }
 
     func testWorkoutDocumentCanRebuildSummaryWithSortedSetDocuments() {

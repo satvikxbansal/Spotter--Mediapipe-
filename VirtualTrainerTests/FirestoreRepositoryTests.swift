@@ -473,7 +473,63 @@ final class FirestoreRepositoryTests: XCTestCase {
         XCTAssertEqual(database.documents(in: try FirestorePathBuilder.setsCollection(uid: accountId, workoutId: summary.id)).count, 2)
     }
 
-    func testWorkoutRepositorySoftDeleteOmitsRecentAndLoadWorkout() async throws {
+    func testWorkoutRepositoryDeleteBeforeUploadWritesMinimalMergeTombstone() async throws {
+        let database = InMemoryFirestoreDocumentDatabase()
+        let repository = FirestoreWorkoutRepository(database: database)
+        let workoutId = fixedUUID(170_016)
+        let operationId = fixedUUID(170_017)
+        let workoutPath = try FirestorePathBuilder.workoutDocument(uid: accountId, workoutId: workoutId)
+
+        try await repository.deleteWorkout(
+            accountId: accountId,
+            id: workoutId,
+            operationId: operationId
+        )
+
+        let write = try XCTUnwrap(database.appliedWrites.last)
+        let document = try XCTUnwrap(database.document(at: workoutPath))
+        let tombstones = try await repository.loadRecentWorkoutTombstones(
+            accountId: accountId,
+            limit: 10,
+            since: nil
+        )
+
+        XCTAssertTrue(isSetWrite(write, merge: true))
+        XCTAssertEqual(write.path, workoutPath)
+        XCTAssertEqual(write.payload["accountId"] as? String, accountId)
+        XCTAssertEqual(write.payload["schemaVersion"] as? Int, FirestoreDTOSchema.currentVersion)
+        XCTAssertEqual(write.payload["workoutId"] as? String, workoutId.uuidString.lowercased())
+        XCTAssertNotNil(write.payload["deletedAt"])
+        XCTAssertEqual(write.payload["operationId"] as? String, operationId.uuidString.lowercased())
+        XCTAssertNotNil(write.payload["syncMetadata"] as? [String: Any])
+        XCTAssertEqual(document.data["workoutId"] as? String, workoutId.uuidString.lowercased())
+        XCTAssertTrue(tombstones.contains { $0.id == workoutId && $0.isDeleted })
+    }
+
+    func testWorkoutRepositoryDeleteRetryWithSameOperationIdDoesNotWriteAgain() async throws {
+        let database = InMemoryFirestoreDocumentDatabase()
+        let repository = FirestoreWorkoutRepository(database: database)
+        let summary = makeWorkoutSummary(id: fixedUUID(170_018), operationId: fixedUUID(170_019))
+        let deleteOperationId = fixedUUID(170_020)
+        let workoutPath = try FirestorePathBuilder.workoutDocument(uid: accountId, workoutId: summary.id)
+
+        _ = try await repository.saveWorkoutSummary(summary, operationId: fixedUUID(170_019))
+        try await repository.deleteWorkout(
+            accountId: accountId,
+            id: summary.id,
+            operationId: deleteOperationId
+        )
+        let writeCountAfterDelete = database.writeCount(for: workoutPath)
+        try await repository.deleteWorkout(
+            accountId: accountId,
+            id: summary.id,
+            operationId: deleteOperationId
+        )
+
+        XCTAssertEqual(database.writeCount(for: workoutPath), writeCountAfterDelete)
+    }
+
+    func testWorkoutRepositorySoftDeleteOmitsRecentAndLoadWorkoutButLoadsTombstone() async throws {
         let database = InMemoryFirestoreDocumentDatabase()
         let repository = FirestoreWorkoutRepository(database: database)
         let summary = makeWorkoutSummary(id: fixedUUID(170_021), operationId: fixedUUID(170_022))
@@ -499,9 +555,16 @@ final class FirestoreRepositoryTests: XCTestCase {
             since: nil
         )
         let loadedAfterDelete = try await repository.loadWorkout(accountId: accountId, id: summary.id)
+        let tombstones = try await repository.loadRecentWorkoutTombstones(
+            accountId: accountId,
+            limit: 10,
+            since: nil
+        )
         XCTAssertNotNil(database.document(at: workoutPath)?.data["deletedAt"])
+        XCTAssertNotNil(database.document(at: workoutPath)?.data["title"])
         XCTAssertTrue(recentAfterDelete.isEmpty)
         XCTAssertNil(loadedAfterDelete)
+        XCTAssertEqual(tombstones.map(\.id), [summary.id])
     }
 
     func testWorkoutRepositoryObserverEmitsCompactSummariesWithoutSets() async throws {
@@ -720,12 +783,13 @@ final class FirestoreRepositoryTests: XCTestCase {
         XCTAssertEqual(setWrites.count, 2, "Expected two workout set save payloads.", file: file, line: line)
         XCTAssertTrue(
             writes.contains {
-                isUpdateWrite($0) &&
+                isSetWrite($0, merge: true) &&
                     isWorkoutDocumentPath($0.path) &&
                     $0.payload["deletedAt"] != nil &&
-                    $0.payload["workoutId"] == nil
+                    $0.payload["accountId"] as? String == accountId &&
+                    $0.payload["workoutId"] != nil
             },
-            "Missing workout tombstone update payload.",
+            "Missing workout tombstone merge payload.",
             file: file,
             line: line
         )

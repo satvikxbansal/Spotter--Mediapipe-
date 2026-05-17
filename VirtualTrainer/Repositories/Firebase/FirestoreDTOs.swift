@@ -220,6 +220,127 @@ nonisolated struct FirestoreWorkoutDocument: Codable, Equatable {
     }
 }
 
+extension FirestoreWorkoutDocument {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+        let isTombstone = deletedAt != nil
+
+        func decodeRequired<T: Decodable>(
+            _ type: T.Type,
+            forKey key: CodingKeys,
+            tombstoneDefault: @autoclosure () -> T
+        ) throws -> T {
+            if isTombstone {
+                return try container.decodeIfPresent(type, forKey: key) ?? tombstoneDefault()
+            }
+            return try container.decode(type, forKey: key)
+        }
+
+        let createdAt = try decodeRequired(
+            Date.self,
+            forKey: .createdAt,
+            tombstoneDefault: deletedAt ?? Date(timeIntervalSince1970: 0)
+        )
+        let endedAt = try decodeRequired(
+            Date.self,
+            forKey: .endedAt,
+            tombstoneDefault: deletedAt ?? createdAt
+        )
+        let mode = try decodeRequired(
+            String.self,
+            forKey: .mode,
+            tombstoneDefault: WorkoutSessionSummaryMode.freeAnalysis.rawValue
+        )
+        let completionPercent = try container.decodeIfPresent(Double.self, forKey: .completionPercent)
+
+        self.schemaVersion = try decodeRequired(
+            Int.self,
+            forKey: .schemaVersion,
+            tombstoneDefault: FirestoreDTOSchema.currentVersion
+        )
+        self.accountId = try container.decode(String.self, forKey: .accountId)
+        self.workoutId = try container.decode(String.self, forKey: .workoutId)
+        self.summarySchemaVersion = try decodeRequired(
+            Int.self,
+            forKey: .summarySchemaVersion,
+            tombstoneDefault: WorkoutSessionSummary.currentSchemaVersion
+        )
+        self.appBuildVersion = try container.decodeIfPresent(String.self, forKey: .appBuildVersion)
+        self.mode = mode
+        self.planId = try container.decodeIfPresent(String.self, forKey: .planId)
+        self.planTitle = try container.decodeIfPresent(String.self, forKey: .planTitle)
+        self.title = try decodeRequired(String.self, forKey: .title, tombstoneDefault: "Deleted workout")
+        self.goal = try container.decodeIfPresent(String.self, forKey: .goal)
+        self.coach = try decodeRequired(
+            String.self,
+            forKey: .coach,
+            tombstoneDefault: CoachPersonality.good.rawValue
+        )
+        self.startedAt = try decodeRequired(Date.self, forKey: .startedAt, tombstoneDefault: endedAt)
+        self.endedAt = endedAt
+        self.serverEndedAt = try container.decodeIfPresent(Date.self, forKey: .serverEndedAt)
+            ?? (isTombstone ? deletedAt : nil)
+        self.durationSeconds = try decodeRequired(Int.self, forKey: .durationSeconds, tombstoneDefault: 0)
+        self.totalReps = try decodeRequired(Int.self, forKey: .totalReps, tombstoneDefault: 0)
+        self.totalHoldSeconds = try decodeRequired(Int.self, forKey: .totalHoldSeconds, tombstoneDefault: 0)
+        self.averageFormScore = try container.decodeIfPresent(Double.self, forKey: .averageFormScore)
+        self.completionPercent = completionPercent
+        self.setCount = try decodeRequired(Int.self, forKey: .setCount, tombstoneDefault: 0)
+        self.repQualityEventCount = try decodeRequired(
+            Int.self,
+            forKey: .repQualityEventCount,
+            tombstoneDefault: 0
+        )
+        self.cueEventCount = try decodeRequired(Int.self, forKey: .cueEventCount, tombstoneDefault: 0)
+        self.topCue = try container.decodeIfPresent(FirestoreCueEventDTO.self, forKey: .topCue)
+        self.effortSummary = try decodeRequired(String.self, forKey: .effortSummary, tombstoneDefault: "")
+        self.workoutOutcome = try decodeRequired(
+            String.self,
+            forKey: .workoutOutcome,
+            tombstoneDefault: Self.defaultWorkoutOutcome(mode: mode, completionPercent: completionPercent)
+        )
+        self.structuredEffortSummary = try container.decodeIfPresent(
+            FirestoreStructuredEffortSummaryDTO.self,
+            forKey: .structuredEffortSummary
+        )
+        self.totalGoodFormReps = try decodeRequired(Int.self, forKey: .totalGoodFormReps, tombstoneDefault: 0)
+        self.totalExcellentFormReps = try decodeRequired(
+            Int.self,
+            forKey: .totalExcellentFormReps,
+            tombstoneDefault: 0
+        )
+        self.totalHighSeverityCues = try decodeRequired(
+            Int.self,
+            forKey: .totalHighSeverityCues,
+            tombstoneDefault: 0
+        )
+        self.createdAt = createdAt
+        self.deletedAt = deletedAt
+        self.syncMetadata = try container.decodeIfPresent(FirestoreSyncMetadataFields.self, forKey: .syncMetadata)
+        self.operationId = try decodeRequired(
+            UUID.self,
+            forKey: .operationId,
+            tombstoneDefault: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+        )
+    }
+
+    private static func defaultWorkoutOutcome(
+        mode: String,
+        completionPercent: Double?
+    ) -> String {
+        guard WorkoutSessionSummaryMode(rawValue: mode) == .plannedWorkout else {
+            return WorkoutOutcome.freeAnalysisSaved.rawValue
+        }
+        guard let completionPercent else {
+            return WorkoutOutcome.partial.rawValue
+        }
+        return completionPercent >= 1
+            ? WorkoutOutcome.completed.rawValue
+            : WorkoutOutcome.partial.rawValue
+    }
+}
+
 nonisolated struct FirestoreWorkoutSetDocument: Codable, Equatable {
     let schemaVersion: Int
     let accountId: String

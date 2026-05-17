@@ -2206,3 +2206,55 @@ The build printed the expected local-only warning and did not require `GoogleSer
 After any context compaction or interrupted long-running phase, audit against the original prompt with an explicit requirement matrix before declaring the phase complete. For testability requirements, prefer a single executable command or script over prose-only instructions. For DEBUG-only diagnostics, gate state mutation, not only UI and logging. For negative backend tests, assert the specific failure class that protects user data. Documentation changes must be re-read for old/new contradictions before final verification.
 
 **Pattern Tags:** #phase17 #post-compaction-audit #firebase #emulator #cost-budget #debug-only #rules-denial #documentation #privacy #local-mode
+
+### [DL-067] Phase 17.5 Backend Hardening
+**Date:** 2026-05-17
+**Severity:** hardening
+**Category:** backend, firebase, firestore-rules, privacy, sync, testing
+**File(s):** `Documentation/firestore.rules`, `Documentation/FirestoreRulesEmulatorTests.md`, `Documentation/BackendQAChecklist.md`, `Documentation/FirebaseEmulatorSetup.md`, `README.md`, `.gitignore`, `Scripts/test-firestore-rules.sh`, `Scripts/firestore-rules-tests/index.test.js`, `Scripts/pre-commit-firestore-rules.sample.sh`, `VirtualTrainer/Repositories/Firebase/FirestoreWorkoutRepository.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreDTOs.swift`, `VirtualTrainer/Repositories/Firebase/FirestorePrivacyValidator.swift`, `VirtualTrainerTests/FirestoreRepositoryTests.swift`, `VirtualTrainerTests/FirestoreTranslationLayerTests.swift`
+
+**Error:**
+Phase 17 still had four backend gaps before the design revamp. The root `users/{uid}` document was owner-writable without a reserved schema, so future app code could accidentally put profile or product fields there. Workout deletion used `updateData`, which fails when a local workout is created and deleted before its first remote upload, preventing the intended remote tombstone from being created. The privacy validator allowed arbitrary `Data` values up to 4 KB even though there are no approved binary Firestore fields today. Finally, the published Firestore rules had documentation and XCTest coverage, but no standalone emulator-backed rules suite that could be run locally before publishing rules.
+
+**Root Cause:**
+The backend path had been hardened around compact derived documents and local-first sync, but a few implicit assumptions remained untested: root user docs were treated like another owner-scoped document, delete tombstones assumed a remote document already existed, the binary payload guard was size-based instead of allowlist-based, and rules behavior was validated indirectly rather than through the Firestore emulator. These gaps were small individually, but together they left room for privacy drift and sync edge cases as Firebase usage expands.
+
+**Fix Applied:**
+Restricted `users/{uid}` root writes in `Documentation/firestore.rules` to owner-readable, non-deletable metadata with only `accountId`, `schemaVersion`, `createdAt`, `updatedAt`, and optional `lastSeenAt`. Changed workout deletion to `setData(..., merge: true)` with a minimal tombstone payload containing `accountId`, `schemaVersion`, normalized `workoutId`, `deletedAt`, deterministic `operationId`, and pending `syncMetadata`; repeated deletes with the same operation ID now short-circuit. Added backwards-compatible decoding defaults so minimal remote tombstones remain readable without weakening full workout DTO writes. Changed `FirestorePrivacyValidator` to reject every `Data` value by default unless a future privacy-reviewed call explicitly allowlists the field. Added Node/@firebase emulator rules tests plus a local runner and pre-commit stub, and updated README/QA/emulator docs to make the tightened rules workflow explicit.
+
+**Verification:**
+Toolchain paths resolved under `XcodeDefault.xctoolchain`:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Firestore rules emulator tests passed after using a temporary JDK because no system Java runtime was installed:
+
+`Scripts/test-firestore-rules.sh`
+
+- Passed: 9
+- Failed: 0
+
+Required simulator build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 428
+- Failed: 0
+- Skipped: 4 (`BackendIntegrationTests`, emulator opt-in)
+
+No-plist local fallback build passed after temporarily moving the ignored local Firebase client plist out of the workspace and restoring it with a shell trap:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerNoPlistDerivedData`
+
+The build printed the expected local-only warning and did not require `GoogleService-Info.plist`. `Scripts/test-firestore-rules.sh` also left no committed emulator artifacts; the generated `firestore-debug.log` is ignored. `git diff --check` passed before this entry and is rerun after appending. `gitleaks` is not installed locally, so a filename-only fallback scan over changed and untracked text files checked the repo's Firebase, service-account, private-key, OpenAI, GitHub, Slack, Stripe, JWT, bearer/authorization, URL credential, Supabase, and generic secret assignment patterns and found no candidate secrets. Static diff search confirmed no changes to `CameraManager`, `PoseEstimator`, `UniversalRepCounter`, `FormFeedbackEngine`, `HandGestureDetector`, `ExertionAnalyzer`, `WorkoutReadyCoordinator`, `FaceLandmarkerService`, or `FramePositionAnalyzer`.
+
+**Prevention Rule:**
+Treat Firestore schema and local sync behavior as a paired contract: every privacy or deletion rule change needs repository tests and emulator rules tests before publication. Root user docs stay reserved metadata unless a migration explicitly changes the schema. Binary Firestore fields require an explicit allowlist and privacy review before any upload path can accept them. Delete paths must be idempotent for existing, missing, and retried documents.
+
+**Pattern Tags:** #phase17-5 #firebase #firestore-rules #sync #tombstones #privacy #rules-emulator #local-mode #tests

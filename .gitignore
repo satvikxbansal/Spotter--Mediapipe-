@@ -1,4 +1,6 @@
 .vercel
+tmp/
+firestore-debug.log
 
 # CocoaPods
 Pods/

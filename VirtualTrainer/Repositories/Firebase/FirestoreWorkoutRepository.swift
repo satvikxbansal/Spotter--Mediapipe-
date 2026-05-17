@@ -94,7 +94,7 @@ final class FirestoreWorkoutRepository: WorkoutRepository, WorkoutTombstoneRepos
         let documents = try await database.queryDocuments(
             collectionPath: collectionPath,
             filters: [],
-            orderBy: "serverEndedAt",
+            orderBy: nil,
             descending: true,
             limit: nil
         )
@@ -142,10 +142,19 @@ final class FirestoreWorkoutRepository: WorkoutRepository, WorkoutTombstoneRepos
     func deleteWorkout(accountId: String, id: UUID, operationId: UUID) async throws {
         let uid = try FirestoreRepositorySupport.requiredAccountId(accountId)
         let path = try FirestorePathBuilder.workoutDocument(uid: uid, workoutId: id)
-        let payload = try Self.deletePayload(operationId: operationId)
+        if let current = try await database.getDocument(path: path),
+           Self.hasAppliedDeleteOperation(current, operationId: operationId) {
+            return
+        }
+
+        let payload = try Self.deletePayload(
+            accountId: uid,
+            workoutId: id,
+            operationId: operationId
+        )
 
         try await database.commitBatch { batch in
-            try batch.updateData(payload, path: path)
+            try batch.setData(payload, path: path, merge: true)
         }
     }
 
@@ -214,11 +223,18 @@ final class FirestoreWorkoutRepository: WorkoutRepository, WorkoutTombstoneRepos
         return payload
     }
 
-    private nonisolated static func deletePayload(operationId: UUID) throws -> [String: Any] {
+    private nonisolated static func deletePayload(
+        accountId: String,
+        workoutId: UUID,
+        operationId: UUID
+    ) throws -> [String: Any] {
         let now = Date()
         let nowString = FirestoreVersionStrings.string(from: now)
         let operationIdString = operationId.uuidString.lowercased()
         let payload: [String: Any] = [
+            "accountId": accountId,
+            "schemaVersion": FirestoreDTOSchema.currentVersion,
+            "workoutId": workoutId.uuidString.lowercased(),
             "deletedAt": FieldValue.serverTimestamp(),
             "operationId": operationIdString,
             "syncMetadata": [
@@ -231,6 +247,14 @@ final class FirestoreWorkoutRepository: WorkoutRepository, WorkoutTombstoneRepos
         ]
         try FirestorePrivacyValidator.validate(payload)
         return payload
+    }
+
+    private nonisolated static func hasAppliedDeleteOperation(
+        _ document: FirestoreStoredDocument,
+        operationId: UUID
+    ) -> Bool {
+        document.data["deletedAt"] != nil &&
+            (document.data["operationId"] as? String) == operationId.uuidString.lowercased()
     }
 
     private nonisolated static func recentWorkouts(

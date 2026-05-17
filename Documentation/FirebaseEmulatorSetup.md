@@ -70,7 +70,15 @@ To run manually from Xcode instead, start the emulators, set `SPOTTER_RUN_BACKEN
 
 ## Rules Testing
 
-For denial testing:
+Automated rules check:
+
+```bash
+Scripts/test-firestore-rules.sh
+```
+
+The script starts the Firestore emulator, loads `Documentation/firestore.rules`, and runs `Scripts/firestore-rules-tests/index.test.js` with `@firebase/rules-unit-testing`. See `Documentation/FirestoreRulesEmulatorTests.md` for the assertion list and local pre-commit stub.
+
+For manual denial testing:
 
 1. Start emulators.
 2. Load the normal rules from `Documentation/firestore.rules`.

@@ -8,6 +8,7 @@ Phase 17 goal: prove the Firebase backend is safe enough for a small internal be
 - Confirm `xcrun --find clang` and `xcrun --find swiftc` resolve under `XcodeDefault.xctoolchain`.
 - Keep `BackendMode.local` runnable with `GoogleService-Info.plist` absent.
 - Do not use production Firebase while emulator tests are running.
+- Run `Scripts/test-firestore-rules.sh` before publishing rule changes in Firebase Console.
 - Do not attach raw video, camera frames, face images, raw pose streams, raw pose timelines, raw biometric face data, raw face blendshape streams, plist contents, App Check debug tokens, or third-party secrets to logs, fixtures, exports, or Firestore payloads.
 
 ## Manual Beta Checklist
@@ -239,8 +240,14 @@ Expected:
   - Runs against Firebase Auth + Firestore emulators through `Scripts/run_backend_integration_tests.sh`, which starts the emulators and supplies `SPOTTER_RUN_BACKEND_INTEGRATION_TESTS=1` plus `SPOTTER_FIREBASE_EMULATOR=1`.
   - Covers anonymous sign-in, profile round trip, multi-set workout order, forbidden write denial, and tombstone propagation.
 
+- `Scripts/test-firestore-rules.sh`
+  - Runs `@firebase/rules-unit-testing` against `Documentation/firestore.rules`.
+  - Verifies owner-only profile access, root user metadata schema, raw sensor field denial, workout tombstone merges, normal workout writes, append-only trophy events, and insight delete denial.
+  - Use the local pre-commit sample in `Scripts/pre-commit-firestore-rules.sample.sh` until CI wiring is added.
+
 ## Tracked Manual Gaps Before Wider Beta
 
 - Validate App Check debug provider and release App Attest on physical devices before enforcement.
 - Validate account deletion against the final production cleanup path when Cloud Functions are introduced.
 - Run bad-rules and force-kill scenarios in emulator on at least two simulators before inviting testers.
+- Publish the tightened `users/{uid}` root metadata rule from `Documentation/firestore.rules` in Firebase Console after merging.

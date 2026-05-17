@@ -1,6 +1,9 @@
 rules_version = '2';
 
-// TODO(Phase 16J): add schema-level field validation for required fields and types.
+// Spotter Firestore rules for the local-first Firebase beta path.
+// Root user docs are reserved metadata only; product data stays in explicit
+// owner-scoped subcollections below users/{uid}. Publish this file in the
+// Firebase Console after backend-rule changes merge.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -15,6 +18,26 @@ service cloud.firestore {
     function nonEmpty(v) { return isString(v) && v.size() > 0; }
     function hasAccountId(uid) {
       return request.resource.data.accountId == uid;
+    }
+    function validRootUserMetadata(uid) {
+      return request.resource.data.accountId == uid
+        && request.resource.data.schemaVersion is int
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp
+        && (!("lastSeenAt" in request.resource.data) || request.resource.data.lastSeenAt is timestamp)
+        && request.resource.data.keys().hasAll([
+          "accountId",
+          "schemaVersion",
+          "createdAt",
+          "updatedAt"
+        ])
+        && request.resource.data.keys().hasOnly([
+          "accountId",
+          "schemaVersion",
+          "createdAt",
+          "updatedAt",
+          "lastSeenAt"
+        ]);
     }
 
     // Forbid raw-sensor field names anywhere in the user tree.
@@ -38,7 +61,18 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read, write: if owns(uid);
+      // Root doc is reserved metadata only. Schema:
+      //   accountId: string == uid
+      //   schemaVersion: integer
+      //   createdAt: timestamp
+      //   updatedAt: timestamp
+      //   lastSeenAt: timestamp (optional)
+      // Anything else is denied.
+      allow read: if owns(uid);
+      allow create, update: if owns(uid)
+        && validRootUserMetadata(uid)
+        && noRawData();
+      allow delete: if false;
 
       match /profile/{doc} {
         allow read: if owns(uid);
