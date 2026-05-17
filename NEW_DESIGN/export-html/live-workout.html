@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Welcome</title>
+    <title>LiveWorkout</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -197,110 +197,151 @@
     </style>
   </head>
   <body>
-    <div class="min-h-[100dvh] bg-background text-foreground flex flex-col p-5 font-sans">
-      <div class="mt-10 mb-8 flex-shrink-0">
-        <div class="flex items-center gap-2 mb-6">
-          <iconify-icon icon="ph:scan-body-duotone" class="text-primary text-2xl"></iconify-icon
-          ><span
-            class="font-heading font-bold uppercase tracking-widest text-sm text-muted-foreground"
-            >Spotter AI</span
-          >
-        </div>
-        <h1 class="font-heading text-6xl font-black uppercase leading-[0.9] tracking-tighter">
-          Your <br />AI Form <br /><span class="text-primary">Coach</span>
-        </h1>
-        <p class="mt-6 text-muted-foreground text-lg max-w-[280px] font-medium leading-snug">
-          Never train alone again.
-        </p>
-      </div>
-      <div class="grid grid-cols-2 gap-3 mb-10 flex-1 content-start">
+    <div
+      class="relative w-full h-[100dvh] bg-black overflow-hidden font-sans text-white select-none"
+    >
+      <div class="absolute inset-0 z-0">
+        <img
+          alt="Workout feed"
+          src="placeholder:img-workout-man-squat"
+          class="w-full h-full object-cover"
+        />
+        <div class="absolute inset-0 bg-black/15 pointer-events-none"></div>
         <div
-          class="col-span-2 border-2 border-primary rounded-2xl p-5 bg-card overflow-hidden relative min-h-[160px] shadow-[0_0_25px_rgba(184,230,0,0.15)] transition-all"
-        >
-          <img
-            src="https://ggrhecslgdflloszjkwl.supabase.co/storage/v1/object/public/user-assets/jboVeCYRrx9/components/4TeBMAGgWdP.png"
-            class="absolute inset-0 w-full h-full object-cover opacity-30 mix-blend-luminosity grayscale"
-          />
-          <div
-            class="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent z-10"
-          ></div>
-          <div class="relative z-20 h-full flex flex-col justify-between">
-            <div class="flex justify-between items-start">
-              <div
-                class="size-12 rounded-xl bg-primary flex items-center justify-center border-2 border-black"
+          class="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-black/40 to-transparent"
+        ></div>
+        <div
+          class="absolute bottom-0 inset-x-0 h-40 bg-gradient-to-t from-black/40 to-transparent"
+        ></div>
+      </div>
+      <div class="absolute inset-x-0 top-0 pt-[env(safe-area-inset-top,44px)] px-6 z-50">
+        <div class="flex items-center justify-between h-[84px] pt-2">
+          <div class="flex items-center gap-4">
+            <button
+              onclick="window.history.back()"
+              class="flex items-center justify-center p-1 -ml-1 hover:opacity-70 transition-opacity"
+            >
+              <iconify-icon icon="ph:caret-left-bold" class="text-[26px] text-white"></iconify-icon>
+            </button>
+            <div class="flex flex-col">
+              <h2
+                class="font-heading text-[26px] font-black uppercase tracking-tight leading-none text-white italic"
               >
-                <iconify-icon icon="ph:scan-bold" class="text-black text-3xl"></iconify-icon>
-              </div>
-              <div
-                class="flex items-center gap-2 px-3 py-1 bg-primary/20 backdrop-blur-md rounded-full border border-primary/30"
-              >
-                <span class="size-2 rounded-full bg-primary animate-pulse"></span
-                ><span class="text-[10px] font-black text-primary tracking-widest uppercase"
-                  >Live Tracking</span
-                >
-              </div>
-            </div>
-            <div>
-              <h3
-                class="font-heading font-black text-2xl uppercase leading-[0.85] tracking-tighter mb-1"
-              >
-                Elite Form &amp; REP AI <br />
-              </h3>
+                Air Squats
+              </h2>
               <p
-                class="text-[11px] font-bold text-muted-foreground uppercase tracking-widest opacity-80"
+                class="font-mono text-[13px] uppercase text-white/60 tracking-[0.2em] mt-2 font-black"
               >
-                Real-time coaching for every set
+                Set 2 of 3
               </p>
             </div>
           </div>
+          <button
+            onclick="window.location.hash=&#39;#CJvZu5u8q5X&#39;"
+            class="text-[14px] font-black uppercase tracking-widest text-white/60 hover:text-white transition-colors"
+          >
+            Skip
+          </button>
         </div>
-        <div
-          class="border-2 border-border rounded-2xl p-4 bg-card flex flex-col justify-between aspect-square"
-        >
-          <div class="flex -space-x-3 mb-2">
-            <img
-              src="https://randomuser.me/api/portraits/men/45.jpg"
-              class="size-10 rounded-full border-2 border-card object-cover ring-2 ring-primary ring-offset-2 ring-offset-card"
-            /><img
-              src="https://randomuser.me/api/portraits/women/65.jpg"
-              class="size-10 rounded-full border-2 border-card object-cover ring-2 ring-chart-1 ring-offset-2 ring-offset-card"
-            />
-            <div
-              class="size-10 rounded-full border-2 border-card bg-muted flex items-center justify-center"
-            >
-              <iconify-icon icon="ph:plus-bold" class="text-foreground text-xs"></iconify-icon>
-            </div>
-          </div>
-          <h3 class="font-heading font-bold uppercase text-lg leading-tight tracking-tight">
-            PICK WHO GETS TO COACH YOU<br />
-          </h3>
-        </div>
-        <div
-          class="border-2 border-border rounded-2xl p-4 bg-card flex flex-col justify-between aspect-square"
-        >
-          <iconify-icon
-            icon="ph:lock-key-bold"
-            class="text-foreground text-3xl mb-2"
-          ></iconify-icon>
-          <h3 class="font-heading font-bold uppercase text-lg leading-tight tracking-tight">
-            100% LOCAL<br />&amp; SECURE
-          </h3>
+        <div class="flex gap-[6px] px-1 mt-1">
+          <div class="h-1 flex-1 bg-accent rounded-full shadow-[0_0_12px_#C8FF00]"></div>
+          <div class="h-1 flex-1 bg-accent rounded-full shadow-[0_0_12px_#C8FF00]"></div>
+          <div class="h-1 flex-1 bg-accent rounded-full shadow-[0_0_12px_#C8FF00]"></div>
+          <div class="h-1 flex-1 bg-accent rounded-full shadow-[0_0_12px_#C8FF00]"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
+          <div class="h-1 flex-1 bg-white/10 rounded-full"></div>
         </div>
       </div>
-      <div class="mt-auto pb-6 pt-2 flex-shrink-0">
-        <button
-          class="w-full bg-primary text-primary-foreground font-heading font-bold uppercase text-xl h-[64px] rounded-[24px] flex items-center justify-center gap-2 active:scale-95 transition-transform"
+      <div
+        class="absolute top-[28%] left-1/2 -translate-x-1/2 z-40 pointer-events-none animate-bounce"
+      >
+        <div
+          class="bg-accent text-black border-2 border-black font-heading font-black text-[22px] px-10 h-14 rounded-full shadow-[0_0_40px_rgba(200,255,0,0.6)] flex items-center justify-center"
         >
-          Get Started<iconify-icon icon="ph:arrow-right-bold" class="text-2xl"></iconify-icon>
-        </button>
-        <p class="text-center text-muted-foreground text-sm mt-5 font-medium">
-          Already have an account?
-          <a
-            href="#"
-            class="text-foreground underline underline-offset-4 decoration-border font-bold"
-            >Log in</a
-          >
-        </p>
+          <span class="uppercase tracking-tight">Go Deeper</span>
+        </div>
+      </div>
+      <div class="absolute inset-0 z-10 pointer-events-none overflow-hidden">
+        <svg viewBox="0 0 400 800" class="w-full h-full opacity-100">
+          <g stroke="#C8FF00" stroke-width="3" stroke-linecap="round" stroke-opacity="0.7">
+            <line x1="200" x2="200" y1="320" y2="440" />
+            <line x1="140" x2="260" y1="380" y2="380" />
+            <line x1="140" x2="100" y1="380" y2="380" />
+            <line x1="260" x2="300" y1="380" y2="380" />
+            <line x1="140" x2="160" y1="380" y2="540" />
+            <line x1="260" x2="240" y1="380" y2="540" />
+            <line x1="160" x2="120" y1="540" y2="540" />
+            <line x1="240" x2="280" y1="540" y2="540" />
+            <line x1="120" x2="140" y1="540" y2="720" />
+            <line x1="280" x2="260" y1="540" y2="720" />
+          </g>
+          <g fill="#C8FF00" fill-opacity="0.9">
+            <circle r="4" cx="200" cy="320" class="blur-[2px]" />
+            <circle r="4" cx="200" cy="320" />
+            <circle r="4" cx="140" cy="380" class="blur-[2px]" />
+            <circle r="4" cx="140" cy="380" />
+            <circle r="4" cx="260" cy="380" class="blur-[2px]" />
+            <circle r="4" cx="260" cy="380" />
+            <circle r="4" cx="100" cy="380" />
+            <circle r="4" cx="300" cy="380" />
+            <circle r="4" cx="160" cy="540" />
+            <circle r="4" cx="240" cy="540" />
+            <circle r="4" cx="120" cy="540" />
+            <circle r="4" cx="280" cy="540" />
+            <circle r="4" cx="140" cy="720" />
+            <circle r="4" cx="260" cy="720" />
+          </g>
+        </svg>
+      </div>
+      <div class="absolute bottom-10 left-6 z-50 space-y-3">
+        <div
+          class="h-8 bg-black border-2 border-white rounded-full px-4 flex items-center gap-2 shadow-[4px_4px_0px_0px_rgba(0,209,255,0.3)]"
+        >
+          <div class="size-1.5 rounded-full bg-[#00D1FF]"></div>
+          <p class="font-heading text-[10px] font-black text-white uppercase tracking-widest">
+            Effort <span class="text-[#00D1FF]">Rising</span>
+          </p>
+        </div>
+        <div
+          class="h-8 bg-black border-2 border-white rounded-full px-4 flex items-center gap-3 shadow-[4px_4px_0px_0px_rgba(200,255,0,0.3)]"
+        >
+          <div class="flex gap-1">
+            <div class="w-[1.5px] h-2.5 bg-[#C8FF00]"></div>
+            <div class="w-[1.5px] h-2.5 bg-[#C8FF00]"></div>
+            <div class="w-[1.5px] h-2.5 bg-[#C8FF00]"></div>
+            <div class="w-[1.5px] h-2.5 bg-[#C8FF00]"></div>
+            <div class="w-[1.5px] h-2.5 bg-white"></div>
+          </div>
+          <p class="font-heading text-[10px] font-black text-white uppercase tracking-widest">
+            Form
+          </p>
+          <p class="font-heading text-[13px] font-black text-[#C8FF00] tracking-tighter">92%</p>
+        </div>
+      </div>
+      <div class="absolute bottom-10 right-6 z-50">
+        <div
+          class="bg-black border-2 border-white rounded-[24px] p-5 w-fit shadow-[8px_8px_0px_0px_rgba(200,255,0,1)]"
+        >
+          <div class="flex flex-col">
+            <p
+              class="font-heading text-[11px] font-black uppercase text-white/40 tracking-[0.2em] mb-0 ml-1 pl-[9px] pb-[2px]"
+            >
+              REPS
+            </p>
+            <div class="flex items-baseline gap-1.5">
+              <span
+                class="font-heading text-[92px] font-black text-accent leading-[0.8] tracking-tighter italic"
+                >07</span
+              ><span class="font-heading text-2xl font-black text-white/30 leading-none">/12</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </body>

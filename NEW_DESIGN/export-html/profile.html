@@ -266,32 +266,40 @@
           >
             App Theme
           </h3>
-          <div class="flex gap-4 p-4 bg-card border-2 border-border rounded-3xl">
+          <div class="flex gap-4 p-5 bg-card border-2 border-border rounded-[32px]">
             <div class="flex-1 flex flex-col items-center gap-2">
-              <div
-                class="size-12 rounded-full bg-[linear-gradient(135deg,#C8FF00_50%,#00D1FF_50%)] border-4 border-[#C8FF00] ring-2 ring-background ring-offset-0 cursor-pointer shadow-[0_0_20px_rgba(200,255,0,0.3)]"
-              ></div>
+              <div class="relative flex items-center justify-center">
+                <div
+                  class="size-12 rounded-full bg-[#C8FF00] border-4 border-background ring-2 ring-[#C8FF00] cursor-pointer shadow-[0_0_15px_rgba(200,255,0,0.4)]"
+                ></div>
+              </div>
               <span class="text-[8px] font-black uppercase tracking-tighter text-[#C8FF00]"
                 >Hyper</span
               >
             </div>
             <div class="flex-1 flex flex-col items-center gap-2">
               <div
-                class="size-12 rounded-full bg-[linear-gradient(135deg,#FF00FF_50%,#00FFFF_50%)] cursor-pointer shadow-[0_0_15px_rgba(255,0,255,0.1)]"
+                class="size-12 rounded-full bg-[#FF00FF] border-2 border-white/10 cursor-pointer active:scale-95 transition-all"
               ></div>
-              <span class="text-[8px] font-black uppercase tracking-tighter">Hot girl</span>
+              <span class="text-[8px] font-black uppercase tracking-tighter text-muted-foreground"
+                >Hot girl</span
+              >
             </div>
             <div class="flex-1 flex flex-col items-center gap-2">
               <div
-                class="size-12 rounded-full bg-[linear-gradient(135deg,#FFB000_50%,#7C3AED_50%)] cursor-pointer shadow-[0_0_15px_rgba(255,176,0,0.1)]"
+                class="size-12 rounded-full bg-[#FFB000] border-2 border-white/10 cursor-pointer active:scale-95 transition-all"
               ></div>
-              <span class="text-[8px] font-black uppercase tracking-tighter">Warm</span>
+              <span class="text-[8px] font-black uppercase tracking-tighter text-muted-foreground"
+                >Warm</span
+              >
             </div>
             <div class="flex-1 flex flex-col items-center gap-2">
               <div
-                class="size-12 rounded-full bg-[linear-gradient(135deg,#FF6600_50%,#00FFC2_50%)] cursor-pointer shadow-[0_0_15px_rgba(255,102,0,0.1)]"
+                class="size-12 rounded-full bg-[#FF6600] border-2 border-white/10 cursor-pointer active:scale-95 transition-all"
               ></div>
-              <span class="text-[8px] font-black uppercase tracking-tighter">Spicy</span>
+              <span class="text-[8px] font-black uppercase tracking-tighter text-muted-foreground"
+                >Spicy</span
+              >
             </div>
           </div>
         </div>
@@ -339,191 +347,226 @@
           <h3
             class="font-heading font-bold uppercase text-xs tracking-widest text-muted-foreground mb-4 ml-1"
           >
+            Stats
+          </h3>
+          <div class="grid grid-cols-6 gap-3 auto-rows-[120px]">
+            <div
+              class="col-span-4 bg-card border-2 border-border rounded-[32px] p-5 flex flex-col justify-between relative overflow-hidden"
+            >
+              <div class="absolute -right-2 -bottom-2 opacity-5">
+                <iconify-icon icon="ph:barbell-fill" class="text-8xl"></iconify-icon>
+              </div>
+              <p class="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground">
+                Workouts
+              </p>
+              <div class="flex items-baseline gap-2">
+                <p class="text-5xl font-heading font-black text-primary">4</p>
+                <p class="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">
+                  Total Sessions
+                </p>
+              </div>
+            </div>
+            <div
+              class="col-span-2 bg-primary border-2 border-primary rounded-[32px] p-4 flex flex-col items-center justify-center text-black"
+            >
+              <iconify-icon icon="ph:fire-fill" class="text-2xl mb-1"></iconify-icon>
+              <p class="text-[10px] font-black uppercase tracking-widest leading-none mb-1">
+                Streak
+              </p>
+              <p class="text-3xl font-heading font-black">0d</p>
+            </div>
+            <div
+              class="col-span-3 bg-card border-2 border-border rounded-[32px] p-5 flex flex-col justify-between"
+            >
+              <p class="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground">
+                Reps
+              </p>
+              <div>
+                <p class="text-3xl font-heading font-black">41</p>
+                <p class="text-[9px] font-bold text-primary uppercase tracking-tighter">
+                  7 Excellent
+                </p>
+              </div>
+            </div>
+            <div
+              class="col-span-3 bg-card border-2 border-border rounded-[32px] p-5 flex flex-col justify-between"
+            >
+              <p class="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground">
+                Hold
+              </p>
+              <div>
+                <p class="text-3xl font-heading font-black">1:45</p>
+                <p class="text-[9px] font-bold text-muted-foreground uppercase tracking-tighter">
+                  Iso-metric
+                </p>
+              </div>
+            </div>
+            <div
+              class="col-span-3 bg-card border-2 border-border rounded-[32px] p-5 flex flex-col justify-between"
+            >
+              <p class="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground">
+                Avg Form
+              </p>
+              <div class="flex items-end justify-between">
+                <p class="text-3xl font-heading font-black">85%</p>
+                <div class="h-8 w-12 flex items-end gap-1">
+                  <div class="flex-1 bg-muted h-1/2 rounded-full"></div>
+                  <div class="flex-1 bg-muted h-3/4 rounded-full"></div>
+                  <div class="flex-1 bg-primary h-full rounded-full"></div>
+                </div>
+              </div>
+            </div>
+            <div
+              class="col-span-3 bg-card border-2 border-border rounded-[32px] p-5 flex flex-col justify-between"
+            >
+              <p class="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground">
+                Time
+              </p>
+              <div>
+                <p class="text-3xl font-heading font-black">27:42</p>
+                <p class="text-[9px] font-bold text-muted-foreground uppercase tracking-tighter">
+                  Minutes
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3
+            class="font-heading font-bold uppercase text-xs tracking-widest text-muted-foreground mb-4 ml-1"
+          >
             Workout Snapshot
           </h3>
           <div
             class="bg-card border-2 border-border rounded-[32px] p-6 shadow-[8px_8px_0px_0px_rgba(255,255,255,0.05)]"
           >
-            <div class="flex justify-between items-center mb-6">
-              <span class="font-heading font-black uppercase text-base tracking-tighter"
-                >October 2023</span
-              >
-              <div class="flex gap-2">
-                <button
-                  class="size-8 rounded-lg border border-border flex items-center justify-center hover:bg-muted transition-colors"
+            <div class="mb-8">
+              <div class="flex justify-between items-center mb-4">
+                <div class="flex flex-col">
+                  <span class="font-heading font-black uppercase text-base tracking-tighter"
+                    >Last 12 Weeks</span
+                  ><span
+                    class="text-[10px] font-black uppercase tracking-widest text-muted-foreground"
+                    >4 workouts / 41 reps / 1m 45s holds</span
+                  >
+                </div>
+                <span class="text-[10px] font-black uppercase text-primary tracking-widest"
+                  >4 Days Active</span
                 >
-                  <iconify-icon icon="ph:caret-left-bold"></iconify-icon></button
-                ><button
-                  class="size-8 rounded-lg border border-border flex items-center justify-center hover:bg-muted transition-colors"
-                >
-                  <iconify-icon icon="ph:caret-right-bold"></iconify-icon>
-                </button>
               </div>
+              <div class="grid grid-cols-[repeat(12,1fr)] grid-rows-[repeat(7,1fr)] gap-1.5 mb-4">
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-primary/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-primary/20"></div>
+                <div class="aspect-square rounded-sm bg-primary"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-primary/60"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+                <div class="aspect-square rounded-sm bg-muted/40"></div>
+              </div>
+              <div class="flex items-center gap-2 mb-6">
+                <span class="text-[8px] font-black uppercase text-muted-foreground">Less</span>
+                <div class="flex gap-1">
+                  <div class="size-3 rounded-sm bg-muted/40"></div>
+                  <div class="size-3 rounded-sm bg-primary/20"></div>
+                  <div class="size-3 rounded-sm bg-primary/40"></div>
+                  <div class="size-3 rounded-sm bg-primary/60"></div>
+                  <div
+                    class="size-3 rounded-sm bg-primary shadow-[0_0_8px_rgba(200,255,0,0.4)]"
+                  ></div>
+                </div>
+                <span class="text-[8px] font-black uppercase text-muted-foreground">More</span>
+              </div>
+              <button
+                class="w-full border-2 border-primary py-3 rounded-2xl flex items-center justify-center gap-2 group active:scale-95 transition-all"
+              >
+                <iconify-icon
+                  icon="ph:share-network-fill"
+                  class="text-primary text-xl"
+                ></iconify-icon
+                ><span
+                  class="text-primary font-heading font-black uppercase text-xs tracking-widest"
+                  >Share Heatmap</span
+                >
+              </button>
             </div>
-            <div class="grid grid-cols-7 gap-y-4 text-center mb-6">
-              <div class="text-[10px] font-black text-muted-foreground uppercase">M</div>
-              <div class="text-[10px] font-black text-muted-foreground uppercase">T</div>
-              <div class="text-[10px] font-black text-muted-foreground uppercase">W</div>
-              <div class="text-[10px] font-black text-muted-foreground uppercase">T</div>
-              <div class="text-[10px] font-black text-muted-foreground uppercase">F</div>
-              <div class="text-[10px] font-black text-muted-foreground uppercase">S</div>
-              <div class="text-[10px] font-black text-muted-foreground uppercase">S</div>
-              <div class="h-8"></div>
-              <div class="h-8"></div>
-              <div class="h-8"></div>
-              <div class="h-8"></div>
-              <div class="h-8"></div>
-              <div class="h-8"></div>
-              <div class="h-8 flex items-center justify-center text-xs font-black">1</div>
-              <div class="h-8 flex items-center justify-center relative cursor-pointer group">
-                <iconify-icon
-                  icon="ph:fire-fill"
-                  class="text-primary/20 group-hover:text-primary/30 text-3xl transition-colors"
-                ></iconify-icon
-                ><span
-                  class="absolute inset-0 flex items-center justify-center text-xs font-black text-primary"
-                  >2</span
-                >
-              </div>
-              <div class="h-8 flex items-center justify-center text-xs font-black">3</div>
-              <div class="h-8 flex items-center justify-center relative cursor-pointer group">
-                <iconify-icon
-                  icon="ph:fire-fill"
-                  class="text-primary/20 group-hover:text-primary/30 text-3xl transition-colors"
-                ></iconify-icon
-                ><span
-                  class="absolute inset-0 flex items-center justify-center text-xs font-black text-primary"
-                  >4</span
-                >
-              </div>
-              <div class="h-8 flex items-center justify-center relative cursor-pointer group">
-                <iconify-icon
-                  icon="ph:fire-fill"
-                  class="text-primary/20 group-hover:text-primary/30 text-3xl transition-colors"
-                ></iconify-icon
-                ><span
-                  class="absolute inset-0 flex items-center justify-center text-xs font-black text-primary"
-                  >5</span
-                >
-              </div>
-              <div class="h-8 flex items-center justify-center text-xs font-black">6</div>
-              <div class="h-8 flex items-center justify-center relative cursor-pointer group">
-                <iconify-icon
-                  icon="ph:fire-fill"
-                  class="text-primary/20 group-hover:text-primary/30 text-3xl transition-colors"
-                ></iconify-icon
-                ><span
-                  class="absolute inset-0 flex items-center justify-center text-xs font-black text-primary"
-                  >7</span
-                >
-              </div>
-              <div
-                class="h-8 flex items-center justify-center text-xs font-black text-muted-foreground"
-              >
-                8
-              </div>
-              <div class="h-8 flex items-center justify-center text-xs font-black">9</div>
-              <div class="h-8 flex items-center justify-center relative cursor-pointer group">
-                <iconify-icon
-                  icon="ph:fire-fill"
-                  class="text-primary/20 group-hover:text-primary/30 text-3xl transition-colors"
-                ></iconify-icon
-                ><span
-                  class="absolute inset-0 flex items-center justify-center text-xs font-black text-primary"
-                  >10</span
-                >
-              </div>
-              <div class="h-8 flex items-center justify-center relative cursor-pointer group">
-                <iconify-icon
-                  icon="ph:fire-fill"
-                  class="text-primary/20 group-hover:text-primary/30 text-3xl transition-colors"
-                ></iconify-icon
-                ><span
-                  class="absolute inset-0 flex items-center justify-center text-xs font-black text-primary"
-                  >11</span
-                >
-              </div>
-              <div class="h-8 flex items-center justify-center text-xs font-black">12</div>
-              <div class="h-8 flex items-center justify-center relative cursor-pointer group">
-                <iconify-icon
-                  icon="ph:fire-fill"
-                  class="text-primary/20 group-hover:text-primary/30 text-3xl transition-colors"
-                ></iconify-icon
-                ><span
-                  class="absolute inset-0 flex items-center justify-center text-xs font-black text-primary"
-                  >13</span
-                >
-              </div>
-              <div class="h-8 flex items-center justify-center text-xs font-black">14</div>
-              <div class="h-8 flex items-center justify-center relative cursor-pointer group">
-                <iconify-icon
-                  icon="ph:fire-fill"
-                  class="text-primary/20 group-hover:text-primary/30 text-3xl transition-colors"
-                ></iconify-icon
-                ><span
-                  class="absolute inset-0 flex items-center justify-center text-xs font-black text-primary"
-                  >15</span
-                >
-              </div>
-              <div class="h-8 flex items-center justify-center relative cursor-pointer group">
-                <iconify-icon
-                  icon="ph:fire-fill"
-                  class="text-primary/20 group-hover:text-primary/30 text-3xl transition-colors"
-                ></iconify-icon
-                ><span
-                  class="absolute inset-0 flex items-center justify-center text-xs font-black text-primary"
-                  >16</span
-                >
-              </div>
-              <div class="h-8 flex items-center justify-center text-xs font-black">17</div>
-              <div class="h-8 flex items-center justify-center relative cursor-pointer group">
-                <iconify-icon
-                  icon="ph:fire-fill"
-                  class="text-primary/20 group-hover:text-primary/30 text-3xl transition-colors"
-                ></iconify-icon
-                ><span
-                  class="absolute inset-0 flex items-center justify-center text-xs font-black text-primary"
-                  >18</span
-                >
-              </div>
-              <div class="h-8 flex items-center justify-center text-xs font-black">19</div>
-              <div class="h-8 flex items-center justify-center relative cursor-pointer group">
-                <iconify-icon
-                  icon="ph:fire-fill"
-                  class="text-primary/20 group-hover:text-primary/30 text-3xl transition-colors"
-                ></iconify-icon
-                ><span
-                  class="absolute inset-0 flex items-center justify-center text-xs font-black text-primary"
-                  >20</span
-                >
-              </div>
-              <div class="h-8 flex items-center justify-center relative cursor-pointer group">
-                <iconify-icon
-                  icon="ph:fire-fill"
-                  class="text-primary/20 group-hover:text-primary/30 text-3xl transition-colors"
-                ></iconify-icon
-                ><span
-                  class="absolute inset-0 flex items-center justify-center text-xs font-black text-primary"
-                  >21</span
-                >
-              </div>
-              <div class="h-8 flex items-center justify-center text-xs font-black">22</div>
-              <div
-                onclick="openScreen(&#39;J2mICG0vSfa&#39;)"
-                class="h-8 flex items-center justify-center relative cursor-pointer group"
-              >
-                <iconify-icon
-                  icon="ph:fire-fill"
-                  class="text-primary text-3xl transition-transform active:scale-95"
-                ></iconify-icon
-                ><span
-                  class="absolute inset-0 flex items-center justify-center text-xs font-black text-black"
-                  >23</span
-                >
-                <div class="absolute inset-0 border-2 border-primary rounded-lg opacity-40"></div>
-              </div>
-            </div>
-            <div class="space-y-4 pt-4 border-t-2 border-border/50">
+            <div class="space-y-4 pt-6 border-t-2 border-border/50">
               <h4
                 class="font-heading font-black uppercase text-xs tracking-widest flex items-center gap-2"
               >
@@ -531,21 +574,21 @@
                 Insights
               </h4>
               <div class="space-y-3">
-                <div class="flex gap-3">
-                  <iconify-icon icon="ph:trend-up-bold" class="text-chart-1 mt-1"></iconify-icon>
+                <div class="bg-chart-1/5 border-l-4 border-chart-1 p-3 rounded-r-xl">
                   <p
                     class="text-xs font-bold leading-relaxed text-chart-1 italic uppercase tracking-tight"
                   >
-                    "You've hit 4 workouts this week. Your consistency is peaking. Don't let the
-                    streak cool down."
+                    "Volume is trending 15% higher this month. Your endurance is the primary driver
+                    of this growth."
                   </p>
                 </div>
-                <div class="flex gap-3">
-                  <iconify-icon icon="ph:seal-check-bold" class="text-chart-1 mt-1"></iconify-icon>
+                <div class="flex gap-3 px-1">
+                  <iconify-icon icon="ph:trend-up-bold" class="text-chart-1/60 mt-1"></iconify-icon>
                   <p
-                    class="text-xs font-bold leading-relaxed text-chart-1 italic uppercase tracking-tight"
+                    class="text-xs font-bold leading-relaxed text-chart-1/60 italic uppercase tracking-tight"
                   >
-                    "Form on Squats has stabilized. Average depth improved by 4cm this month."
+                    "Recovery windows are optimized. Morning sessions show 8% better form
+                    stability."
                   </p>
                 </div>
               </div>
