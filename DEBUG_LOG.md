@@ -2611,3 +2611,95 @@ The xcresult reported 448 total tests and succeeded. `git diff --check` passed. 
 Keep V2 shell work behind the D1 toggle and route through explicit root helpers so flag-off and flag-on behavior remains testable without mounting the whole app. Future D4-D6 screen replacements should replace only the relevant placeholder content, keep unsupported design-only features disabled or omitted, and use the app-level presenter state for any new full-screen experience that must cover global chrome.
 
 **Pattern Tags:** #design-system-v2 #d2 #app-shell #liquid-glass-nav #feature-flag #accessibility #tests
+
+---
+
+### [DL-075] D2 V2 Nav Visual QA Follow-Up
+**Date:** 2026-05-17
+**Severity:** visual-fix
+**Category:** design-system, v2, navigation, accessibility, visual-qa
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/UI/V2/V2LiquidGlassTabBar.swift`
+
+**Error:**
+The first D2 liquid-glass nav technically met the app-shell wiring requirements, but visual QA against the design reference and the current V1 tab bar showed it read too much like a heavy black control. It also missed the practical strength of the V1 tab bar: familiar grid/profile symbols, visible labels, balanced icon scale, and a selected state that stays readable without dominating the whole pill.
+
+**Root Cause:**
+The implementation leaned too literally on the D2 helper sketch and the `glassSurface` compatibility layer. On flat placeholder content, that made the glass effect visually collapse into a dark pill. The extra glow was too strong, while the selected chip border was too saturated. The tab buttons also used icon-only controls, which matched the narrow D2 prompt but felt less usable than the existing V1 bottom navigation.
+
+**Fix Applied:**
+Updated the V2 tab bar to borrow the strongest V1 navigation cues while keeping the V2 shell language. Dashboard now uses `square.grid.2x2.fill`, Profile uses `person.crop.circle.fill`, each tab shows a compact label, selected state keeps the theme tint with a softer chip and border, and selected tabs add the VoiceOver selected trait. The liquid-glass background now layers the existing `.glassSurface(cornerRadius:)` behind a black/40 tint, border, and subtle rim highlight, matching the web reference more closely while still falling back to the solid style when Reduce Transparency is enabled. The shadow/glow was reduced so the control reads more like a floating pill and less like a docked black slab.
+
+**Verification:**
+Required workspace build passed after the visual patch:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Focused V2 test slice passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData -only-testing:VirtualTrainerTests/DesignSystemV2Tests`
+
+- Passed: 13
+- Failed: 0
+- Skipped: 0
+
+`git diff --check` passed. Static scan found no WebView, Tailwind, Iconify, Phosphor, or feature-screen raw hex additions in `V2LiquidGlassTabBar.swift`.
+
+**Prevention Rule:**
+For V2 chrome, compare against both the NEW_DESIGN reference and the existing V1 interaction quality. The V2 design should not regress familiar iOS navigation affordances unless a later phase explicitly replaces them with tested product behavior.
+
+**Pattern Tags:** #design-system-v2 #d2 #visual-qa #liquid-glass-nav #v1-inspired #accessibility
+
+---
+
+### [DL-076] D0-D2 Design System Scope Audit And Prevention Checklist
+**Date:** 2026-05-17
+**Severity:** audit
+**Category:** design-system, v2, scope-control, typography, color, components, prevention
+**File(s):** `DEBUG_LOG.md`, `Documentation/DesignSystemV2Inventory.md`, `Spotter_DesignV2_Forward_Plan.md`, `VirtualTrainer/DesignSystem/SpotterV2Tokens.swift`, `VirtualTrainer/DesignSystem/SpotterV2Typography.swift`, `VirtualTrainer/DesignSystem/SpotterV2Components.swift`, `VirtualTrainer/UI/DesignSystemV2GalleryView.swift`, `VirtualTrainer/UI/V2/V2RootView.swift`, `VirtualTrainer/UI/V2/V2MainShellView.swift`, `VirtualTrainer/UI/V2/V2LiquidGlassTabBar.swift`
+
+**Error:**
+The D2 nav visual QA miss showed that build/test success and structural prompt compliance are not enough for V2 phases. The first nav implementation followed the shell wiring and accessibility requirements, but it was not visually close enough to the NEW_DESIGN screenshot and did not preserve the interaction quality of the current V1 bottom navigation. Without an explicit design audit checkpoint, the same miss could repeat on higher-impact D3-D6 screens.
+
+**Root Cause:**
+The implementation reviewed tokens and code paths more deeply than rendered visual parity. It translated the HTML behaviorally, but did not compare the final SwiftUI result against both reference sources that matter: the NEW_DESIGN screenshot and the current V1 app surface. The D0/D1 docs already define this as a translation exercise, but the working checklist did not force a final fonts/colors/elements audit before declaring the phase complete.
+
+**Audit Findings:**
+- Fonts: On track. D0 extracted DM Sans, Space Grotesk, JetBrains Mono, and Playfair Display from the HTML as reference-only fonts. D1/D2 use `SpotterV2Typography` system wrappers only. Static scan found no `Font.custom`, `.custom(...)`, external font names, or UIKit named-font usage in Swift.
+- Colors: On track. `SpotterV2Tokens.swift` matches the D0 root palette for background, foreground, secondary/muted, destructive, border, chart colors, and routes primary/ring/chart2 through `SpotterThemeOption`. Static scan found raw hex only in `SpotterV2Tokens.swift`, not in V2 feature surfaces. Black/white opacity usage remains acceptable inside the nav glass material because the D2 prompt and HTML reference both define glass via black/white opacity layers.
+- Theme accents: On track. Hyper, Hot Girl, Warm, and Spicy continue to use `SpotterThemeOption.accentColor` and `secondaryAccentColor`; V2 screens should not create per-screen hardcoded accent palettes.
+- Web assets/libraries: On track. Static scan found no WebView, WKWebView, Tailwind, Iconify, Phosphor, or `ph:` references in Swift. SF Symbols are used instead.
+- Components: Mostly on track. D1 introduced the expected V2 primitives: cards, CTA/secondary/destructive buttons, metric/status pills, section headers, progress/hero number, insight, history, exercise, trophy, theme, empty-state, bottom-sheet, and backend-status components. D2 adds root/shell/nav only, which matches scope.
+- D2 nav: Corrected. The revised V2 nav now intentionally borrows V1's stronger affordances: grid dashboard icon, circular profile icon, compact labels, balanced icon sizing, softer selected chip, and selected VoiceOver trait. This is an approved V1-inspired correction to improve product usability while keeping the V2 glass/tint language.
+- Accessibility: On track but must be visually checked. D1/D2 code uses Reduce Motion guards for press/pulse/nav transitions, Reduce Transparency fallback for solid nav, VoiceOver labels/values, and selected trait on the active tab. Future screens still need manual Large Dynamic Type and VoiceOver traversal checks.
+- Scope discipline: On track. D2 placeholders do not implement dashboard metrics, remote avatar, milestone text, unsupported calories/heart-rate/MET metrics, running analysis, login, smart swaps, or trophy sharing as real behavior. These stay deferred per D0/D1 delta maps.
+
+**Prevention Checklist For Every Remaining V2 Phase:**
+1. Open the matching NEW_DESIGN screenshot next to the SwiftUI result before finalizing.
+2. Also compare against the current V1 surface for interaction quality, familiarity, and missing production affordances.
+3. Check fonts: no external/custom fonts unless a later asset phase explicitly bundles and licenses them.
+4. Check colors: no raw hex in feature screens; use `SpotterV2.Tokens` and `SpotterThemeOption`.
+5. Check icons: no Iconify/Phosphor/Tailwind/WebView; map to SF Symbols using D0/D1 rosetta guidance.
+6. Check design-only features: unsupported metrics, login, smart swaps, BPM/KG/calorie/MET/running/burpee/share flows must be omitted or disabled/coming-soon.
+7. Check code-only features: backend status, sync diagnostics, export/delete, free-analysis summary, weekly recap, evidence sheets, heatmap drill-in, calibration failure/skipped, empty states, and engagement controls must remain present and be styled, not dropped.
+8. Check accessibility: iPhone SE and Pro Max, Large Dynamic Type, VoiceOver labels/values, Reduce Motion, Reduce Transparency, safe areas, keyboard, sheets, and live workout overlays.
+9. Run static scans for custom fonts, raw colors, WebView, Tailwind, Iconify, and Phosphor before final response.
+10. Record any intentional visual deviation from the prompt, with the product reason, in `DEBUG_LOG.md`.
+
+**Verification:**
+Static audit commands were run for current D0-D2 scope:
+
+`rg -n "Font\\.custom|\\.custom\\(|DM Sans|Space Grotesk|JetBrains Mono|Playfair Display|font-family|UIFont\\(name:" VirtualTrainer --glob '*.swift'`
+
+No matches.
+
+`rg -n "Color\\(hex:|0x[0-9A-Fa-f]{6}" VirtualTrainer --glob '*.swift'`
+
+Matches only in `VirtualTrainer/DesignSystem/SpotterV2Tokens.swift`.
+
+`rg -n "WebView|WKWebView|Tailwind|tailwind|Iconify|iconify|Phosphor|ph:" VirtualTrainer --glob '*.swift'`
+
+No matches.
+
+`git diff --check` passed after the audit-log append.
+
+**Pattern Tags:** #design-system-v2 #d0 #d1 #d2 #visual-audit #prevention-checklist #fonts #tokens #scope-control

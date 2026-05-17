@@ -33,13 +33,13 @@ nonisolated enum V2Tab: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .dashboard:
-            return "house.fill"
+            return "square.grid.2x2.fill"
         case .camera:
             return "camera.fill"
         case .trophies:
             return "trophy.fill"
         case .profile:
-            return "person.fill"
+            return "person.crop.circle.fill"
         }
     }
 }
@@ -94,22 +94,42 @@ struct V2LiquidGlassTabBar: View {
 
     private func navGlow(width: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: 54)
-            .fill(Color.black.opacity(0.42))
-            .frame(width: width, height: 98)
-            .blur(radius: 22)
-            .offset(y: 18)
+            .fill(Color.black.opacity(0.28))
+            .frame(width: width * 0.94, height: 82)
+            .blur(radius: 18)
+            .offset(y: 16)
     }
 
     @ViewBuilder
     func navBackground(style: V2NavStyle) -> some View {
         switch style {
         case .liquidGlass:
-            EmptyView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .glassSurface(cornerRadius: 46)
+            RoundedRectangle(cornerRadius: 46)
+                .fill(Color.black.opacity(0.40))
+                .background {
+                    EmptyView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .glassSurface(cornerRadius: 46)
+                }
                 .overlay(
                     RoundedRectangle(cornerRadius: 46)
                         .stroke(Color.white.opacity(0.20), lineWidth: 2)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 44)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.26),
+                                    Color.white.opacity(0.08),
+                                    Color.clear
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                        .padding(2)
                 )
                 .shadow(color: .black.opacity(0.8), radius: 25, y: 12)
         case .solid:
@@ -132,20 +152,27 @@ private struct V2LiquidGlassTabButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: tab.systemImage)
-                .font(.system(size: 30, weight: .black))
-                .symbolRenderingMode(.hierarchical)
+            VStack(spacing: 5) {
+                Image(systemName: tab.systemImage)
+                    .font(.system(size: 23, weight: .black))
+                    .symbolRenderingMode(.hierarchical)
+                    .scaleEffect(isSelected ? 1.1 : 1)
+
+                Text(tab.title)
+                    .font(SpotterV2Typography.caption(weight: .black))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
                 .foregroundStyle(isSelected ? SpotterV2.Tokens.primary(theme) : SpotterV2.Tokens.mutedForeground)
-                .scaleEffect(isSelected ? 1.1 : 1)
                 .frame(maxWidth: .infinity)
                 .frame(height: 76)
                 .background {
                     if isSelected {
                         RoundedRectangle(cornerRadius: 38)
-                            .fill(Color.white.opacity(0.10))
+                            .fill(Color.white.opacity(0.08))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 38)
-                                    .stroke(SpotterV2.Tokens.primary(theme).opacity(0.55), lineWidth: 1)
+                                    .stroke(SpotterV2.Tokens.primary(theme).opacity(0.32), lineWidth: 1)
                             )
                     }
                 }
@@ -154,6 +181,7 @@ private struct V2LiquidGlassTabButton: View {
         .buttonStyle(V2TabPressButtonStyle(reduceMotion: reduceMotion))
         .accessibilityLabel(tab.title)
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
