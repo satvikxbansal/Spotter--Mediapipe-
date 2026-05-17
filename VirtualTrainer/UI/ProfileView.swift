@@ -12,6 +12,7 @@ struct ProfileView: View {
     @EnvironmentObject private var appDependencies: AppDependencies
     @EnvironmentObject private var syncOrchestrator: SyncOrchestrator
     @EnvironmentObject private var featureFlagService: RemoteFeatureFlagService
+    @EnvironmentObject private var designSystemV2Toggle: DesignSystemV2ToggleStore
 
     @State private var selectedSummary: WorkoutSessionSummary?
     @State private var isShowingAllHistory = false
@@ -275,6 +276,7 @@ struct ProfileView: View {
                     calibrationStatus: calibrationStore.status,
                     backendStatusStore: backendStatusStore,
                     syncOrchestrator: syncOrchestrator,
+                    designSystemV2Toggle: designSystemV2Toggle,
                     currentAccountId: accountContext.currentAccountId,
                     isFirebaseAuthActionRunning: isRunningFirebaseAuthAction,
                     firebaseAuthMessage: firebaseAuthMessage,
@@ -1980,6 +1982,7 @@ private struct SettingsDebugSection: View {
     let calibrationStatus: CalibrationStatus
     @ObservedObject var backendStatusStore: BackendStatusStore
     @ObservedObject var syncOrchestrator: SyncOrchestrator
+    @ObservedObject var designSystemV2Toggle: DesignSystemV2ToggleStore
     let currentAccountId: String?
     let isFirebaseAuthActionRunning: Bool
     let firebaseAuthMessage: String?
@@ -2019,6 +2022,7 @@ private struct SettingsDebugSection: View {
                 ProfileInfoRow(label: "Calibration", value: calibrationStatus.displayName)
 
 #if DEBUG
+                designSystemV2DebugSection
                 backendDebugSection
 #endif
 
@@ -2072,6 +2076,70 @@ private struct SettingsDebugSection: View {
     }
 
 #if DEBUG
+    private var designSystemV2DebugSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
+                    Text("DEBUG")
+                        .font(.system(size: 9, weight: .black))
+                        .tracking(1.2)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.Colors.accent)
+                    Text("Design System V2")
+                        .font(.system(size: 12, weight: .black))
+                        .tracking(1.0)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                }
+                Spacer()
+                Text(designSystemV2Toggle.isEffectivelyEnabled ? "On" : "Off")
+                    .font(.system(size: 12, weight: .black))
+                    .tracking(1.0)
+                    .textCase(.uppercase)
+                    .foregroundStyle(
+                        designSystemV2Toggle.isEffectivelyEnabled
+                            ? Theme.Colors.positive
+                            : Theme.Colors.textSecondary
+                    )
+            }
+
+            Picker(
+                "Design System V2 Override",
+                selection: Binding(
+                    get: { designSystemV2Toggle.override },
+                    set: { designSystemV2Toggle.setOverride($0) }
+                )
+            ) {
+                ForEach(DesignSystemV2Override.allCases) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            NavigationLink {
+                DesignSystemV2GalleryView()
+            } label: {
+                HStack {
+                    Label("V2 Design Gallery", systemImage: "square.grid.2x2.fill")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                }
+            }
+            .font(.system(size: 12, weight: .black))
+            .tracking(1.0)
+            .textCase(.uppercase)
+            .foregroundStyle(Theme.Colors.accent)
+            .accessibilityLabel("V2 Design Gallery")
+
+            Text("Changing this swaps only the SwiftUI root; onboarding, calibration, profile, history, trophies, and insights stay alive.")
+                .caption()
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.Colors.surfaceRaised)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+    }
+
     private var backendDebugSection: some View {
         DisclosureGroup {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
@@ -3000,6 +3068,12 @@ private enum LocalUITestingSampleData {
         .environmentObject(dependencies)
         .environmentObject(SyncOrchestrator(dependencies: dependencies))
         .environmentObject(RemoteFeatureFlagService.local())
+        .environmentObject(
+            DesignSystemV2ToggleStore(
+                remoteFlagSnapshotProvider: { false },
+                userDefaults: UserDefaults(suiteName: "ProfilePreview.DesignSystemV2") ?? .standard
+            )
+        )
 }
 
 @MainActor

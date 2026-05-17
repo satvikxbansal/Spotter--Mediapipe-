@@ -2443,3 +2443,116 @@ Static status review confirmed this D0 work touched documentation only: `Documen
 Before implementing any V2 screen, start from the D0 inventory rather than the HTML alone. If design shows unsupported product behavior, mark it coming soon or omit it; do not build fake behavior. If code has a real surface the design omits, keep it and style it with V2 language. Treat remote images, external fonts, Tailwind, Iconify, and Phosphor as reference-only until a later asset/font licensing phase explicitly adds app-owned resources.
 
 **Pattern Tags:** #design-system-v2 #d0 #inventory #tailwind-to-swiftui #sf-symbols #feature-deltas #documentation-only #tests
+
+---
+
+### [DL-072] Design System V2 D1 Foundation
+**Date:** 2026-05-17
+**Severity:** implementation
+**Category:** design-system, feature-flags, debug-tools, swiftui, testing
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/DesignSystem/SpotterV2Tokens.swift`, `VirtualTrainer/DesignSystem/SpotterV2Typography.swift`, `VirtualTrainer/DesignSystem/SpotterV2Components.swift`, `VirtualTrainer/Models/DesignSystemV2ToggleStore.swift`, `VirtualTrainer/UI/DesignSystemV2GalleryView.swift`, `VirtualTrainer/UI/V2RootView.swift`, `VirtualTrainer/UI/ProfileView.swift`, `VirtualTrainer/UI/MainTabView.swift`, `VirtualTrainer/VirtualTrainerApp.swift`, `VirtualTrainer/Services/RemoteFeatureFlagService.swift`, `VirtualTrainerTests/DesignSystemV2Tests.swift`
+
+**Error:**
+No production runtime defect was fixed in this phase. The D0 inventory documented the V2 visual language, but the app still had no compiled SwiftUI token/component layer, no DEBUG local override for the remote V2 feature flag, no safe V2 root branch, no debug gallery, and no tests proving the override semantics.
+
+**Root Cause:**
+The V2 design exports are web/Tailwind/Iconify references, while the app needs SwiftUI-native, system-font, SF Symbol, theme-aware building blocks before individual screens can be moved. Without a local DEBUG override, developers would have to depend on Remote Config to inspect early V2 work. Without a placeholder V2 root branch behind the effective flag, later screen work could accidentally disturb onboarding, calibration, profile, history, trophies, insights, or the existing V1 tab flows.
+
+**Fix Applied:**
+Added `SpotterV2` tokens, spacing, radii, border widths, motion constants, and a hex `Color` helper. Added `SpotterV2Typography` system-font wrappers. Added reusable V2 SwiftUI components for cards, CTA/secondary/destructive buttons, metric and status pills, section headers, progress rings, hero numbers, insight cards, history rows, exercise rows, trophy cards, theme cards, empty states, bottom sheets, and a DEBUG backend status chip, with previews across Hyper, Hot Girl, Warm, and Spicy on iPhone SE 3rd generation and iPhone 17 Pro Max.
+
+Added `DesignSystemV2ToggleStore` with DEBUG-only UserDefaults override states: system default, force on, and force off. The store delegates system default to `RemoteFeatureFlagService.snapshot().designSystemV2Enabled` and ignores local overrides in non-DEBUG builds. Wired the store as a `@StateObject` in `VirtualTrainerApp`, preserved existing stores outside the root branch, and switched only the SwiftUI root hierarchy between the current V1 onboarding/calibration/main-tab flow and a D1 V2 placeholder. Added a DEBUG settings section in Profile with current effective state, live override picker, and a navigation link to the V2 gallery.
+
+Added tests for the hex helper, V2 token namespacing, toggle override semantics, and snapshot smoke rendering for `V2Card`, `V2CTAButton`, and `V2MetricPill` across Hyper and Hot Girl themes. The toggle tests retain their short-lived stores for the test process lifetime to avoid a Swift/XCTest MainActor deinit runtime abort observed in the simulator test host; production ownership remains a long-lived `@StateObject`.
+
+**Verification:**
+Toolchain paths resolved under `XcodeDefault.xctoolchain`:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both returned paths under:
+
+`/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`
+
+Required simulator build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 437
+- Failed: 0
+- Skipped: 4 (`BackendIntegrationTests`, emulator opt-in)
+
+The xcresult reported 441 total tests and succeeded. Known local build warnings remained unchanged: the ignored developer Firebase client config was copied without printing plist contents, and AppIntents metadata extraction was skipped because the app has no AppIntents dependency. Static change review confirmed no changes to MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, WorkoutReadyCoordinator, FaceLandmarkerService, FramePositionAnalyzer, backend repository behavior, Firestore sync, privacy rules, or live camera behavior.
+
+**Prevention Rule:**
+Keep D1 V2 work limited to app-owned SwiftUI foundations until a later phase explicitly revamps a screen. All future V2 screens must use `SpotterV2.Tokens`, `SpotterV2Typography`, and these components instead of raw feature-screen hex colors, Tailwind, external fonts, Phosphor, Iconify, or WebView. Feature-flag-off must continue to render V1 unchanged, and feature-flag-on must swap only the SwiftUI hierarchy while leaving stores alive.
+
+**Pattern Tags:** #design-system-v2 #d1 #feature-flag #debug-toggle #swiftui-components #snapshots #tests
+
+---
+
+### [DL-073] D1 Design System V2 Post-Compaction Audit RCA
+**Date:** 2026-05-17
+**Severity:** audit-fix
+**Category:** design-system, feature-flags, debug-tools, previews, testing, process
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/Models/DesignSystemV2ToggleStore.swift`, `VirtualTrainer/UI/V2RootView.swift`, `VirtualTrainerTests/DesignSystemV2Tests.swift`
+
+**Error:**
+The D1 foundation was functionally close and the full app build/test suite was green, but the post-compaction audit found four misses:
+
+- `git diff --stat` and `git diff --name-only` showed only tracked modified files, hiding the seven new untracked V2 source/test files from the default review surface.
+- Forcing V2 on from the DEBUG picker swapped the app into the D1 placeholder root, which meant the Profile debug picker disappeared and developers had no in-app path back to V1.
+- `V2RootView` previews covered both requested device sizes but only the default theme, while the prompt required every new V2 view to preview across Hyper, Hot Girl, Warm, and Spicy.
+- The initial toggle-store test workaround retained short-lived stores for the test process lifetime to avoid a Swift/XCTest MainActor deinit abort; that proved the tests, but it hid the better production fix.
+
+**Root Cause:**
+The misses came from review mechanics and acceptance-focus drift after the compaction. The implementation relied heavily on compile/test success and tracked diffs, but Xcode's synchronized groups can compile untracked Swift files while Git still omits them from normal tracked diff summaries. The acceptance line for D1 emphasized a placeholder V2 root, so the practical "how does a developer get back after Force On?" path was not considered until the audit walked the actual state transition. Preview coverage was checked at the component-gallery level, not view-by-view, leaving the root placeholder under-covered. The MainActor deinit issue was solved first as a test-host symptom instead of being treated as a lifecycle smell in the observable object itself.
+
+**Fix Applied:**
+Added a DEBUG-only `Return to V1` control to `V2RootView` that sets the local override to `.forceOff`, while keeping the placeholder text accessibility grouped separately so the button remains reachable. Expanded `V2RootView` previews to render all four `SpotterThemeOption` themes on iPhone SE 3rd generation and iPhone 17 Pro Max. Added `nonisolated deinit {}` to `DesignSystemV2ToggleStore`, matching the store lifecycle pattern used elsewhere, and removed the test-retention workaround. Added a persistence/reset test proving `.forceOn` survives store recreation and `.systemDefault` clears the DEBUG override key.
+
+This entry supersedes the DL-072 note that the toggle tests retained short-lived stores; they no longer do.
+
+**Verification:**
+Toolchain paths resolved under `XcodeDefault.xctoolchain`:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both returned paths under:
+
+`/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`
+
+Targeted D1 test slice passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData -only-testing:VirtualTrainerTests/DesignSystemV2Tests`
+
+- Passed: 7
+- Failed: 0
+- Skipped: 0
+
+Required simulator build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 438
+- Failed: 0
+- Skipped: 4 (`BackendIntegrationTests`, emulator opt-in)
+
+The xcresult reported 442 total tests and succeeded. `git diff --check` passed. Static scans found no WebView, Tailwind, Iconify, Phosphor, external/custom fonts, or feature-screen raw hex colors; raw hex is limited to `SpotterV2Tokens.swift` and `DesignSystemV2Tests.swift`. Status review confirmed no touched protected camera pipeline files, no Firestore rules change, no backend repository behavior change, and no live camera behavior change.
+
+**Prevention Rule:**
+For V2 phases, review both tracked and untracked surfaces with `git status --short` and `git ls-files --others --exclude-standard` before declaring the changed-file set complete. Every DEBUG toggle state must have an in-app return path. Preview coverage should be checked per new view, not inferred from a gallery. Actor-isolated observable objects used by tests should get a production lifecycle fix when possible instead of a test-only retention workaround.
+
+**Pattern Tags:** #design-system-v2 #d1 #post-compaction-audit #rca #debug-toggle #previews #tests #untracked-file-risk

@@ -43,4 +43,11 @@ struct MainTabView: View {
         .environmentObject(BackendStatusStore())
         .environmentObject(dependencies)
         .environmentObject(SyncOrchestrator(dependencies: dependencies))
+        .environmentObject(RemoteFeatureFlagService.local())
+        .environmentObject(
+            DesignSystemV2ToggleStore(
+                remoteFlagSnapshotProvider: { false },
+                userDefaults: UserDefaults(suiteName: "MainTabPreview.DesignSystemV2") ?? .standard
+            )
+        )
 }

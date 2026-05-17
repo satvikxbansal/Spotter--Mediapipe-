@@ -47,6 +47,10 @@ final class RemoteFeatureFlagService: ObservableObject {
         )
     }
 
+    func snapshot() -> FeatureFlags {
+        flags
+    }
+
     func refresh() async {
         guard remoteEnabled, let client else {
             flags = defaults

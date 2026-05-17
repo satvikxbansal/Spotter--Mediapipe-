@@ -19,6 +19,7 @@ struct VirtualTrainerApp: App {
     @StateObject private var themeStore = ThemeStore()
     @StateObject private var insightStore = InsightStore()
     @StateObject private var featureFlagService: RemoteFeatureFlagService
+    @StateObject private var designSystemV2Toggle: DesignSystemV2ToggleStore
     @State private var didTrackAppOpen = false
     @State private var didAttemptInitialFeatureFlagRefresh = false
 
@@ -34,24 +35,36 @@ struct VirtualTrainerApp: App {
         let featureFlags = statusStore.activeBackendMode == .firebase
             ? RemoteFeatureFlagService.firebase()
             : RemoteFeatureFlagService.local()
+        let designSystemV2Toggle = DesignSystemV2ToggleStore(
+            remoteFlagSnapshotProvider: {
+                featureFlags.snapshot().designSystemV2Enabled
+            }
+        )
         dependencies.crashReporting.configureLaunchContext(backendMode: dependencies.backendMode)
         _backendStatusStore = StateObject(wrappedValue: statusStore)
         _appDependencies = StateObject(wrappedValue: dependencies)
         _syncOrchestrator = StateObject(wrappedValue: SyncOrchestrator(dependencies: dependencies))
         _featureFlagService = StateObject(wrappedValue: featureFlags)
+        _designSystemV2Toggle = StateObject(wrappedValue: designSystemV2Toggle)
     }
 
     var body: some Scene {
         WindowGroup {
+            let isDesignSystemV2Enabled = designSystemV2Toggle.isEffectivelyEnabled
             Group {
-                if !onboardingStore.hasCompletedOnboarding {
-                    OnboardingFlowView()
-                } else if calibrationStore.shouldShowCalibrationGate {
-                    CalibrationIntroView()
+                if isDesignSystemV2Enabled {
+                    V2RootView()
                 } else {
-                    MainTabView()
+                    if !onboardingStore.hasCompletedOnboarding {
+                        OnboardingFlowView()
+                    } else if calibrationStore.shouldShowCalibrationGate {
+                        CalibrationIntroView()
+                    } else {
+                        MainTabView()
+                    }
                 }
             }
+            .id(isDesignSystemV2Enabled)
             .environmentObject(accountContext)
             .environmentObject(onboardingStore)
             .environmentObject(calibrationStore)
@@ -63,6 +76,7 @@ struct VirtualTrainerApp: App {
             .environmentObject(appDependencies)
             .environmentObject(syncOrchestrator)
             .environmentObject(featureFlagService)
+            .environmentObject(designSystemV2Toggle)
             .onAppear {
                 trackAppOpenIfNeeded()
                 syncStoresWithAccount()
