@@ -1,5 +1,7 @@
 import FirebaseAppCheck
+import FirebaseAuth
 import FirebaseCore
+import FirebaseFirestore
 import Foundation
 
 nonisolated enum FirebaseBootstrapState: Equatable {
@@ -21,7 +23,10 @@ nonisolated enum FirebaseBootstrap {
         in bundle: Bundle,
         isAppConfigured: () -> Bool = { FirebaseApp.app() != nil },
         optionsLoader: (String) -> FirebaseOptions? = { FirebaseOptions(contentsOfFile: $0) },
-        configurator: (FirebaseOptions) throws -> Void = { FirebaseApp.configure(options: $0) }
+        configurator: (FirebaseOptions) throws -> Void = { FirebaseApp.configure(options: $0) },
+        arguments: [String] = ProcessInfo.processInfo.arguments,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        emulatorConfigurator: () -> Void = { FirebaseEmulatorBootstrap.configure() }
     ) -> FirebaseBootstrapState {
         if isAppConfigured() {
             return .alreadyConfigured
@@ -42,6 +47,9 @@ nonisolated enum FirebaseBootstrap {
             AppCheck.setAppCheckProviderFactory(ReleaseAppCheckProviderFactory())
 #endif
             try configurator(options)
+            if FirebaseEmulatorBootstrap.isRequested(arguments: arguments, environment: environment) {
+                emulatorConfigurator()
+            }
         } catch {
             return .failed(reason: sanitizedFailureReason(for: error, plistPath: plistURL.path))
         }
@@ -82,6 +90,27 @@ nonisolated enum FirebaseBootstrap {
         }
 
         return sanitizedValue
+    }
+}
+
+nonisolated enum FirebaseEmulatorBootstrap {
+    static let launchArgument = "--firebase-emulator"
+    static let environmentVariable = "SPOTTER_FIREBASE_EMULATOR"
+    static let authHost = "localhost"
+    static let authPort = 9099
+    static let firestoreHost = "localhost"
+    static let firestorePort = 8080
+
+    static func isRequested(
+        arguments: [String] = ProcessInfo.processInfo.arguments,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Bool {
+        arguments.contains(launchArgument) || environment[environmentVariable] == "1"
+    }
+
+    static func configure() {
+        Auth.auth().useEmulator(withHost: authHost, port: authPort)
+        Firestore.firestore().useEmulator(withHost: firestoreHost, port: firestorePort)
     }
 }
 

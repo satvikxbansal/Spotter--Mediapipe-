@@ -455,6 +455,9 @@ final class WorkoutHistoryStore: ObservableObject {
               AccountOwnership.normalizedAccountId(summary.accountId) != nil else {
             return true
         }
+        guard !WorkoutSessionContext.isLive else {
+            return false
+        }
 
         do {
             let savedSummary = try await workoutRepository.saveWorkoutSummary(
@@ -477,6 +480,9 @@ final class WorkoutHistoryStore: ObservableObject {
               let workoutRepository,
               let accountId = AccountOwnership.normalizedAccountId(summary.accountId) else {
             return true
+        }
+        guard !WorkoutSessionContext.isLive else {
+            return false
         }
 
         do {

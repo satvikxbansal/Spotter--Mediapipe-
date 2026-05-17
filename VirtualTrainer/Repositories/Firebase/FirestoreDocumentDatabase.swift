@@ -81,6 +81,7 @@ final class FirebaseFirestoreDocumentDatabase: FirestoreDocumentDatabase {
 
     func getDocument(path: String) async throws -> FirestoreStoredDocument? {
         let snapshot = try await documentSnapshot(path: path)
+        FirestoreCostTracker.shared.recordReads(1, reason: "getDocument")
         return storedDocument(from: snapshot, path: path)
     }
 
@@ -115,6 +116,10 @@ final class FirebaseFirestoreDocumentDatabase: FirestoreDocumentDatabase {
             }
         }
 
+        FirestoreCostTracker.shared.recordReads(
+            max(snapshot.documents.count, 1),
+            reason: "queryDocuments"
+        )
         return snapshot.documents.compactMap { document in
             storedDocument(from: document, path: document.reference.path)
         }
@@ -161,6 +166,12 @@ final class FirebaseFirestoreDocumentDatabase: FirestoreDocumentDatabase {
                 onChange(.success([]))
                 return
             }
+            Task { @MainActor in
+                FirestoreCostTracker.shared.recordReads(
+                    max(snapshot.documents.count, 1),
+                    reason: "listenCollection"
+                )
+            }
             onChange(.success(snapshot.documents.compactMap { document in
                 storedDocument(from: document, path: document.reference.path)
             }))
@@ -172,18 +183,25 @@ final class FirebaseFirestoreDocumentDatabase: FirestoreDocumentDatabase {
         _ update: @escaping (FirestoreRepositoryTransaction) throws -> Any?
     ) async throws -> Any? {
         let firestore = try resolvedFirestore()
-        return try await firestore.runTransaction { [firestore] transaction, errorPointer in
+        let cost = FirebaseFirestoreTransactionCost()
+        let result = try await firestore.runTransaction { [firestore, cost] transaction, errorPointer in
             do {
                 let adapter = FirebaseFirestoreTransactionAdapter(
                     transaction: transaction,
                     firestore: firestore
                 )
-                return try update(adapter)
+                let value = try update(adapter)
+                cost.readCount = adapter.readCount
+                cost.writeCount = adapter.writeCount
+                return value
             } catch {
                 errorPointer?.pointee = error as NSError
                 return nil
             }
         }
+        FirestoreCostTracker.shared.recordReads(cost.readCount, reason: "runTransaction")
+        FirestoreCostTracker.shared.recordWrites(cost.writeCount, reason: "runTransaction")
+        return result
     }
 
     func commitBatch(
@@ -202,6 +220,7 @@ final class FirebaseFirestoreDocumentDatabase: FirestoreDocumentDatabase {
                 }
             }
         }
+        FirestoreCostTracker.shared.recordWrites(adapter.writeCount, reason: "commitBatch")
     }
 
     func listenDocument(
@@ -223,6 +242,9 @@ final class FirebaseFirestoreDocumentDatabase: FirestoreDocumentDatabase {
             guard let snapshot else {
                 onChange(.success(nil))
                 return
+            }
+            Task { @MainActor in
+                FirestoreCostTracker.shared.recordReads(1, reason: "listenDocument")
             }
             onChange(.success(storedDocument(from: snapshot, path: path)))
         }
@@ -264,6 +286,12 @@ final class FirebaseFirestoreDocumentDatabase: FirestoreDocumentDatabase {
             guard let snapshot else {
                 onChange(.success([]))
                 return
+            }
+            Task { @MainActor in
+                FirestoreCostTracker.shared.recordReads(
+                    max(snapshot.documents.count, 1),
+                    reason: "listenQuery"
+                )
             }
             onChange(
                 .success(
@@ -323,9 +351,16 @@ final class FirebaseFirestoreDocumentDatabase: FirestoreDocumentDatabase {
     }
 }
 
+private final class FirebaseFirestoreTransactionCost {
+    var readCount = 0
+    var writeCount = 0
+}
+
 private final class FirebaseFirestoreTransactionAdapter: FirestoreRepositoryTransaction {
     private let transaction: Transaction
     private let firestore: Firestore
+    private(set) var readCount = 0
+    private(set) var writeCount = 0
 
     init(transaction: Transaction, firestore: Firestore) {
         self.transaction = transaction
@@ -334,21 +369,25 @@ private final class FirebaseFirestoreTransactionAdapter: FirestoreRepositoryTran
 
     func getDocument(path: String) throws -> FirestoreStoredDocument? {
         let snapshot = try transaction.getDocument(firestore.document(path))
+        readCount += 1
         return storedDocument(from: snapshot, path: path)
     }
 
     func setData(_ data: [String: Any], path: String, merge: Bool) throws {
         transaction.setData(data, forDocument: firestore.document(path), merge: merge)
+        writeCount += 1
     }
 
     func updateData(_ data: [String: Any], path: String) throws {
         transaction.updateData(data, forDocument: firestore.document(path))
+        writeCount += 1
     }
 }
 
 private final class FirebaseFirestoreBatchAdapter: FirestoreRepositoryBatch {
     private let batch: WriteBatch
     private let firestore: Firestore
+    private(set) var writeCount = 0
 
     init(batch: WriteBatch, firestore: Firestore) {
         self.batch = batch
@@ -357,14 +396,17 @@ private final class FirebaseFirestoreBatchAdapter: FirestoreRepositoryBatch {
 
     func setData(_ data: [String: Any], path: String, merge: Bool) throws {
         batch.setData(data, forDocument: firestore.document(path), merge: merge)
+        writeCount += 1
     }
 
     func updateData(_ data: [String: Any], path: String) throws {
         batch.updateData(data, forDocument: firestore.document(path))
+        writeCount += 1
     }
 
     func deleteDocument(path: String) throws {
         batch.deleteDocument(firestore.document(path))
+        writeCount += 1
     }
 }
 

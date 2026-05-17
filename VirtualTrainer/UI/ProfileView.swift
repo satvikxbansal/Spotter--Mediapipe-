@@ -2003,8 +2003,11 @@ private struct SettingsDebugSection: View {
     let onResetCalibration: () -> Void
 
 #if DEBUG
+    @ObservedObject private var costTracker = FirestoreCostTracker.shared
     @State private var isRunningFirebaseSmokeTest = false
     @State private var firebaseSmokeMessage: String?
+    @State private var writeJournalEntries: [LocalWriteJournalEntry] = []
+    @State private var diagnosticsRefreshedAt: Date?
 #endif
 
     var body: some View {
@@ -2253,8 +2256,13 @@ private struct SettingsDebugSection: View {
                         ? 1
                         : 0.45
                 )
+
+                syncDiagnosticsSection
             }
             .padding(.top, Theme.Spacing.sm)
+            .task {
+                await refreshSyncDiagnostics()
+            }
         } label: {
             HStack(spacing: Theme.Spacing.xs) {
                 Image(systemName: "server.rack")
@@ -2265,6 +2273,82 @@ private struct SettingsDebugSection: View {
                     .textCase(.uppercase)
             }
             .foregroundStyle(Theme.Colors.textPrimary)
+        }
+    }
+
+    private var syncDiagnosticsSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text("Sync Diagnostics")
+                .font(.system(size: 11, weight: .black))
+                .tracking(0.9)
+                .textCase(.uppercase)
+                .foregroundStyle(Theme.Colors.textTertiary)
+
+            ProfileInfoRow(label: "Backend mode", value: backendStatusStore.activeBackendMode.displayName)
+            ProfileInfoRow(label: "Active account", value: redactedAccountId(currentAccountId))
+            ProfileInfoRow(label: "Last synced", value: lastSyncedValue)
+            ProfileInfoRow(label: "Pending uploads", value: "\(syncOrchestrator.pendingUploadCount)")
+            ProfileInfoRow(label: "Conflicts", value: "\(syncOrchestrator.conflictCount)")
+            ProfileInfoRow(label: "Listeners", value: syncOrchestrator.listenersAttached ? "Attached" : "Stopped")
+            ProfileInfoRow(label: "Bootstrap", value: backendStatusStore.firebaseBootstrapState.displayName)
+            ProfileInfoRow(label: "Journal entries", value: "\(writeJournalEntries.count)")
+
+            if let lastError = syncOrchestrator.lastError {
+                ProfileInfoRow(label: "Last error", value: sanitizedDiagnosticError(lastError))
+            } else {
+                ProfileInfoRow(label: "Last error", value: "None")
+            }
+
+            if writeJournalEntries.isEmpty {
+                Text("No pending write journal entries.")
+                    .caption()
+            } else {
+                ForEach(writeJournalEntries.prefix(10)) { entry in
+                    ProfileInfoRow(
+                        label: entry.entityKind.rawValue,
+                        value: ageDescription(since: entry.createdAt)
+                    )
+                }
+            }
+
+            HStack(spacing: Theme.Spacing.sm) {
+                Button("Refresh Diagnostics") {
+                    Task { await refreshSyncDiagnostics() }
+                }
+                .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.accent))
+
+                Button("Reset Cost") {
+                    costTracker.reset()
+                }
+                .buttonStyle(CompactDebugButtonStyle(foregroundStyle: Theme.Colors.textSecondary))
+            }
+
+            Toggle(
+                isOn: Binding(
+                    get: { costTracker.isEnabled },
+                    set: { costTracker.isEnabled = $0 }
+                )
+            ) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
+                    Text("Cost Snapshot")
+                        .font(.system(size: 12, weight: .black))
+                        .tracking(1.0)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(costTracker.isEnabled ? "Logging current session Firestore counts" : "Off")
+                        .caption()
+                }
+            }
+            .toggleStyle(.switch)
+            .tint(Theme.Colors.accent)
+
+            ProfileInfoRow(label: "Reads", value: "\(costTracker.snapshot.reads)")
+            ProfileInfoRow(label: "Writes", value: "\(costTracker.snapshot.writes)")
+
+            if let diagnosticsRefreshedAt {
+                Text("Refreshed \(diagnosticsRefreshedAt.formatted(date: .omitted, time: .standard))")
+                    .caption()
+            }
         }
     }
 
@@ -2295,6 +2379,45 @@ private struct SettingsDebugSection: View {
             return "Local only"
         }
         return "\(accountId.prefix(6))…"
+    }
+
+    private func refreshSyncDiagnostics() async {
+        let entries = await LocalWriteJournal().snapshot()
+        writeJournalEntries = entries
+        diagnosticsRefreshedAt = Date()
+    }
+
+    private func ageDescription(since date: Date) -> String {
+        let seconds = max(Int(Date().timeIntervalSince(date)), 0)
+        if seconds < 60 {
+            return "\(seconds)s ago"
+        }
+        let minutes = seconds / 60
+        if minutes < 60 {
+            return "\(minutes)m ago"
+        }
+        let hours = minutes / 60
+        if hours < 24 {
+            return "\(hours)h ago"
+        }
+        return "\(hours / 24)d ago"
+    }
+
+    private func sanitizedDiagnosticError(_ value: String) -> String {
+        var sanitizedValue = value
+        let replacements: [(String, String)] = [
+            (#"AIza[0-9A-Za-z\-_]{35}"#, "<redacted-google-api-key>"),
+            (#"\b\d{1,3}:\d{6,}:ios:[0-9A-Za-z._-]{8,}\b"#, "<redacted-google-app-id>"),
+            (#"(?i)(token\s*[:=]\s*)[0-9A-Za-z._\-]{8,}"#, "$1<redacted-token>")
+        ]
+        for (pattern, replacement) in replacements {
+            sanitizedValue = sanitizedValue.replacingOccurrences(
+                of: pattern,
+                with: replacement,
+                options: .regularExpression
+            )
+        }
+        return sanitizedValue
     }
 #endif
 

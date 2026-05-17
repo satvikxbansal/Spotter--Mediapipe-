@@ -605,7 +605,7 @@ If the week had no saved sessions, the recap still returns an honest recovery-we
 
 Spotter is still local-first by default. `BackendMode.local` must build and run with no Firebase client plist, and local planning, trophies, stats, trends, recaps, weekly recaps, heatmaps, and deterministic coach insights continue to work from local data.
 
-Firebase mode is optional and deliberately partial. It currently uses Firebase Auth plus Firestore repositories for profile, profile-backed theme, calibration, active plan cache, trophy unlock events/progress, insight documents, insight delivery, and insight engagement. Workout summaries remain local until their dedicated sync phase, and the live camera analysis stack is unchanged.
+Firebase mode is optional and deliberately partial. It currently uses Firebase Auth plus Firestore repositories for profile, profile-backed theme, calibration, active plan cache, workout summaries and set subdocuments, trophy unlock events/progress, insight documents, insight delivery, and insight engagement. The live camera analysis stack is unchanged, and `Documentation/BackendQAChecklist.md` plus `Documentation/FirebaseEmulatorSetup.md` cover the internal beta stress path.
 
 The recent backend-readiness work makes the local product safer to connect to a backend incrementally. In product terms, the app now has the boring but important foundations that prevent painful sync bugs after launch.
 
@@ -634,8 +634,8 @@ What this means:
 
 ```text
 Local mode remains fully offline.
-Firebase mode now syncs selected account, preference, plan, trophy, and insight memory records.
-Workout history, derived analytics, and the live analysis stack still stay local until their dedicated phases.
+Firebase mode now syncs selected account, preference, plan, compact workout history, trophy, and insight memory records.
+Derived analytics and the live analysis stack still stay local/client-side: for example, a saved workout can sync to another simulator, while heatmaps, recaps, FPS-sensitive camera analysis, and rep feedback are still computed from local derived records.
 ```
 
 Still remaining before a backend beta:
@@ -643,7 +643,7 @@ Still remaining before a backend beta:
 - Deploy and verify the account-deletion Cloud Function from the separate `spotter-functions` repo.
 - Firestore security rules, App Check, and Firebase console indexes for the new collections.
 - Repository-level pagination and listener backpressure for large remote histories.
-- Backend-mode QA for account switching, tombstones, conflicts, retries, and missing config.
+- Backend-mode QA for account switching, tombstones, conflicts, retries, missing config, emulator coverage, and internal beta cost checks.
 
 ## Exercise Library
 

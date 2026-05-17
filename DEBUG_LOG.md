@@ -2112,3 +2112,97 @@ The build printed the expected local-only warning and did not require `GoogleSer
 Remote kill switches must gate every write path, not only orchestrator-level listeners. For Firebase startup, wait for the first Remote Config attempt before enabling backend writes so remote-off values can win before sync begins; failed fetches may then fall back to bundled defaults. When replacing synthesized `Codable` on persisted local types, explicitly decode the previous storage shape. Privacy guards should normalize keys before denylist checks, and unit tests should exercise main-actor dependency graphs through async XCTest methods.
 
 **Pattern Tags:** #phase16j #post-compaction-audit #remote-config #kill-switch #firebase #privacy #codable #xctest #local-mode
+
+---
+
+### [DL-065] Phase 17 Backend Beta QA, Emulator, Cost, And Backpressure Hardening
+**Date:** 2026-05-17
+**Severity:** feature-readiness
+**Category:** backend, firebase, emulator, diagnostics, privacy, testing
+**File(s):** `README.md`, `Documentation/BackendQAChecklist.md`, `Documentation/FirebaseEmulatorSetup.md`, `Documentation/FirebaseCostBudget.md`, `Scripts/start_firebase_emulators.sh`, `VirtualTrainer/Services/FirebaseBootstrap.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreDocumentDatabase.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreCostTracker.swift`, `VirtualTrainer/Models/WorkoutHistoryStore.swift`, `VirtualTrainer/UI/ProfileView.swift`, `VirtualTrainerTests/BackendIntegrationTests.swift`, `VirtualTrainerTests/BackendDataVolumeTests.swift`, `VirtualTrainerTests/Phase17BackendHardeningTests.swift`, `VirtualTrainerTests/FirebaseBootstrapTests.swift`, `VirtualTrainerTests/SyncOrchestratorTests.swift`, `VirtualTrainerTests/WorkoutSummarySizeAuditTests.swift`
+
+**Error:**
+Phase 17 needed the Firebase backend path stress-tested for internal beta without weakening local mode, without touching the live camera analysis stack, and without storing or logging raw sensor/face data or secret-like values. The app also lacked an emulator launch path, a beta QA checklist, a visible session cost counter, a DEBUG sync diagnostics surface, and tests for volume/backpressure/privacy risks.
+
+**Root Cause:**
+Previous Firebase phases established Auth/Firestore repositories and local-first sync contracts, but they intentionally left internal beta operations mostly manual. Emulator setup was documentation-only, Firestore adapter calls did not expose a cheap read/write counter, Profile's backend debug section did not show journal/listener/conflict diagnostics in one place, and store-level workout saves could still attempt a remote write during an active live session even though orchestrator-level heavy sync was already deferred.
+
+**Fix Applied:**
+Added `--firebase-emulator` bootstrap support for Auth `localhost:9099` and Firestore `localhost:8080` after Firebase app configuration succeeds. Added guarded emulator startup docs and script. Added DEBUG `FirestoreCostTracker` adapter counters and a Profile backend "Sync Diagnostics" section showing backend mode, redacted account ID, last sync, pending uploads, conflicts, listener state, sanitized last error, bootstrap state, write journal count, latest journal entry kinds/ages, and the Cost Snapshot toggle. Added a live-session guard to leave workout remote saves/deletes queued until `WorkoutSessionContext.isLive` ends. Added Phase 17 QA, emulator, and cost-budget docs plus unit/integration/data-volume/privacy tests.
+
+**Verification:**
+Toolchain paths resolved under `XcodeDefault.xctoolchain`:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Required simulator build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed after tightening one documentation assertion:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 423
+- Failed: 0
+- Skipped: 4 (`BackendIntegrationTests`, emulator opt-in)
+
+`git diff --check` passed. `gitleaks` is not installed locally, so a redacted fallback scan over changed and untracked files checked common Firebase, OpenAI, GitHub, Slack, password/token/API-key, authorization, private-key, service-account, bearer-token, and App Check debug-token-style patterns and found no candidate secrets. Static diff search confirmed no changes to `CameraManager`, `PoseEstimator`, `UniversalRepCounter`, `FormFeedbackEngine`, `HandGestureDetector`, `ExertionAnalyzer`, `WorkoutReadyCoordinator`, `FaceLandmarkerService`, or `FramePositionAnalyzer`.
+
+**Prevention Rule:**
+Internal beta backend work must ship with emulator instructions, local-mode/no-plist checks, opt-in integration tests, data-volume checks, privacy payload coverage, and a documented manual QA path before expanding tester count. Heavy sync and large workout writes must remain deferred while live camera training is active; diagnostics may log aggregate counters and sanitized states only, never payloads, account IDs, plist contents, App Check debug tokens, raw frames, raw pose streams, face data, or secret-like values.
+
+**Pattern Tags:** #phase17 #firebase #emulator #backend-qa #cost-budget #sync-diagnostics #backpressure #privacy #local-mode
+
+---
+
+### [DL-066] Phase 17 Post-Compaction Audit Corrections
+**Date:** 2026-05-17
+**Severity:** audit-correction
+**Category:** backend, firebase, emulator, diagnostics, documentation, testing
+**File(s):** `README.md`, `Documentation/BackendQAChecklist.md`, `Documentation/FirebaseEmulatorSetup.md`, `Documentation/FirebaseCostBudget.md`, `Scripts/run_backend_integration_tests.sh`, `VirtualTrainer/Services/FirebaseBootstrap.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreCostTracker.swift`, `VirtualTrainer/Repositories/Firebase/FirestoreDocumentDatabase.swift`, `VirtualTrainerTests/BackendIntegrationTests.swift`, `VirtualTrainerTests/FirebaseBootstrapTests.swift`, `VirtualTrainerTests/Phase17BackendHardeningTests.swift`
+
+**Error:**
+The Phase 17 implementation was broad and partially completed across a context compaction and lost stream, which left several audit misses after the first passing build/test run. The README still contained an older line saying workout history remained local even though compact workout sync had been added. Emulator integration tests had a guarded test target and startup script, but there was no single runner that actually started the emulators and supplied the required opt-in environment before invoking the test target. The forbidden-write emulator test accepted any error instead of asserting Firestore permission-denied. The Cost Snapshot tracker was documented as DEBUG-only, but its in-memory counters still mutated in release builds even though only logging/UI were DEBUG-gated. Transaction cost counting also recorded from inside the transaction closure via detached main-actor tasks, making the count more timing-sensitive than necessary. One hardening test was too brittle and looked for a literal runner path that differed from the script's robust `$SCRIPT_DIR` invocation.
+
+**Root Cause:**
+The misses came from treating several Phase 17 bullets as covered once docs, tests, and buildability existed, instead of round-tripping each bullet through the exact operator workflow. Context compaction made the first pass lean on the accumulated summary rather than re-reading every changed artifact for contradictions. "Spin up the emulator before tests via a script invocation guard" was interpreted as "document the startup script and skip tests unless opted in," which was weaker than the requested executable path. The Cost Snapshot feature was reviewed from the UI/logging perspective but not from the compiled release code path. The denied-rules test validated that a failure occurred but did not validate the important downstream distinction between a real rules denial and another emulator/network/configuration failure.
+
+**Fix Applied:**
+Updated the README to describe the real before/after: Firebase mode can now sync compact workout history to another simulator, while heatmaps, recaps, FPS-sensitive live analysis, and rep feedback remain local/client-side derived. Added `Scripts/run_backend_integration_tests.sh`, which starts the Auth/Firestore emulators and runs only `VirtualTrainerTests/BackendIntegrationTests` with `SPOTTER_RUN_BACKEND_INTEGRATION_TESTS=1` and `SPOTTER_FIREBASE_EMULATOR=1`. Added environment-based emulator opt-in to `FirebaseEmulatorBootstrap` while preserving `--firebase-emulator`. Strengthened the forbidden-write test to assert `FirestoreErrorDomain` and `FirestoreErrorCode.permissionDenied`. DEBUG-gated `FirestoreCostTracker` mutation as well as logging, and moved transaction cost recording to successful transaction completion using adapter read/write counts. Updated the emulator, QA, and cost docs plus hardening tests to reflect the runner and DEBUG-only counter behavior.
+
+**Verification:**
+Toolchain paths resolved under `XcodeDefault.xctoolchain`:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Required simulator build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Focused Phase 17 hardening tests passed after fixing the runner-path assertion:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData -only-testing:VirtualTrainerTests/Phase17BackendHardeningTests`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 424
+- Failed: 0
+- Skipped: 4 (`BackendIntegrationTests`, emulator opt-in)
+
+No-plist local fallback build passed after temporarily moving the ignored local Firebase client plist out of the workspace and restoring it with a shell trap:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerNoPlistDerivedData`
+
+The build printed the expected local-only warning and did not require `GoogleService-Info.plist`. `git diff --check` passed. `gitleaks` is not installed locally, so a redacted filename-only fallback scan over changed and untracked files checked common Firebase, OpenAI, GitHub, Slack, password/token/API-key, authorization, private-key, service-account, bearer-token, and App Check debug-token-style patterns and found no candidate secrets. Static diff search confirmed no changes to `CameraManager`, `PoseEstimator`, `UniversalRepCounter`, `FormFeedbackEngine`, `HandGestureDetector`, `ExertionAnalyzer`, `WorkoutReadyCoordinator`, `FaceLandmarkerService`, or `FramePositionAnalyzer`.
+
+**Prevention Rule:**
+After any context compaction or interrupted long-running phase, audit against the original prompt with an explicit requirement matrix before declaring the phase complete. For testability requirements, prefer a single executable command or script over prose-only instructions. For DEBUG-only diagnostics, gate state mutation, not only UI and logging. For negative backend tests, assert the specific failure class that protects user data. Documentation changes must be re-read for old/new contradictions before final verification.
+
+**Pattern Tags:** #phase17 #post-compaction-audit #firebase #emulator #cost-budget #debug-only #rules-denial #documentation #privacy #local-mode

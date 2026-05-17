@@ -167,8 +167,11 @@ final class WorkoutSummarySizeAuditTests: XCTestCase {
                 "FirebaseSmokeVerifier.runIfRequested"
             ],
             "FirebaseBootstrap.swift": [
+                "import FirebaseAuth",
                 "import FirebaseCore",
-                "FirebaseApp.configure"
+                "import FirebaseFirestore",
+                "FirebaseApp.configure",
+                "Firestore.firestore"
             ],
             "BackendStatusStore.swift": [
                 "FirebaseBootstrap.configureIfAvailable"

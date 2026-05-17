@@ -90,6 +90,71 @@ final class FirebaseBootstrapTests: XCTestCase {
 
         XCTAssertNil(regex.firstMatch(in: reason, range: range))
     }
+
+    func testFirebaseEmulatorLaunchArgumentConfiguresEmulatorsAfterAppConfigure() throws {
+        let fixture = try makeTemporaryBundleWithFirebasePlist()
+        defer { try? FileManager.default.removeItem(at: fixture.bundleURL) }
+
+        var isConfigured = false
+        var didConfigureEmulators = false
+        let state = FirebaseBootstrap.configureIfAvailable(
+            in: fixture.bundle,
+            isAppConfigured: { isConfigured },
+            optionsLoader: { _ in Self.makeOptions() },
+            configurator: { _ in isConfigured = true },
+            arguments: ["Spotter", FirebaseEmulatorBootstrap.launchArgument],
+            emulatorConfigurator: { didConfigureEmulators = true }
+        )
+
+        XCTAssertEqual(state, .configured)
+        XCTAssertTrue(didConfigureEmulators)
+    }
+
+    func testFirebaseEmulatorEnvironmentVariableConfiguresEmulatorsAfterAppConfigure() throws {
+        let fixture = try makeTemporaryBundleWithFirebasePlist()
+        defer { try? FileManager.default.removeItem(at: fixture.bundleURL) }
+
+        var isConfigured = false
+        var didConfigureEmulators = false
+        let state = FirebaseBootstrap.configureIfAvailable(
+            in: fixture.bundle,
+            isAppConfigured: { isConfigured },
+            optionsLoader: { _ in Self.makeOptions() },
+            configurator: { _ in isConfigured = true },
+            arguments: ["Spotter"],
+            environment: [FirebaseEmulatorBootstrap.environmentVariable: "1"],
+            emulatorConfigurator: { didConfigureEmulators = true }
+        )
+
+        XCTAssertEqual(state, .configured)
+        XCTAssertTrue(didConfigureEmulators)
+        XCTAssertTrue(
+            FirebaseEmulatorBootstrap.isRequested(
+                arguments: ["Spotter"],
+                environment: [FirebaseEmulatorBootstrap.environmentVariable: "1"]
+            )
+        )
+    }
+
+    func testFirebaseEmulatorLaunchArgumentIsIgnoredWithoutFirebaseConfig() {
+        var didConfigureEmulators = false
+        let state = FirebaseBootstrap.configureIfAvailable(
+            in: Bundle(for: FirebaseBootstrapTests.self),
+            isAppConfigured: { false },
+            optionsLoader: { _ in
+                XCTFail("Options should not be loaded when the plist is missing.")
+                return nil
+            },
+            configurator: { _ in
+                XCTFail("Firebase should not be configured when the plist is missing.")
+            },
+            arguments: ["Spotter", FirebaseEmulatorBootstrap.launchArgument],
+            emulatorConfigurator: { didConfigureEmulators = true }
+        )
+
+        XCTAssertEqual(state, .missingConfig)
+        XCTAssertFalse(didConfigureEmulators)
+    }
 }
 
 private extension FirebaseBootstrapTests {

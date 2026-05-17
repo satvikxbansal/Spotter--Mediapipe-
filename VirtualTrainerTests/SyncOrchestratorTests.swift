@@ -212,6 +212,36 @@ final class SyncOrchestratorTests: XCTestCase {
         XCTAssertEqual(stores.profileStore.pendingUploadCount, 0)
     }
 
+    func testWorkoutHistoryRemoteSaveStaysQueuedDuringLiveWorkout() async throws {
+        let stores = makeStores()
+        let repositories = SyncTestRepositories()
+        stores.workoutHistoryStore.configureRemoteSync(
+            backendMode: .firebase,
+            workoutRepository: repositories.workout,
+            autoObserve: false
+        )
+        let summary = makeWorkoutSummary(id: fixedUUID(16_032))
+
+        WorkoutSessionContext.markLiveStarted()
+        defer { WorkoutSessionContext.markLiveEnded() }
+        let didSaveWorkout = await stores.workoutHistoryStore.addSummary(
+            summary,
+            operationId: fixedUUID(16_033)
+        )
+
+        XCTAssertTrue(didSaveWorkout)
+        XCTAssertEqual(repositories.workout.saveAttemptCount, 0)
+        XCTAssertEqual(stores.workoutHistoryStore.pendingUploadCount, 1)
+
+        WorkoutSessionContext.markLiveEnded()
+
+        let orchestrator = makeOrchestrator(stores: stores, repositories: repositories)
+        try await orchestrator.pushPendingLocal(accountId: accountId)
+
+        XCTAssertEqual(repositories.workout.saveAttemptCount, 1)
+        XCTAssertEqual(stores.workoutHistoryStore.pendingUploadCount, 0)
+    }
+
     func testPendingInsightDeliveryClearsAfterPushAndDoesNotReplay() async throws {
         let stores = makeStores()
         let repositories = SyncTestRepositories()
@@ -485,11 +515,13 @@ private final class SyncTestWorkoutRepository: WorkoutRepository, WorkoutTombsto
     private var summaries: [UUID: WorkoutSessionSummary] = [:]
     private var continuation: AsyncStream<[WorkoutSessionSummary]>.Continuation?
     private var version = 0
+    private(set) var saveAttemptCount = 0
 
     func saveWorkoutSummary(
         _ summary: WorkoutSessionSummary,
         operationId _: UUID
     ) async throws -> WorkoutSessionSummary {
+        saveAttemptCount += 1
         let savedSummary = summary.markedSynced(serverVersion: nextVersion())
         summaries[summary.id] = savedSummary
         emitActiveSummaries()
