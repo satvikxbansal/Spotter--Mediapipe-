@@ -2385,3 +2385,61 @@ The build printed the expected local-only warning, succeeded, restored the ignor
 Every acceptance bullet needs a direct positive or negative test, even when the behavior appears to be covered by a neighboring edge-case test. Clean builds must be scanned for warnings after adding custom Codable implementations on actor-isolated or nonisolated DTOs. A passing XCTest suite is not sufficient if the compiler is already warning about a future language-mode error.
 
 **Pattern Tags:** #phase17-5 #acceptance-matrix #firestore #tombstones #swift-concurrency #codable #tests #local-mode
+
+---
+
+### [DL-071] Design System V2 D0 Inventory
+**Date:** 2026-05-17
+**Severity:** documentation
+**Category:** design-system, inventory, v2, accessibility, swiftui-planning
+**File(s):** `DEBUG_LOG.md`, `Documentation/DesignSystemV2Inventory.md`, `Documentation/PhosphorToSFSymbolMap.md`
+
+**Error:**
+No runtime defect was fixed in this phase. The V2 design exports existed as 29 HTML files and 29 screenshots, but the repo did not yet have a single implementation inventory that mapped each visual reference to current SwiftUI screens, code-supported behavior, design-only deferrals, code-only surfaces that must remain available, tokens, image decisions, and icon replacements. That gap would make later V2 phases risky because design-only items such as login, AI swaps, BPM trophies, KG volume, calories, burpees, and active Running Analysis could accidentally become fake product behavior.
+
+**Root Cause:**
+The design files were exported from a web/Tailwind/Iconify prototype, while the iOS app uses SwiftUI, SF Symbols, system fonts, local-first stores, shared live camera analysis, and optional Firebase mode. Without a D0 inventory, later implementation prompts would need to rediscover the same deltas screen by screen and could miss the product truth encoded in README, the backend docs, DL-045 toolchain notes, `Theme.swift`, `LiquidGlass.swift`, feature flags, and the current UI files.
+
+**Fix Applied:**
+Added `Documentation/DesignSystemV2Inventory.md` with an exhaustive 29-screen inventory grouped by D2-D6 feature area, exact HTML-to-screenshot pairs, current SwiftUI equivalents, stable hero strings, key component notes, design-only deferrals, code-only features to preserve and style, design token extraction, per-theme accent confirmation against `SpotterThemeOption`, and imagery decisions. Added `Documentation/PhosphorToSFSymbolMap.md` with all 99 unique `iconify-icon` Phosphor references found across the HTML exports, including usage counts, HTML refs, SF Symbol replacements, and weak/custom follow-up notes.
+
+No UI code, backend repository behavior, Firestore rules, sync behavior, or live camera pipeline files were changed. Existing dirty worktree changes outside these D0 docs were left untouched.
+
+**Verification:**
+Toolchain paths resolved under `XcodeDefault.xctoolchain`:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both returned paths under:
+
+`/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`
+
+Design artifact extraction confirmed:
+
+- 29 HTML files in `NEW_DESIGN/export-html/`
+- 29 matching PNG screenshots in `NEW_DESIGN/screenshots/`
+- 1 shared `:root` token block variant across all 29 HTML files
+- 99 unique Phosphor icon references mapped to SF Symbols or a documented closest replacement plan
+
+Required simulator build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 431
+- Failed: 0
+- Skipped: 4 (`BackendIntegrationTests`, emulator opt-in)
+
+The xcresult reported 435 total tests, 4 skipped, and succeeded. One metadata warning was present from AppIntents metadata extraction being skipped because no AppIntents dependency is present. The build also copied the local ignored Firebase client config for this developer machine without printing plist contents.
+
+Static status review confirmed this D0 work touched documentation only: `Documentation/DesignSystemV2Inventory.md`, `Documentation/PhosphorToSFSymbolMap.md`, and this `DEBUG_LOG.md` append.
+
+**Prevention Rule:**
+Before implementing any V2 screen, start from the D0 inventory rather than the HTML alone. If design shows unsupported product behavior, mark it coming soon or omit it; do not build fake behavior. If code has a real surface the design omits, keep it and style it with V2 language. Treat remote images, external fonts, Tailwind, Iconify, and Phosphor as reference-only until a later asset/font licensing phase explicitly adds app-owned resources.
+
+**Pattern Tags:** #design-system-v2 #d0 #inventory #tailwind-to-swiftui #sf-symbols #feature-deltas #documentation-only #tests
