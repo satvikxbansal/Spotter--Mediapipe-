@@ -2258,3 +2258,130 @@ The build printed the expected local-only warning and did not require `GoogleSer
 Treat Firestore schema and local sync behavior as a paired contract: every privacy or deletion rule change needs repository tests and emulator rules tests before publication. Root user docs stay reserved metadata unless a migration explicitly changes the schema. Binary Firestore fields require an explicit allowlist and privacy review before any upload path can accept them. Delete paths must be idempotent for existing, missing, and retried documents.
 
 **Pattern Tags:** #phase17-5 #firebase #firestore-rules #sync #tombstones #privacy #rules-emulator #local-mode #tests
+
+---
+
+### [DL-068] Phase 17.5 Post-Compaction Audit Correction
+**Date:** 2026-05-17
+**Severity:** audit-correction
+**Category:** backend, firebase, firestore, tombstones, codable, privacy, testing
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/Repositories/Firebase/FirestoreDTOs.swift`, `VirtualTrainerTests/FirestoreTranslationLayerTests.swift`
+
+**Error:**
+The post-compaction Phase 17.5 audit found one downstream-risk miss in the tombstone decoding patch. The first implementation made `FirestoreWorkoutDocument` tolerant of missing full-workout fields so newly-created minimal tombstone documents could be read back from Firestore. That tolerance was not scoped tightly enough: an active remote workout document with no `deletedAt` and missing required fields could also decode with defaults such as `"Deleted workout"`, zero duration, zero reps, and empty analytics instead of failing as it did before. That would not corrupt local camera analysis, but it could hide malformed active Firestore data and make a bad remote document look like a valid empty workout.
+
+**Root Cause:**
+The miss came from optimizing the first pass around the positive tombstone requirement: delete-before-upload must create a minimal remote tombstone and `loadRecentWorkoutTombstones` must read it. Context compaction compressed that requirement into "minimal tombstones must decode," and the initial tests covered the positive tombstone path plus fully-populated DTO payloads, but not the negative path where an active, non-deleted workout is malformed. Because the change lived in a Codable initializer rather than a visibly separate repository branch, it looked backwards-compatible while actually widening active-read behavior. The audit also caught that the no-plist build helper can temporarily disturb tracked `*.codex-tmp` Firebase config filenames if local ignored plist files are present, so filename restoration must be verified without printing plist contents.
+
+**Fix Applied:**
+Restricted missing-field defaults in `FirestoreWorkoutDocument.init(from:)` to documents that actually contain `deletedAt`. Active documents now retain the previous strict decoding contract for required fields, while deleted tombstones can still decode from the minimal payload written by `setData(..., merge: true)`. Added `testWorkoutDocumentDecoderDefaultsOnlyDeletedTombstones` to prove both sides of the contract: a minimal deleted tombstone decodes, and a minimal active workout still throws. Restored the tracked Firebase `*.codex-tmp` filenames after the no-plist verification by comparing hashes only and without printing any plist values.
+
+**Verification:**
+Toolchain paths resolved under `XcodeDefault.xctoolchain`:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Focused Firestore repository and DTO/privacy tests passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerAuditDerivedData -only-testing:VirtualTrainerTests/FirestoreTranslationLayerTests -only-testing:VirtualTrainerTests/FirestoreRepositoryTests`
+
+- Passed: 39
+- Failed: 0
+
+Firestore rules emulator tests passed with the temporary JDK used for DL-067:
+
+`Scripts/test-firestore-rules.sh`
+
+- Passed: 9
+- Failed: 0
+
+Required full test suite passed after the audit correction:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 431
+- Failed: 0
+- Skipped: 4 (`BackendIntegrationTests`, emulator opt-in)
+
+No-plist local fallback build passed again after temporarily moving local Firebase client plists out of the workspace and restoring them with a shell trap:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerNoPlistAuditDerivedData`
+
+The build printed the expected local-only warning and did not require `GoogleService-Info.plist`. `git diff --check` passed after this entry was appended. Static diff search confirmed no changes to `CameraManager`, `PoseEstimator`, `UniversalRepCounter`, `FormFeedbackEngine`, `HandGestureDetector`, `ExertionAnalyzer`, `WorkoutReadyCoordinator`, `FaceLandmarkerService`, or `FramePositionAnalyzer`. A subsequent commit-range secret scan found a separate tracked Firebase plist filename issue; see DL-069.
+
+**Prevention Rule:**
+When adding tolerant Codable decoding for migrations, tombstones, or offline sync recovery, add paired negative tests proving the normal non-migration path remains strict. After any context compaction, audit the complete prompt against the complete diff, including untracked files and generated scripts, before declaring the phase complete. For local-no-plist checks, verify file restoration by filename and hash only; never print plist contents or secret-like values.
+
+**Pattern Tags:** #phase17-5 #post-compaction-audit #firestore #tombstones #codable #privacy #tests #local-mode
+
+---
+
+### [DL-069] Phase 17.5 Secret Pre-Flight Audit Correction
+**Date:** 2026-05-17
+**Severity:** critical
+**Category:** backend, firebase, secrets, repository-hygiene, local-mode
+**File(s):** `.gitignore`, `DEBUG_LOG.md`, `GoogleService-Info.example.plist`, `GoogleService-Info.example.plist.codex-tmp`, `GoogleService-Info.plist.codex-tmp`
+
+**Error:**
+The post-compaction audit found that the P17.5 commit included tracked Firebase plist temp filenames: `GoogleService-Info.example.plist.codex-tmp` and `GoogleService-Info.plist.codex-tmp`. Pattern-only checks confirmed Firebase config keys were present in those tracked files without printing their values. That violates the phase privacy and secret-handling requirement because the app must build without Firebase config, the real local `GoogleService-Info.plist` must remain ignored, and no third-party secret-like value should be committed, logged, or added to fixtures.
+
+**Root Cause:**
+The miss came from the no-plist verification workflow colliding with local ignored plist files. The helper temporarily moved `GoogleService-Info*.plist` to `*.codex-tmp` so Xcode could prove local-only mode, but the temp suffix was not ignored and not excluded from the commit review. Context compaction also made the final status check focus on source/docs/scripts, while the secret scan was run over the visible changed text paths rather than the full commit range. Because the filenames looked like build-check residue, they were not treated as release-blocking tracked artifacts soon enough.
+
+**Fix Applied:**
+Removed the tracked `*.codex-tmp` Firebase plist files from the working tree, restored `GoogleService-Info.example.plist` as a sanitized placeholder file with non-secret example values, and added `GoogleService-Info*.plist.*` to `.gitignore` so temporary plist backup filenames stay ignored. Left the real local `GoogleService-Info.plist` ignored and unprinted. The current diff now makes the intended repository contract explicit: example config may be committed, local Firebase client config may not, and no temporary no-plist verification filename should be tracked.
+
+**Verification:**
+`gitleaks` is not installed locally, so a fallback scan was run over the current working-tree diff, the latest P17.5 commit file list, and untracked text files using Firebase API-key, service-account, private-key, OpenAI, GitHub, Slack, Stripe, JWT, bearer/authorization, URL credential, Supabase, App Check debug-token, and generic secret-assignment patterns. The scan reported only the historical tracked `*.codex-tmp` plist paths that this correction removes from the current diff; the sanitized example plist contains placeholders only. `git diff --check` passed after the plist cleanup and this entry. Static diff search again confirmed no changes to the protected live camera pipeline files.
+
+**Prevention Rule:**
+Secret pre-flight must scan the commit range as well as the unstaged working tree, and it must include tracked files with temporary suffixes. No-plist build helpers must move Firebase config into an ignored temporary directory or use a suffix covered by `.gitignore`, then verify restoration by filename and hash only. Any Firebase plist-like file that is not the sanitized example must be treated as a release blocker until removed from Git history and the underlying keys are rotated if the commit has been pushed.
+
+**Pattern Tags:** #phase17-5 #secrets #firebase-plist #post-compaction-audit #local-mode #repository-hygiene
+
+---
+
+### [DL-070] Phase 17.5 Acceptance Matrix and Swift Isolation Audit Correction
+**Date:** 2026-05-17
+**Severity:** audit-correction
+**Category:** backend, firebase, firestore, tombstones, codable, testing, toolchain
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/Repositories/Firebase/FirestoreDTOs.swift`, `VirtualTrainerTests/FirestoreRepositoryTests.swift`
+
+**Error:**
+The final requirement-by-requirement audit found two smaller misses after DL-068 and DL-069. First, the code correctly used `setData(..., merge: true)` for all workout deletes, but the XCTest matrix did not explicitly prove the normal delete-after-upload path merged `deletedAt`; it only covered delete-before-upload, retry idempotency, and tombstone visibility. Second, the no-plist build surfaced a Swift concurrency warning on the custom `FirestoreWorkoutDocument.init(from:)`: the initializer was treated as main actor-isolated and therefore could not cleanly satisfy the nonisolated `Decodable` requirement in future Swift language modes.
+
+**Root Cause:**
+The delete tests were written around the new failure mode, which was missing remote documents after offline-create-then-delete, so the already-working uploaded-document path was treated as indirectly covered by repository behavior. The concurrency warning was missed because the first full test run passed, and the audit initially focused on failures and requirement coverage rather than compiler warnings emitted only during a clean no-plist rebuild of the affected file. Context compaction made the checklist broader but easier to satisfy at a coarse level, so the final pass needed a line-by-line acceptance matrix rather than "all relevant tests are green."
+
+**Fix Applied:**
+Added `testWorkoutRepositoryDeleteAfterUploadMergesDeletedAt`, which saves a normal uploaded workout, deletes it, asserts the delete write is `setData(merge: true)`, confirms `deletedAt` and the deterministic delete `operationId`, and confirms existing fields such as `title` remain after the merge. Marked `FirestoreWorkoutDocument.init(from:)` as `nonisolated` so the custom decoder preserves the nonisolated Codable contract of the DTO.
+
+**Verification:**
+Focused Firestore repository and DTO/privacy tests passed after the new test and nonisolated initializer fix:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerAuditDerivedData -only-testing:VirtualTrainerTests/FirestoreTranslationLayerTests -only-testing:VirtualTrainerTests/FirestoreRepositoryTests`
+
+- Passed: 39
+- Failed: 0
+- Skipped: 0
+
+Required full XCTest passed after the source fix:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 431
+- Failed: 0
+- Skipped: 4 (`BackendIntegrationTests`, emulator opt-in)
+
+No-plist local fallback build passed again after the fix using a temp directory that moved only real local Firebase config filenames:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerNoPlistAuditDerivedData2`
+
+The build printed the expected local-only warning, succeeded, restored the ignored local plist, and no longer emitted the `FirestoreWorkoutDocument` Decodable isolation warning. Firestore rules emulator tests remained green at 9 passed, 0 failed.
+
+**Prevention Rule:**
+Every acceptance bullet needs a direct positive or negative test, even when the behavior appears to be covered by a neighboring edge-case test. Clean builds must be scanned for warnings after adding custom Codable implementations on actor-isolated or nonisolated DTOs. A passing XCTest suite is not sufficient if the compiler is already warning about a future language-mode error.
+
+**Pattern Tags:** #phase17-5 #acceptance-matrix #firestore #tombstones #swift-concurrency #codable #tests #local-mode

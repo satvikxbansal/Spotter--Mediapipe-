@@ -506,6 +506,33 @@ final class FirestoreRepositoryTests: XCTestCase {
         XCTAssertTrue(tombstones.contains { $0.id == workoutId && $0.isDeleted })
     }
 
+    func testWorkoutRepositoryDeleteAfterUploadMergesDeletedAt() async throws {
+        let database = InMemoryFirestoreDocumentDatabase()
+        let repository = FirestoreWorkoutRepository(database: database)
+        let saveOperationId = fixedUUID(170_024)
+        let deleteOperationId = fixedUUID(170_025)
+        let summary = makeWorkoutSummary(id: fixedUUID(170_026), operationId: saveOperationId)
+        let workoutPath = try FirestorePathBuilder.workoutDocument(uid: accountId, workoutId: summary.id)
+
+        _ = try await repository.saveWorkoutSummary(summary, operationId: saveOperationId)
+        let writesBeforeDelete = database.appliedWrites.count
+        try await repository.deleteWorkout(
+            accountId: accountId,
+            id: summary.id,
+            operationId: deleteOperationId
+        )
+
+        let deleteWrite = try XCTUnwrap(database.appliedWrites.dropFirst(writesBeforeDelete).last)
+        let document = try XCTUnwrap(database.document(at: workoutPath))
+
+        XCTAssertTrue(isSetWrite(deleteWrite, merge: true))
+        XCTAssertEqual(deleteWrite.path, workoutPath)
+        XCTAssertNotNil(deleteWrite.payload["deletedAt"])
+        XCTAssertEqual(deleteWrite.payload["operationId"] as? String, deleteOperationId.uuidString.lowercased())
+        XCTAssertEqual(document.data["title"] as? String, summary.title)
+        XCTAssertNotNil(document.data["deletedAt"])
+    }
+
     func testWorkoutRepositoryDeleteRetryWithSameOperationIdDoesNotWriteAgain() async throws {
         let database = InMemoryFirestoreDocumentDatabase()
         let repository = FirestoreWorkoutRepository(database: database)

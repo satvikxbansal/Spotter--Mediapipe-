@@ -17,6 +17,7 @@ Configurations/LocalSecrets.xcconfig
 .env.*
 !.env.example
 GoogleService-Info*.plist
+GoogleService-Info*.plist.*
 !GoogleService-Info.example.plist
 
 # Backend-only credentials should never be committed to the iOS repo

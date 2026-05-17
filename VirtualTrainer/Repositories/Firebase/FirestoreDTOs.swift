@@ -221,7 +221,7 @@ nonisolated struct FirestoreWorkoutDocument: Codable, Equatable {
 }
 
 extension FirestoreWorkoutDocument {
-    init(from decoder: Decoder) throws {
+    nonisolated init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
         let isTombstone = deletedAt != nil
