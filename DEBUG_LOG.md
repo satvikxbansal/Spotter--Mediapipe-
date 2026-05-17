@@ -2556,3 +2556,58 @@ The xcresult reported 442 total tests and succeeded. `git diff --check` passed. 
 For V2 phases, review both tracked and untracked surfaces with `git status --short` and `git ls-files --others --exclude-standard` before declaring the changed-file set complete. Every DEBUG toggle state must have an in-app return path. Preview coverage should be checked per new view, not inferred from a gallery. Actor-isolated observable objects used by tests should get a production lifecycle fix when possible instead of a test-only retention workaround.
 
 **Pattern Tags:** #design-system-v2 #d1 #post-compaction-audit #rca #debug-toggle #previews #tests #untracked-file-risk
+
+---
+
+### [DL-074] Design System V2 D2 App Shell And Liquid Glass Nav
+**Date:** 2026-05-17
+**Severity:** implementation
+**Category:** design-system, v2, app-shell, navigation, accessibility, testing
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/Models/AppLevelPresenter.swift`, `VirtualTrainer/Models/AppRootRouting.swift`, `VirtualTrainer/UI/V2/V2RootView.swift`, `VirtualTrainer/UI/V2/V2MainShellView.swift`, `VirtualTrainer/UI/V2/V2LiquidGlassTabBar.swift`, `VirtualTrainer/UI/V2RootView.swift`, `VirtualTrainer/VirtualTrainerApp.swift`, `VirtualTrainer/UI/MainTabView.swift`, `VirtualTrainer/UI/CameraTabView.swift`, `VirtualTrainer/UI/PlannedWorkoutSessionView.swift`, `VirtualTrainerTests/DesignSystemV2Tests.swift`
+
+**Error:**
+No production runtime defect was fixed in this phase. The D1 V2 branch still routed to a placeholder root, so enabling Design System V2 did not provide a real app shell, bottom navigation, tab routing, reduce-transparency fallback, keyboard/workout nav hiding, or DEBUG backend status access.
+
+**Root Cause:**
+D2 needed to translate the liquid-glass tab reference into SwiftUI-native app chrome while preserving the existing root gates and long-lived stores. The app also needed explicit route helpers so tests could prove that V2 toggle changes swap only the SwiftUI hierarchy and do not reset onboarding, calibration, theme, profile, history, trophies, insights, or backend mode state.
+
+**Fix Applied:**
+Replaced the old D1 placeholder root with `UI/V2/V2RootView.swift`. The V2 root mirrors the existing root logic: incomplete users still see the V1 onboarding flow, users needing calibration still see the V1 calibration intro, and ready users land in the new `V2MainShellView`.
+
+Added `V2MainShellView` with manual tab switching instead of `TabView` chrome. The shell wires Dashboard, Camera, Trophies, and Profile to D2 placeholder views labeled for their deferred D4/D6 delivery. It hides the bottom nav when the keyboard is visible and when app-level live-workout presentation state is active. In DEBUG firebase mode it shows a tiny V2 backend status chip pinned to the top-right safe area and opens a basic diagnostics sheet until the D6 sync diagnostics screen exists.
+
+Added `V2LiquidGlassTabBar` with a floating 92%-width, max-440-point, 92-point-high pill using the existing `.glassSurface(cornerRadius:)` modifier. The nav has four SF Symbol buttons, selected chip styling, per-theme tint, light haptics, VoiceOver labels and selected/not-selected values, Reduce Motion-safe press behavior, and a solid fallback when Reduce Transparency is enabled.
+
+Added `AppLevelPresenterEnvironmentKey` and `AppLevelPresentationState` so full-screen live workout presentations can hide global V2 chrome without changing MediaPipe, `CameraManager`, `PoseEstimator`, `UniversalRepCounter`, `FormFeedbackEngine`, `HandGestureDetector`, `ExertionAnalyzer`, `WorkoutReadyCoordinator`, `FaceLandmarkerService`, `FramePositionAnalyzer`, or the live camera pipeline. `CameraReadinessView` and `PlannedWorkoutSessionView` only set and clear this presentation state around existing full-screen session flows.
+
+Added route and store-preservation tests for feature-flag-off V1 routing, feature-flag-on V2 shell routing, V2 onboarding/calibration gates, toggle switching without resetting onboarding/theme/history stores, reduce-transparency nav style resolution, and snapshot smoke rendering for the D2 V2 placeholders/nav.
+
+**Verification:**
+Toolchain paths resolved under `XcodeDefault.xctoolchain`:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both returned paths under:
+
+`/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`
+
+Required simulator build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed after correcting an async XCTest autoclosure in the new store-preservation test:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 444
+- Failed: 0
+- Skipped: 4 (`BackendIntegrationTests`, emulator opt-in)
+
+The xcresult reported 448 total tests and succeeded. `git diff --check` passed. Static scans found no WebView, Tailwind, Iconify, Phosphor, or feature-screen raw hex colors in the new V2 app shell surfaces. Known local build warnings remained limited to the Firebase client config copy notice and AppIntents metadata being skipped because the app has no AppIntents dependency.
+
+**Prevention Rule:**
+Keep V2 shell work behind the D1 toggle and route through explicit root helpers so flag-off and flag-on behavior remains testable without mounting the whole app. Future D4-D6 screen replacements should replace only the relevant placeholder content, keep unsupported design-only features disabled or omitted, and use the app-level presenter state for any new full-screen experience that must cover global chrome.
+
+**Pattern Tags:** #design-system-v2 #d2 #app-shell #liquid-glass-nav #feature-flag #accessibility #tests

@@ -27,6 +27,7 @@ struct MainTabView: View {
         }
         .tint(themeStore.selectedTheme.accentColor)
         .preferredColorScheme(.dark)
+        .accessibilityIdentifier("MainTabView")
     }
 }
 

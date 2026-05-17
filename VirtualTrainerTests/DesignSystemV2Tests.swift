@@ -108,6 +108,83 @@ final class DesignSystemV2Tests: XCTestCase {
         XCTAssertFalse(resetStore.isEffectivelyEnabled)
     }
 
+    func testToggleOffRoutesReadyUserToExistingMainTabs() {
+        let route = SpotterAppRootRoute.resolve(
+            isDesignSystemV2Enabled: false,
+            hasCompletedOnboarding: true,
+            shouldShowCalibrationGate: false
+        )
+
+        XCTAssertEqual(route, .v1MainTabs)
+    }
+
+    func testToggleOnRoutesReadyUserToV2MainShell() {
+        let appRoute = SpotterAppRootRoute.resolve(
+            isDesignSystemV2Enabled: true,
+            hasCompletedOnboarding: true,
+            shouldShowCalibrationGate: false
+        )
+        let v2Route = V2RootRoute.resolve(
+            hasCompletedOnboarding: true,
+            shouldShowCalibrationGate: false
+        )
+
+        XCTAssertEqual(appRoute, .v2Root)
+        XCTAssertEqual(v2Route, .mainShell)
+    }
+
+    func testV2RootPreservesOnboardingAndCalibrationGates() {
+        XCTAssertEqual(
+            V2RootRoute.resolve(
+                hasCompletedOnboarding: false,
+                shouldShowCalibrationGate: true
+            ),
+            .onboarding
+        )
+        XCTAssertEqual(
+            V2RootRoute.resolve(
+                hasCompletedOnboarding: true,
+                shouldShowCalibrationGate: true
+            ),
+            .calibration
+        )
+    }
+
+    func testSwitchingToggleDoesNotResetOnboardingThemeOrHistoryStores() async {
+        let defaults = isolatedDefaults()
+        let toggleStore = DesignSystemV2ToggleStore(
+            remoteFlagSnapshotProvider: { false },
+            userDefaults: defaults
+        )
+        let directory = temporaryDirectory()
+        let onboardingStore = OnboardingStore(fileURL: directory.appendingPathComponent("UserProfile.json"))
+        let themeStore = ThemeStore(fileURL: directory.appendingPathComponent("Theme.json"))
+        let historyStore = WorkoutHistoryStore(fileURL: directory.appendingPathComponent("WorkoutHistory.json"))
+        onboardingStore.draft = validDraft()
+
+        let completedOnboarding = await onboardingStore.completeOnboarding()
+        let updatedTheme = await themeStore.updateSelectedTheme(.spicy)
+        let addedSummary = await historyStore.addSummary(sampleSummary())
+
+        XCTAssertTrue(completedOnboarding)
+        XCTAssertTrue(updatedTheme)
+        XCTAssertTrue(addedSummary)
+
+        toggleStore.setOverride(.forceOn)
+        toggleStore.setOverride(.forceOff)
+
+        XCTAssertEqual(onboardingStore.profile?.displayName, "Test Athlete")
+        XCTAssertTrue(onboardingStore.hasCompletedOnboarding)
+        XCTAssertEqual(themeStore.selectedTheme, .spicy)
+        XCTAssertEqual(historyStore.summaries.count, 1)
+        XCTAssertEqual(historyStore.summaries.first?.title, "Squats")
+    }
+
+    func testReduceTransparencyResolvesSolidNavStyle() {
+        XCTAssertEqual(V2NavStyle.resolved(reduceTransparency: false), .liquidGlass)
+        XCTAssertEqual(V2NavStyle.resolved(reduceTransparency: true), .solid)
+    }
+
     func testSnapshotSmokeForCoreV2ComponentsAcrossHyperAndHotGirlThemes() throws {
         for theme in [SpotterThemeOption.hyper, .hotGirl] {
             try renderSnapshot(
@@ -144,6 +221,19 @@ final class DesignSystemV2Tests: XCTestCase {
             )
         }
     }
+
+    func testSnapshotSmokeForV2MainShellPlaceholders() throws {
+        for theme in [SpotterThemeOption.hyper, .warm] {
+            try renderSnapshot(
+                name: "V2MainShell-\(theme.rawValue)",
+                view: V2MainShellSnapshotHost(theme: theme, selectedTab: .dashboard)
+            )
+            try renderSnapshot(
+                name: "V2LiquidGlassTabBar-\(theme.rawValue)",
+                view: V2TabBarSnapshotHost(theme: theme, selectedTab: .profile)
+            )
+        }
+    }
 }
 
 private extension DesignSystemV2Tests {
@@ -155,6 +245,48 @@ private extension DesignSystemV2Tests {
         }
         defaults.removePersistentDomain(forName: suiteName)
         return defaults
+    }
+
+    func temporaryDirectory() -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DesignSystemV2Tests-\(UUID().uuidString)", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            XCTFail("Could not create temp directory: \(error)")
+        }
+        return directory
+    }
+
+    func validDraft() -> OnboardingDraft {
+        var draft = OnboardingDraft()
+        draft.displayName = "Test Athlete"
+        draft.genderIdentity = .preferNotToSay
+        draft.age = "30"
+        draft.height = "175"
+        draft.weight = "72"
+        draft.primaryGoal = .strength
+        draft.fitnessLevel = .beginner
+        draft.equipment = [.bodyweight, .mat]
+        return draft
+    }
+
+    func sampleSummary() -> WorkoutSessionSummary {
+        let endedAt = Date(timeIntervalSince1970: 1_778_067_200)
+        return WorkoutSessionSummary(
+            mode: .freeAnalysis,
+            title: "Squats",
+            coach: .good,
+            startedAt: endedAt.addingTimeInterval(-72),
+            endedAt: endedAt,
+            durationSeconds: 72,
+            totalReps: 12,
+            totalHoldSeconds: 0,
+            averageFormScore: 91,
+            exerciseSummaries: [],
+            topCue: nil,
+            effortSummary: "Sample free analysis session."
+        )
     }
 
     func assertColor(
@@ -212,5 +344,37 @@ private extension DesignSystemV2Tests {
 
         window.isHidden = true
         XCTAssertGreaterThan(image.pngData()?.count ?? 0, 2_000)
+    }
+}
+
+private struct V2MainShellSnapshotHost: View {
+    let theme: SpotterThemeOption
+    let selectedTab: V2Tab
+    @State private var appPresentation = AppLevelPresentationState()
+
+    var body: some View {
+        V2MainShellView(initialSelectedTab: selectedTab)
+            .environmentObject(ThemeStore(defaultTheme: theme))
+            .environmentObject(BackendStatusStore())
+            .environmentObject(
+                DesignSystemV2ToggleStore(
+                    remoteFlagSnapshotProvider: { true },
+                    userDefaults: UserDefaults(suiteName: "V2MainShellSnapshot.\(theme.rawValue)") ?? .standard
+                )
+            )
+            .environment(\.appLevelPresenter, $appPresentation)
+    }
+}
+
+private struct V2TabBarSnapshotHost: View {
+    let theme: SpotterThemeOption
+    @State var selectedTab: V2Tab
+
+    var body: some View {
+        VStack {
+            Spacer()
+            V2LiquidGlassTabBar(selectedTab: $selectedTab, theme: theme)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

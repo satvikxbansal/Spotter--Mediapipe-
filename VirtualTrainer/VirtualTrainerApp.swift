@@ -20,6 +20,7 @@ struct VirtualTrainerApp: App {
     @StateObject private var insightStore = InsightStore()
     @StateObject private var featureFlagService: RemoteFeatureFlagService
     @StateObject private var designSystemV2Toggle: DesignSystemV2ToggleStore
+    @State private var appLevelPresentation = AppLevelPresentationState()
     @State private var didTrackAppOpen = false
     @State private var didAttemptInitialFeatureFlagRefresh = false
 
@@ -51,17 +52,21 @@ struct VirtualTrainerApp: App {
     var body: some Scene {
         WindowGroup {
             let isDesignSystemV2Enabled = designSystemV2Toggle.isEffectivelyEnabled
+            let rootRoute = SpotterAppRootRoute.resolve(
+                isDesignSystemV2Enabled: isDesignSystemV2Enabled,
+                hasCompletedOnboarding: onboardingStore.hasCompletedOnboarding,
+                shouldShowCalibrationGate: calibrationStore.shouldShowCalibrationGate
+            )
             Group {
-                if isDesignSystemV2Enabled {
+                switch rootRoute {
+                case .v2Root:
                     V2RootView()
-                } else {
-                    if !onboardingStore.hasCompletedOnboarding {
-                        OnboardingFlowView()
-                    } else if calibrationStore.shouldShowCalibrationGate {
-                        CalibrationIntroView()
-                    } else {
-                        MainTabView()
-                    }
+                case .v1Onboarding:
+                    OnboardingFlowView()
+                case .v1Calibration:
+                    CalibrationIntroView()
+                case .v1MainTabs:
+                    MainTabView()
                 }
             }
             .id(isDesignSystemV2Enabled)
@@ -77,6 +82,7 @@ struct VirtualTrainerApp: App {
             .environmentObject(syncOrchestrator)
             .environmentObject(featureFlagService)
             .environmentObject(designSystemV2Toggle)
+            .environment(\.appLevelPresenter, $appLevelPresentation)
             .onAppear {
                 trackAppOpenIfNeeded()
                 syncStoresWithAccount()

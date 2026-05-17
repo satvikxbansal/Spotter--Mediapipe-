@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PlannedWorkoutSessionView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appLevelPresenter) private var appLevelPresenter
     @EnvironmentObject private var appDependencies: AppDependencies
     @EnvironmentObject private var onboardingStore: OnboardingStore
     @EnvironmentObject private var calibrationStore: CalibrationStore
@@ -26,7 +27,14 @@ struct PlannedWorkoutSessionView: View {
         sessionContent
         .preferredColorScheme(.dark)
         .onAppear {
+            appLevelPresenter.setLiveWorkoutPresented(true)
             coordinator.startSession()
+        }
+        .onChange(of: coordinator.sessionState) { _, state in
+            appLevelPresenter.setLiveWorkoutPresented(state == .ready || state == .activeSet)
+        }
+        .onDisappear {
+            appLevelPresenter.setLiveWorkoutPresented(false)
         }
     }
 

@@ -119,6 +119,7 @@ struct CameraReadinessView: View {
     private let onCalibrationFailed: ((CalibrationRecord) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appLevelPresenter) private var appLevelPresenter
     @StateObject private var cameraManager = CameraManager()
     @StateObject private var poseEstimator = PoseEstimator()
     @StateObject private var handGesture = HandGestureDetector()
@@ -248,16 +249,20 @@ struct CameraReadinessView: View {
                 startSession()
             }
         }
-        .fullScreenCover(item: $activeContext) { context in
+        .fullScreenCover(item: $activeContext, onDismiss: {
+            appLevelPresenter.setLiveWorkoutPresented(false)
+        }) { context in
             if context.isCalibration {
                 TrainerSessionView(
                     calibrationContext: context,
                     onCalibrationCompleted: { record in
+                        appLevelPresenter.setLiveWorkoutPresented(false)
                         activeContext = nil
                         onCalibrationCompleted?(record)
                         dismiss()
                     },
                     onCalibrationFailed: { record in
+                        appLevelPresenter.setLiveWorkoutPresented(false)
                         activeContext = nil
                         onCalibrationFailed?(record)
                         dismiss()
@@ -265,6 +270,7 @@ struct CameraReadinessView: View {
                 )
             } else {
                 TrainerSessionView(context: context) { summary in
+                    appLevelPresenter.setLiveWorkoutPresented(false)
                     activeContext = nil
                     onSummary?(summary)
                     dismiss()
@@ -389,6 +395,7 @@ struct CameraReadinessView: View {
             return
         }
         stopReadinessCamera()
+        appLevelPresenter.setLiveWorkoutPresented(true)
         activeContext = makeContext()
     }
 
