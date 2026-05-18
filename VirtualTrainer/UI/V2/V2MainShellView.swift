@@ -13,13 +13,19 @@ struct V2MainShellView: View {
     @State private var selectedTab: V2Tab
     @State private var isKeyboardVisible = false
     private let navStyleOverride: V2NavStyle?
+    private let onStartFirstRunDebug: (() -> Void)?
 #if DEBUG
     @State private var isShowingBackendStatusSheet = false
 #endif
 
-    init(initialSelectedTab: V2Tab = .dashboard, navStyleOverride: V2NavStyle? = nil) {
+    init(
+        initialSelectedTab: V2Tab = .dashboard,
+        navStyleOverride: V2NavStyle? = nil,
+        onStartFirstRunDebug: (() -> Void)? = nil
+    ) {
         _selectedTab = State(initialValue: initialSelectedTab)
         self.navStyleOverride = navStyleOverride
+        self.onStartFirstRunDebug = onStartFirstRunDebug
     }
 
     var body: some View {
@@ -87,6 +93,7 @@ struct V2MainShellView: View {
 #if DEBUG
             V2ProfilePlaceholder(
                 theme: themeStore.selectedTheme,
+                onStartFirstRun: onStartFirstRunDebug,
                 onReturnToV1: {
                     designSystemV2Toggle.setOverride(.forceOff)
                 }
@@ -171,12 +178,13 @@ struct V2TrophiesPlaceholder: View {
 struct V2ProfilePlaceholder: View {
     let theme: SpotterThemeOption
 #if DEBUG
-    var onReturnToV1: (() -> Void)?
+    var onStartFirstRun: (() -> Void)? = nil
+    var onReturnToV1: (() -> Void)? = nil
 #endif
 
     var body: some View {
 #if DEBUG
-        if let onReturnToV1 {
+        if onStartFirstRun != nil || onReturnToV1 != nil {
             V2TabPlaceholderView(
                 theme: theme,
                 tab: .profile,
@@ -184,13 +192,27 @@ struct V2ProfilePlaceholder: View {
                 title: "Profile",
                 bodyText: "Themes, heatmap, history, export, delete-account, and sync diagnostics are styled in the D6 pass.",
                 accessory: {
-                    V2SecondaryButton(
-                        title: "Return to V1",
-                        systemImage: "arrow.uturn.backward",
-                        theme: theme,
-                        action: onReturnToV1
-                    )
-                    .accessibilityHint("Forces Design System V2 off in this debug build.")
+                    VStack(spacing: SpotterV2.Spacing.md) {
+                        if let onStartFirstRun {
+                            V2CTAButton(
+                                title: "Start V2 Onboarding",
+                                systemImage: "sparkles",
+                                theme: theme,
+                                action: onStartFirstRun
+                            )
+                            .accessibilityHint("Clears local onboarding and calibration for first-run testing.")
+                        }
+
+                        if let onReturnToV1 {
+                            V2SecondaryButton(
+                                title: "Return to V1",
+                                systemImage: "arrow.uturn.backward",
+                                theme: theme,
+                                action: onReturnToV1
+                            )
+                            .accessibilityHint("Forces Design System V2 off in this debug build.")
+                        }
+                    }
                 }
             )
         } else {

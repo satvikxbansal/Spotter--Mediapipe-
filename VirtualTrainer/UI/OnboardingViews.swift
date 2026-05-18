@@ -385,6 +385,7 @@ struct OnboardingCoachThemeView: View {
 
 struct OnboardingCompletionView: View {
     @EnvironmentObject private var appDependencies: AppDependencies
+    @EnvironmentObject private var calibrationStore: CalibrationStore
     @ObservedObject var store: OnboardingStore
     let onBack: () -> Void
 
@@ -396,10 +397,10 @@ struct OnboardingCompletionView: View {
 
             Spacer()
 
-            Text("Ready for calibration")
+            Text(completionTitle)
                 .header(size: 42)
 
-            Text("Your profile will be saved locally. Calibration comes next.")
+            Text(completionBody)
                 .bodyText()
                 .foregroundStyle(Theme.Colors.textSecondary)
 
@@ -413,7 +414,7 @@ struct OnboardingCompletionView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             }
 
-            Button("Continue to calibration") {
+            Button(completionButtonTitle) {
                 Task {
                     if await store.completeOnboarding() {
                         appDependencies.analytics.trackOnboardingCompleted()
@@ -427,6 +428,21 @@ struct OnboardingCompletionView: View {
             Spacer()
         }
         .padding(Theme.Spacing.lg)
+    }
+
+    private var completionTitle: String {
+        calibrationStore.shouldShowCalibrationGate ? "Ready for calibration" : "Profile ready"
+    }
+
+    private var completionBody: String {
+        if calibrationStore.shouldShowCalibrationGate {
+            return "Your profile will be saved locally. Calibration comes next."
+        }
+        return "Your profile will be saved locally. Your existing calibration choice stays in place."
+    }
+
+    private var completionButtonTitle: String {
+        calibrationStore.shouldShowCalibrationGate ? "Continue to calibration" : "Save profile and continue"
     }
 }
 
@@ -678,5 +694,6 @@ private struct FlowLayout: Layout {
 #Preview {
     OnboardingFlowView()
         .environmentObject(OnboardingStore())
+        .environmentObject(CalibrationStore())
         .environmentObject(AppDependencies.local())
 }

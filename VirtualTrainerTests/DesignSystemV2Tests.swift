@@ -169,6 +169,34 @@ final class DesignSystemV2Tests: XCTestCase {
         )
     }
 
+    func testSkippedCalibrationBypassesGateUntilCalibrationIsReset() async {
+        let store = CalibrationStore(fileURL: temporaryDirectory().appendingPathComponent("CalibrationRecord.json"))
+
+        XCTAssertTrue(store.shouldShowCalibrationGate)
+        assertTrue(await store.saveSkipped(notes: "DEBUG first-run reset test."))
+        XCTAssertFalse(store.shouldShowCalibrationGate)
+        XCTAssertEqual(
+            SpotterAppRootRoute.resolve(
+                isDesignSystemV2Enabled: false,
+                hasCompletedOnboarding: true,
+                shouldShowCalibrationGate: store.shouldShowCalibrationGate
+            ),
+            .v1MainTabs
+        )
+
+        await store.resetForDebug()
+
+        XCTAssertTrue(store.shouldShowCalibrationGate)
+        XCTAssertEqual(
+            SpotterAppRootRoute.resolve(
+                isDesignSystemV2Enabled: false,
+                hasCompletedOnboarding: true,
+                shouldShowCalibrationGate: store.shouldShowCalibrationGate
+            ),
+            .v1Calibration
+        )
+    }
+
     func testSwitchingToggleDoesNotResetOnboardingThemeOrHistoryStores() async {
         let defaults = isolatedDefaults()
         let toggleStore = DesignSystemV2ToggleStore(

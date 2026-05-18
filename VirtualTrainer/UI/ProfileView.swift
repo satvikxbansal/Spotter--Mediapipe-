@@ -296,16 +296,9 @@ struct ProfileView: View {
                     onStartListeners: startSyncListeners,
                     onStopListeners: stopSyncListeners,
                     onSampleDataToggle: setSampleDataEnabledForTesting,
-                    onResetOnboarding: {
-                        Task {
-                            await onboardingStore.resetOnboarding()
-                        }
-                    },
-                    onResetCalibration: {
-                        Task {
-                            await calibrationStore.resetForDebug()
-                        }
-                    }
+                    onResetFirstRun: resetFirstRunFlowForDebug,
+                    onResetOnboarding: resetOnboardingOnlyForDebug,
+                    onResetCalibration: resetCalibrationOnlyForDebug
                 )
             }
             .padding(Theme.Spacing.lg)
@@ -437,6 +430,49 @@ struct ProfileView: View {
                 await loadSampleDataForTesting()
             } else {
                 await clearSampleDataForTesting()
+            }
+        }
+    }
+
+    private func resetFirstRunFlowForDebug() {
+        Task { @MainActor in
+            debugStatusMessage = nil
+            await calibrationStore.resetForDebug()
+            await onboardingStore.resetOnboarding()
+            if let error = onboardingStore.persistenceError ?? calibrationStore.persistenceError {
+                debugStatusMessage = error
+                HapticsEngine.shared.warningPulse()
+            } else {
+                debugStatusMessage = "Cleared local onboarding and calibration for first-run testing."
+                HapticsEngine.shared.successRipple()
+            }
+        }
+    }
+
+    private func resetOnboardingOnlyForDebug() {
+        Task { @MainActor in
+            debugStatusMessage = nil
+            await onboardingStore.resetOnboarding()
+            if let error = onboardingStore.persistenceError {
+                debugStatusMessage = error
+                HapticsEngine.shared.warningPulse()
+            } else {
+                debugStatusMessage = "Cleared local onboarding only. Calibration stayed \(calibrationStore.status.displayName)."
+                HapticsEngine.shared.successRipple()
+            }
+        }
+    }
+
+    private func resetCalibrationOnlyForDebug() {
+        Task { @MainActor in
+            debugStatusMessage = nil
+            await calibrationStore.resetForDebug()
+            if let error = calibrationStore.persistenceError {
+                debugStatusMessage = error
+                HapticsEngine.shared.warningPulse()
+            } else {
+                debugStatusMessage = "Cleared local calibration only."
+                HapticsEngine.shared.successRipple()
             }
         }
     }
@@ -2002,6 +2038,7 @@ private struct SettingsDebugSection: View {
     let onStartListeners: () -> Void
     let onStopListeners: () -> Void
     let onSampleDataToggle: (Bool) -> Void
+    let onResetFirstRun: () -> Void
     let onResetOnboarding: () -> Void
     let onResetCalibration: () -> Void
 
@@ -2045,11 +2082,16 @@ private struct SettingsDebugSection: View {
                 .toggleStyle(.switch)
                 .tint(Theme.Colors.accent)
 
-                HStack(spacing: Theme.Spacing.sm) {
-                    Button("Reset onboarding", action: onResetOnboarding)
+                VStack(spacing: Theme.Spacing.sm) {
+                    Button("Reset first-run flow", action: onResetFirstRun)
                         .buttonStyle(CompactDebugButtonStyle())
-                    Button("Reset calibration", action: onResetCalibration)
-                        .buttonStyle(CompactDebugButtonStyle())
+
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Button("Reset onboarding only", action: onResetOnboarding)
+                            .buttonStyle(CompactDebugButtonStyle())
+                        Button("Reset calibration only", action: onResetCalibration)
+                            .buttonStyle(CompactDebugButtonStyle())
+                    }
                 }
 
                 if let debugStatusMessage {
@@ -2058,7 +2100,7 @@ private struct SettingsDebugSection: View {
                         .foregroundStyle(statusColor(for: debugStatusMessage))
                 }
 
-                Text("Debug resets only clear local onboarding or calibration state.")
+                Text("Reset first-run flow clears local onboarding and calibration together. In Firebase mode, remote records can reappear after pull/listeners; use Local mode or account deletion for a cloud-clean run.")
                     .caption()
             }
             .padding(.top, Theme.Spacing.md)

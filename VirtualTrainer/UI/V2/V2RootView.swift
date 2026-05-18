@@ -3,6 +3,9 @@ import SwiftUI
 struct V2RootView: View {
     @EnvironmentObject private var onboardingStore: OnboardingStore
     @EnvironmentObject private var calibrationStore: CalibrationStore
+#if DEBUG
+    @EnvironmentObject private var designSystemV2Toggle: DesignSystemV2ToggleStore
+#endif
 
     private let routeOverride: V2RootRoute?
     private let navStyleOverride: V2NavStyle?
@@ -22,11 +25,23 @@ struct V2RootView: View {
                 V2CalibrationIntroView()
                     .accessibilityIdentifier("V2RootView.CalibrationGate")
             case .mainShell:
-                V2MainShellView(navStyleOverride: navStyleOverride)
+                mainShell
                     .accessibilityIdentifier("V2RootView.MainShell")
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private var mainShell: some View {
+#if DEBUG
+        V2MainShellView(
+            navStyleOverride: navStyleOverride,
+            onStartFirstRunDebug: resetFirstRunForDebug
+        )
+#else
+        V2MainShellView(navStyleOverride: navStyleOverride)
+#endif
     }
 
     private var resolvedRoute: V2RootRoute {
@@ -35,6 +50,16 @@ struct V2RootView: View {
             shouldShowCalibrationGate: calibrationStore.shouldShowCalibrationGate
         )
     }
+
+#if DEBUG
+    private func resetFirstRunForDebug() {
+        Task { @MainActor in
+            designSystemV2Toggle.setOverride(.forceOn)
+            await calibrationStore.resetForDebug()
+            await onboardingStore.resetOnboarding()
+        }
+    }
+#endif
 }
 
 private struct V2RootView_Previews: PreviewProvider {

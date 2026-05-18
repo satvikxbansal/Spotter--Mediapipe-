@@ -2846,3 +2846,83 @@ Known local build warnings remain unchanged: Firebase client config copy notice 
 For D4-D6, green builds and snapshot smoke tests are necessary but not sufficient. Every design phase needs an explicit exit-path matrix (primary CTA, secondary CTA, close, back, denied/error, skip, cancel), an accessibility pass over each interactive element rather than each visible card, and a visual comparison against both NEW_DESIGN and V1 interaction quality. Snapshot smoke tests should be kept, but they must not be treated as pixel-accurate visual QA. After any compaction, re-run the audit checklist from DL-076 before finalizing.
 
 **Pattern Tags:** #design-system-v2 #d3 #post-implementation-audit #rca #accessibility #camera-readiness #calibration #visual-qa #compaction-risk
+
+---
+
+### [DL-079] D3 First-Run Routing And V2 Onboarding Test Path RCA
+**Date:** 2026-05-18
+**Severity:** bugfix
+**Category:** design-system, v2, onboarding, calibration, debug-ux, routing, rca
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/UI/OnboardingViews.swift`, `VirtualTrainer/UI/ProfileView.swift`, `VirtualTrainer/UI/V2/V2RootView.swift`, `VirtualTrainer/UI/V2/V2MainShellView.swift`, `VirtualTrainerTests/DesignSystemV2Tests.swift`
+
+**Error:**
+Two D3 verification paths were confusing after the V2 onboarding work:
+
+1. In V1 mode, using the debug "Reset onboarding" action and then finishing onboarding could route directly to the dashboard instead of the squat calibration intro/session.
+2. In V2 Force On mode, a user with an already-completed profile and skipped/completed calibration saw the D2 V2 tab placeholders, such as the Trophies "Coming in D6" screen, instead of the new D3 V2 onboarding screens.
+
+**Root Cause:**
+The first issue was not a live camera or calibration-session regression. The root router is driven by two independent stores:
+
+- `OnboardingStore.hasCompletedOnboarding`
+- `CalibrationStore.shouldShowCalibrationGate`
+
+`CalibrationStore.shouldShowCalibrationGate` is true only for `.notStarted` or `.failed`. If calibration is already `.skipped` or `.completed`, completing onboarding correctly resolves the root to main tabs. The old debug "Reset onboarding" button only cleared the local profile draft/profile. It did not clear the calibration record. Therefore a previously skipped or completed calibration record made the post-onboarding "calibration comes next" copy inaccurate and made the app route to the dashboard.
+
+Firebase mode adds one more wrinkle: these debug reset buttons clear local store files only. Remote profile/calibration records can be pulled back by an explicit pull/full sync/listener flow. That is correct backend behavior, but the debug copy did not make the local-only boundary obvious enough.
+
+The second issue was an expected consequence of the D1/D2 rule that the V2 toggle must not reset onboarding, calibration, profile, history, trophies, or insights. Force On swaps the SwiftUI root; it does not create a first-run state. For a ready user, `V2RootRoute.resolve` correctly returns `.mainShell`, which currently contains the D2/D6 placeholder tabs. The D3 onboarding screens only render when the same stores represent first run: no profile, then calibration not started/failed after onboarding completes.
+
+The miss was discoverability and test ergonomics. D3 added the correct V2 first-run route, but a tester who was already in Force On landed in the placeholder shell, and the V2 Profile placeholder did not expose a debug way to clear local first-run state. The route tests proved store preservation, but they did not cover the human testing path "I forced V2 on from a completed account and now need to see D3 onboarding."
+
+**Why It Was Missed:**
+The D3 checklist correctly emphasized state preservation on toggle, V1 unchanged when V2 is off, and calibration flow reuse. That made the implementation avoid resetting stores, which was correct. The missing part was a tester-facing path to intentionally create first-run state after Force On.
+
+The post-compaction review also over-focused on whether the V2 screens existed and whether model contracts were preserved. It did not replay the exact debug workflow with a previously skipped/completed calibration record. The unit tests covered the steady routes, but not the reset semantics that real QA would use between passes.
+
+**Fix Applied:**
+Added a debug "Reset first-run flow" action in the V1 Profile settings/debug section. It clears local calibration first, then local onboarding, so the next route is a genuine first-run flow. The existing individual reset actions remain but are relabeled "Reset onboarding only" and "Reset calibration only" to make their narrower scope explicit. The debug explanatory copy now states that Firebase mode can rehydrate remote records after pull/listeners and that Local mode or account deletion is required for a cloud-clean run.
+
+Added a debug "Start V2 Onboarding" CTA to the V2 Profile placeholder when the app is running through `V2RootView`. This keeps the D1 store-preservation rule intact during normal toggle use, but gives testers a direct Force On path into the actual D3 V2 onboarding route by clearing local onboarding and calibration together.
+
+Updated `OnboardingCompletionView` copy so V1 no longer promises calibration when the calibration gate is already bypassed. If calibration is not started/failed, the screen still says "Ready for calibration" and "Continue to calibration." If calibration is skipped/completed, it now says "Profile ready" and "Save profile and continue," while preserving the same `OnboardingStore.completeOnboarding()` behavior.
+
+Added `testSkippedCalibrationBypassesGateUntilCalibrationIsReset` to lock the routing contract: skipped calibration bypasses the calibration gate, and `resetForDebug()` restores the gate.
+
+No backend repository behavior, Firestore sync behavior, privacy rules, MediaPipe, camera manager, pose estimator, rep counter, feedback engine, hand gesture detector, exertion analyzer, workout ready coordinator, face landmarker, frame position analyzer, or live camera pipeline behavior changed.
+
+**How To Test D3 V2 Onboarding Now:**
+1. Turn Design System V2 to Force On.
+2. If you land on the V2 placeholder shell, open the Profile tab and tap "Start V2 Onboarding." This clears only local onboarding and calibration, then routes into the V2 welcome screen.
+3. For a fully cloud-clean Firebase test, either switch desired backend to Local and restart before resetting, or use account deletion/reset of cloud data. A local debug reset is not a remote deletion.
+
+**Verification:**
+Toolchain paths were checked again per DL-045:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both resolved under `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`.
+
+`git diff --check` passed.
+
+The first rebuild caught a SwiftUI result-builder compile error caused by putting `#if DEBUG` directly inside the `V2RootView` route switch. The conditional was moved into a dedicated `@ViewBuilder` helper, then the required workspace build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 451
+- Failed: 0
+- Skipped: 4
+- Total: 455
+
+Known local build warnings remain unchanged: Firebase client config copy notice and AppIntents metadata skipped because the app has no AppIntents dependency.
+
+**Prevention Rule:**
+For D4-D6, every phase needs a tester-state matrix, not just a route-state matrix. Include at least: existing completed user, onboarding-only reset, calibration-only reset, combined first-run reset, V2 Force On from ready state, V2 Force On from first-run state, Local backend, and Firebase backend with remote records present. When debug UX is the intended way to reach a phase, the debug UX must expose the exact state transition being tested.
+
+**Pattern Tags:** #design-system-v2 #d3 #first-run #routing #debug-reset #calibration-gate #firebase-local-boundary #rca
