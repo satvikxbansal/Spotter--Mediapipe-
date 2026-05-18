@@ -118,6 +118,25 @@ final class DesignSystemV2Tests: XCTestCase {
         XCTAssertEqual(route, .v1MainTabs)
     }
 
+    func testToggleOffKeepsExistingOnboardingAndCalibrationRoots() {
+        XCTAssertEqual(
+            SpotterAppRootRoute.resolve(
+                isDesignSystemV2Enabled: false,
+                hasCompletedOnboarding: false,
+                shouldShowCalibrationGate: true
+            ),
+            .v1Onboarding
+        )
+        XCTAssertEqual(
+            SpotterAppRootRoute.resolve(
+                isDesignSystemV2Enabled: false,
+                hasCompletedOnboarding: true,
+                shouldShowCalibrationGate: true
+            ),
+            .v1Calibration
+        )
+    }
+
     func testToggleOnRoutesReadyUserToV2MainShell() {
         let appRoute = SpotterAppRootRoute.resolve(
             isDesignSystemV2Enabled: true,
@@ -234,6 +253,116 @@ final class DesignSystemV2Tests: XCTestCase {
             )
         }
     }
+
+    func testV2OnboardingDraftCompletesAndWritesUserProfile() async {
+        let store = OnboardingStore(fileURL: temporaryDirectory().appendingPathComponent("V2UserProfile.json"))
+        store.draft = validV2Draft()
+
+        assertTrue(await store.completeOnboarding())
+
+        XCTAssertEqual(store.profile?.displayName, "V2 Athlete")
+        XCTAssertEqual(store.profile?.genderIdentity, .female)
+        XCTAssertEqual(store.profile?.age, 29)
+        XCTAssertEqual(store.profile?.height, 168)
+        XCTAssertEqual(store.profile?.weight, 64.5)
+        XCTAssertEqual(store.profile?.primaryGoal, .performance)
+        XCTAssertEqual(store.profile?.fitnessLevel, .intermediate)
+        XCTAssertEqual(Set(store.profile?.equipment ?? []), [.bodyweight, .dumbbells])
+        XCTAssertEqual(store.profile?.limitations, [.wristSensitive])
+        XCTAssertEqual(store.profile?.preferredSessionLength, .thirtyFive)
+        XCTAssertEqual(store.profile?.workoutDaysPerWeek, 5)
+    }
+
+    func testV2CalibrationCompletionStillUsesCalibrationStoreContract() async throws {
+        let store = CalibrationStore(fileURL: temporaryDirectory().appendingPathComponent("V2CalibrationRecord.json"))
+        let startedAt = Date(timeIntervalSince1970: 1_779_000_000)
+        let completedAt = Date(timeIntervalSince1970: 1_779_000_036)
+        let record = CalibrationRecord.completed(
+            exerciseType: CalibrationDefaults.exerciseType,
+            targetReps: CalibrationDefaults.targetReps,
+            completedReps: CalibrationDefaults.targetReps,
+            startedAt: startedAt,
+            completedAt: completedAt,
+            visibilityPassed: true,
+            averageFormScore: 92
+        )
+
+        assertTrue(await store.saveCompleted(record))
+
+        let saved = try XCTUnwrap(store.record)
+        XCTAssertEqual(saved.exerciseType, CalibrationDefaults.exerciseType)
+        XCTAssertEqual(saved.targetReps, CalibrationDefaults.targetReps)
+        XCTAssertEqual(saved.completedReps, CalibrationDefaults.targetReps)
+        XCTAssertEqual(saved.startedAt, startedAt)
+        XCTAssertEqual(saved.completedAt, completedAt)
+        XCTAssertEqual(saved.visibilityPassed, true)
+        XCTAssertEqual(saved.averageFormScore, 92)
+    }
+
+    func testV2CameraReadinessDeniedStateShowsSettingsCTA() {
+        let state = V2CameraReadinessAdapter.makeState(
+            permissionStatus: .denied,
+            visibilityResult: BodyVisibilityChecker.Result(
+                isReady: false,
+                visibility: 0,
+                message: "Camera access is unavailable.",
+                missingJoints: []
+            ),
+            coordinatorState: .positioning,
+            setupInstruction: "Make sure your body fits in frame."
+        )
+
+        XCTAssertEqual(state.kind, .permissionDenied)
+        XCTAssertEqual(state.secondaryActionTitle, "Open Settings")
+        XCTAssertNil(state.primaryActionTitle)
+    }
+
+    func testV2WelcomeLoginDeltaIsComingSoonOnly() {
+        XCTAssertEqual(V2WelcomeView.loginComingSoonTitle, "Sign in with Apple is coming soon")
+        XCTAssertTrue(V2WelcomeView.loginComingSoonMessage.contains("local-first"))
+    }
+
+    func testSnapshotSmokeForD3V2ScreensAcrossDeviceSizesAndLaunchThemes() throws {
+        let sizes: [(String, CGSize)] = [
+            ("SE", CGSize(width: 375, height: 667)),
+            ("ProMax", CGSize(width: 440, height: 956))
+        ]
+
+        for theme in [SpotterThemeOption.hyper, .hotGirl] {
+            for (sizeName, size) in sizes {
+                try renderScreenSnapshot(
+                    name: "D3Welcome-\(theme.rawValue)-\(sizeName)",
+                    size: size,
+                    view: D3OnboardingScreenSnapshotHost(theme: theme, screen: .welcome)
+                )
+                try renderScreenSnapshot(
+                    name: "D3Identity-\(theme.rawValue)-\(sizeName)",
+                    size: size,
+                    view: D3OnboardingScreenSnapshotHost(theme: theme, screen: .identity)
+                )
+                try renderScreenSnapshot(
+                    name: "D3Stats-\(theme.rawValue)-\(sizeName)",
+                    size: size,
+                    view: D3OnboardingScreenSnapshotHost(theme: theme, screen: .stats)
+                )
+                try renderScreenSnapshot(
+                    name: "D3Objective-\(theme.rawValue)-\(sizeName)",
+                    size: size,
+                    view: D3OnboardingScreenSnapshotHost(theme: theme, screen: .objective)
+                )
+                try renderScreenSnapshot(
+                    name: "D3Calibration-\(theme.rawValue)-\(sizeName)",
+                    size: size,
+                    view: D3CalibrationIntroSnapshotHost(theme: theme)
+                )
+                try renderScreenSnapshot(
+                    name: "D3CameraReady-\(theme.rawValue)-\(sizeName)",
+                    size: size,
+                    view: D3CameraReadinessSnapshotHost(theme: theme, state: .ready)
+                )
+            }
+        }
+    }
 }
 
 private extension DesignSystemV2Tests {
@@ -268,6 +397,22 @@ private extension DesignSystemV2Tests {
         draft.primaryGoal = .strength
         draft.fitnessLevel = .beginner
         draft.equipment = [.bodyweight, .mat]
+        return draft
+    }
+
+    func validV2Draft() -> OnboardingDraft {
+        var draft = OnboardingDraft()
+        draft.displayName = "V2 Athlete"
+        draft.genderIdentity = .female
+        draft.age = "29"
+        draft.height = "168"
+        draft.weight = "64.5"
+        draft.primaryGoal = .performance
+        draft.fitnessLevel = .intermediate
+        draft.equipment = [.bodyweight, .dumbbells]
+        draft.limitations = [.wristSensitive]
+        draft.preferredSessionLength = .thirtyFive
+        draft.workoutDaysPerWeek = 5
         return draft
     }
 
@@ -345,6 +490,36 @@ private extension DesignSystemV2Tests {
         window.isHidden = true
         XCTAssertGreaterThan(image.pngData()?.count ?? 0, 2_000)
     }
+
+    func renderScreenSnapshot<V: View>(name: String, size: CGSize, view: V) throws {
+        let controller = UIHostingController(
+            rootView: view
+                .frame(width: size.width, height: size.height)
+                .background(SpotterV2.Tokens.background)
+                .preferredColorScheme(.dark)
+        )
+        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+
+        controller.view.frame = window.bounds
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { _ in
+            controller.view.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
+        }
+
+        let attachment = XCTAttachment(image: image)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        window.isHidden = true
+        XCTAssertGreaterThan(image.pngData()?.count ?? 0, 8_000)
+    }
 }
 
 private struct V2MainShellSnapshotHost: View {
@@ -376,5 +551,117 @@ private struct V2TabBarSnapshotHost: View {
             V2LiquidGlassTabBar(selectedTab: $selectedTab, theme: theme)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private enum D3OnboardingSnapshotScreen {
+    case welcome
+    case identity
+    case stats
+    case objective
+}
+
+private struct D3OnboardingScreenSnapshotHost: View {
+    let theme: SpotterThemeOption
+    let screen: D3OnboardingSnapshotScreen
+    @StateObject private var onboardingStore: OnboardingStore
+    @StateObject private var themeStore: ThemeStore
+    @StateObject private var appDependencies = AppDependencies.local()
+
+    init(theme: SpotterThemeOption, screen: D3OnboardingSnapshotScreen) {
+        self.theme = theme
+        self.screen = screen
+        let baseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("D3OnboardingSnapshot-\(UUID().uuidString)", isDirectory: true)
+        let onboarding = OnboardingStore(fileURL: baseURL.appendingPathComponent("UserProfile.json"))
+        onboarding.draft = Self.previewDraft(theme: theme)
+        _onboardingStore = StateObject(wrappedValue: onboarding)
+        _themeStore = StateObject(wrappedValue: ThemeStore(fileURL: baseURL.appendingPathComponent("Theme.json"), defaultTheme: theme))
+    }
+
+    var body: some View {
+        Group {
+            switch screen {
+            case .welcome:
+                V2WelcomeView(onStart: {})
+            case .identity:
+                V2OnboardingIdentityView(onBack: {}, onNext: {})
+            case .stats:
+                V2OnboardingStatsView(onBack: {}, onNext: {})
+            case .objective:
+                V2OnboardingObjectiveView(onBack: {}, onNext: {})
+            }
+        }
+        .environmentObject(onboardingStore)
+        .environmentObject(themeStore)
+        .environmentObject(appDependencies)
+    }
+
+    private static func previewDraft(theme: SpotterThemeOption) -> OnboardingDraft {
+        var draft = OnboardingDraft()
+        draft.displayName = "Satvik Bansal"
+        draft.genderIdentity = .male
+        draft.age = "24"
+        draft.height = "178"
+        draft.weight = "84.5"
+        draft.primaryGoal = .strength
+        draft.fitnessLevel = .beginner
+        draft.equipment = [.bodyweight, .dumbbells]
+        draft.limitations = [.kneeSensitive]
+        draft.preferredSessionLength = .twentyFive
+        draft.workoutDaysPerWeek = 4
+        draft.selectedTheme = theme
+        return draft
+    }
+}
+
+private struct D3CalibrationIntroSnapshotHost: View {
+    let theme: SpotterThemeOption
+    @StateObject private var calibrationStore: CalibrationStore
+    @StateObject private var themeStore: ThemeStore
+    @StateObject private var appDependencies = AppDependencies.local()
+
+    init(theme: SpotterThemeOption) {
+        self.theme = theme
+        let baseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("D3CalibrationSnapshot-\(UUID().uuidString)", isDirectory: true)
+        _calibrationStore = StateObject(wrappedValue: CalibrationStore(fileURL: baseURL.appendingPathComponent("CalibrationRecord.json")))
+        _themeStore = StateObject(wrappedValue: ThemeStore(fileURL: baseURL.appendingPathComponent("Theme.json"), defaultTheme: theme))
+    }
+
+    var body: some View {
+        V2CalibrationIntroView()
+            .environmentObject(calibrationStore)
+            .environmentObject(themeStore)
+            .environmentObject(appDependencies)
+    }
+}
+
+private struct D3CameraReadinessSnapshotHost: View {
+    let theme: SpotterThemeOption
+    let state: V2CameraReadinessUIState
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    SpotterV2.Tokens.secondary.opacity(0.95),
+                    SpotterV2.Tokens.background
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            V2CameraReadinessView(
+                theme: theme,
+                state: state,
+                orientationInstruction: "Turn phone sideways for squats",
+                visibilityPercent: state.kind == .ready ? 100 : 38,
+                onStartTracking: {},
+                onOpenSettings: {},
+                onClose: {}
+            )
+        }
     }
 }

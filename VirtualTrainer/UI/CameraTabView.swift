@@ -120,6 +120,8 @@ struct CameraReadinessView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appLevelPresenter) private var appLevelPresenter
+    @EnvironmentObject private var themeStore: ThemeStore
+    @EnvironmentObject private var designSystemV2Toggle: DesignSystemV2ToggleStore
     @StateObject private var cameraManager = CameraManager()
     @StateObject private var poseEstimator = PoseEstimator()
     @StateObject private var handGesture = HandGestureDetector()
@@ -198,12 +200,24 @@ struct CameraReadinessView: View {
             )
             .ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                readinessHeader
-                Spacer()
-                readinessCard
+            if designSystemV2Toggle.isEffectivelyEnabled {
+                V2CameraReadinessView(
+                    theme: themeStore.selectedTheme,
+                    state: v2ReadinessState,
+                    orientationInstruction: v2OrientationInstruction,
+                    visibilityPercent: Int((visibilityResult.visibility * 100).rounded()),
+                    onStartTracking: startSession,
+                    onOpenSettings: { V2CameraReadinessView.openAppSettings() },
+                    onClose: closeReadiness
+                )
+            } else {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    readinessHeader
+                    Spacer()
+                    readinessCard
+                }
+                .padding(Theme.Spacing.lg)
             }
-            .padding(Theme.Spacing.lg)
         }
         .preferredColorScheme(.dark)
         .navigationTitle(activeNavigationTitle)
@@ -375,6 +389,24 @@ struct CameraReadinessView: View {
         }
     }
 
+    private var v2OrientationInstruction: String {
+        switch exerciseDefinition.cameraPosition {
+        case .front:
+            "Face camera for \(exerciseType.displayName.lowercased())"
+        case .side:
+            "Turn phone sideways for \(exerciseType.displayName.lowercased())"
+        }
+    }
+
+    private var v2ReadinessState: V2CameraReadinessUIState {
+        V2CameraReadinessAdapter.makeState(
+            permissionStatus: cameraManager.permissionStatus,
+            visibilityResult: visibilityResult,
+            coordinatorState: readyCoordinator.state,
+            setupInstruction: exerciseDefinition.setupInstruction
+        )
+    }
+
     private var canStartSession: Bool {
         activeContext == nil &&
             cameraManager.permissionStatus != .denied &&
@@ -413,6 +445,14 @@ struct CameraReadinessView: View {
             )
         }
         dismiss()
+    }
+
+    private func closeReadiness() {
+        if cameraManager.permissionStatus == .denied {
+            handlePermissionDeniedExit()
+        } else {
+            dismiss()
+        }
     }
 
     private func stopReadinessCamera() {
@@ -595,10 +635,18 @@ private extension BodyCategory {
 }
 
 #Preview {
+    let dependencies = AppDependencies.local()
     CameraTabView()
         .environmentObject(OnboardingStore())
         .environmentObject(CalibrationStore())
         .environmentObject(WorkoutHistoryStore())
         .environmentObject(TrophyStore())
-        .environmentObject(AppDependencies.local())
+        .environmentObject(ThemeStore())
+        .environmentObject(dependencies)
+        .environmentObject(
+            DesignSystemV2ToggleStore(
+                remoteFlagSnapshotProvider: { false },
+                userDefaults: UserDefaults(suiteName: "CameraTabPreview.DesignSystemV2") ?? .standard
+            )
+        )
 }

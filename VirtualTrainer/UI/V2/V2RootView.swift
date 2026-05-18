@@ -16,10 +16,10 @@ struct V2RootView: View {
         Group {
             switch resolvedRoute {
             case .onboarding:
-                OnboardingFlowView()
+                V2OnboardingFlowView()
                     .accessibilityIdentifier("V2RootView.OnboardingGate")
             case .calibration:
-                CalibrationIntroView()
+                V2CalibrationIntroView()
                     .accessibilityIdentifier("V2RootView.CalibrationGate")
             case .mainShell:
                 V2MainShellView(navStyleOverride: navStyleOverride)

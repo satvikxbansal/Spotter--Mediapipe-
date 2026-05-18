@@ -2703,3 +2703,146 @@ No matches.
 `git diff --check` passed after the audit-log append.
 
 **Pattern Tags:** #design-system-v2 #d0 #d1 #d2 #visual-audit #prevention-checklist #fonts #tokens #scope-control
+
+---
+
+### [DL-077] Design System V2 D3 Onboarding Calibration And Camera Readiness
+**Date:** 2026-05-18
+**Severity:** feature
+**Category:** design-system, v2, onboarding, calibration, camera-readiness, accessibility, tests
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/UI/V2/V2RootView.swift`, `VirtualTrainer/UI/CameraTabView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingSupport.swift`, `VirtualTrainer/UI/V2/Onboarding/V2WelcomeView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingIdentityView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingStatsView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingObjectiveView.swift`, `VirtualTrainer/UI/V2/Calibration/V2CalibrationIntroView.swift`, `VirtualTrainer/UI/V2/Camera/V2CameraReadinessView.swift`, `VirtualTrainerTests/DesignSystemV2Tests.swift`
+
+**Error:**
+No production runtime defect was fixed in this phase. The D2 V2 root still handed onboarding and calibration back to V1 screens, and the camera readiness overlay had no V2 visual path. Enabling the Design System V2 toggle therefore did not yet deliver the D3 launch experience from the NEW_DESIGN welcome, onboarding identity, onboarding stats, onboarding objective, calibration intro, or camera readiness references.
+
+**Root Cause:**
+D3 required SwiftUI-native translations of six HTML reference screens while preserving the existing model contracts, feature flag behavior, onboarding/profile persistence, calibration routing, live camera pipeline, and both backend modes. Unsupported design-only account behavior also needed an explicit product-safe treatment instead of silently wiring Firebase auth or hiding the visual rhythm of the welcome screen.
+
+**Fix Applied:**
+Added a `V2OnboardingFlowView` that swaps the D3 first-run steps only when the D1 V2 toggle is effectively enabled. The flow now renders the V2 welcome, identity, stats, and objective screens before returning to the existing coach/theme/completion steps so current profile creation behavior and `OnboardingStore.completeOnboarding()` stay unchanged.
+
+Added V2 onboarding support primitives for the D3 surfaces: page shell, selector tiles, compact selector tiles, tag toggles, value entry cards, validation copy, ruler strips, wrapping chip layout, and a press style that respects Reduce Motion. Page push/pop transitions use opacity plus trailing/leading movement unless Reduce Motion is enabled.
+
+Added `V2WelcomeView` with the scan-body eyebrow, "Your / AI Form / Coach" hero headline, local coach imagery, local secure card, bottom anchored CTA, and a visual login link. The login link presents a coming-soon alert for Sign in with Apple and does not call Firebase auth.
+
+Added `V2OnboardingIdentityView`, `V2OnboardingStatsView`, and `V2OnboardingObjectiveView` bound to the existing `OnboardingStore` draft fields and validation helpers. Height and weight unit switches reuse `updateHeightUnit` and `updateWeightUnit`. The objective screen styles the code-supported goal, level, equipment, limitation, session length, and days-per-week fields even where the design reference showed only part of the production surface.
+
+Added `V2CalibrationIntroView` for the first calibration gate. Start still routes into the existing `CalibrationSessionView` and live camera calibration flow. Skip still calls `CalibrationStore.saveSkipped(notes:)` and remains gated by the current app config.
+
+Added `V2CameraReadinessView` and `V2CameraReadinessAdapter`. The adapter maps existing `WorkoutReadyCoordinator.State`, camera permission status, and body visibility result into ready, permission denied, visibility issue, countdown, and waiting UI states. The ready state shows the V2 viewfinder shell and Start Tracking CTA. Permission denied uses the same shell with an Open Settings CTA. Visibility issues use copy-only recovery guidance. No MediaPipe, camera manager, pose estimator, rep counter, feedback engine, hand gesture, exertion, ready coordinator, face landmarker, frame position analyzer, backend repository, Firestore sync, or privacy rule behavior was changed.
+
+Added D3 tests for V2 profile completion through `OnboardingStore`, calibration completion contract preservation, camera readiness denied-state CTA mapping, login coming-soon copy, V1 routing when the toggle is off, and snapshot smoke coverage for each D3 V2 screen on iPhone SE and iPhone 17 Pro Max in Hyper and Hot Girl themes. Added SwiftUI previews for every new D3 V2 view across Hyper, Hot Girl, Warm, and Spicy themes on those same two device sizes.
+
+**Design-Only Features Deferred:**
+- Sign in with Apple / real account login and revocation remains unimplemented. The V2 welcome link is visual only and presents a coming-soon alert.
+- The design's implied account return path remains deferred until the backend account management flow exists.
+
+**Code-Only Features Styled:**
+- Existing "Prefer not to say" gender option.
+- All production equipment options, not only the subset shown in the design reference.
+- All production physical limitation options.
+- Production session length and days-per-week preferences.
+- Calibration failure messaging on the intro gate.
+- Camera permission denied, waiting, countdown, and visibility issue readiness states.
+- Imperial height remains inches because that is the current store contract.
+
+**Verification:**
+Toolchain paths were checked before implementation per DL-045:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both resolved under `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`.
+
+Required workspace build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 450
+- Failed: 0
+- Skipped: 4
+- Total: 454
+
+Focused D3/V2 test slice also passed before the full suite. `git diff --check` passed. Static scans found no WebView, Tailwind, Iconify, Phosphor, or custom font usage in Swift. Raw V2 hex color usage remains confined to `SpotterV2Tokens.swift`, not the new D3 feature screens. Known local build warnings remain limited to the Firebase client config copy notice and AppIntents metadata being skipped because the app has no AppIntents dependency.
+
+**Prevention Rule:**
+Keep first-run V2 phases as model-bound SwiftUI translations behind the D1 toggle. When a design shows unsupported account, metric, exercise, or backend capability, render it disabled or coming-soon and record it as a delta; do not invent backend or live camera behavior during design-system phases.
+
+**Pattern Tags:** #design-system-v2 #d3 #onboarding #calibration #camera-readiness #feature-flag #accessibility #tests
+
+---
+
+### [DL-078] D3 Post-Implementation Scope Audit And Miss Prevention RCA
+**Date:** 2026-05-18
+**Severity:** audit-fix
+**Category:** design-system, v2, onboarding, calibration, camera-readiness, accessibility, visual-qa, scope-control, rca
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/UI/CameraTabView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingIdentityView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingStatsView.swift`
+
+**Error:**
+The D3 implementation was structurally complete and passed the required build/test suite, but a post-compaction audit found two small misses that could matter during real use:
+
+1. In the V2 camera readiness shell, tapping the close button during a camera-permission-denied calibration setup dismissed the screen directly. The V1 permission-denied path calls the existing calibration failure callback, which persists a failed calibration record with the "Camera permission was unavailable during calibration." note. The V2 Open Settings CTA was correct, but the close affordance should still preserve the V1 failure-exit contract.
+2. The V2 name, age, height, and weight fields had visible labels/placeholder copy, but the underlying `TextField`s did not all carry explicit VoiceOver labels and values. This was visually fine and snapshot-safe, but weaker than the D3 accessibility requirement.
+
+**Root Cause:**
+The implementation checklist over-weighted the obvious acceptance points: route gating, model binding, coming-soon login behavior, denied-state Settings CTA, unit conversion, profile writes, calibration store contract, snapshot smoke rendering, and full-suite green status. Two narrower interaction/accessibility paths were not represented by tests:
+
+- The V2 denied-state test asserted that the adapter exposes "Open Settings", but did not exercise the surrounding `CameraReadinessView` close action in calibration mode. Because the prompt explicitly said the denied state should expose Open Settings, the close button was mentally treated as generic dismissal instead of a second path that must keep V1's calibration failure behavior.
+- SwiftUI screen review used visible text hierarchy as the primary check. The text fields had labels near them, but explicit accessibility modifiers were not checked field-by-field. Snapshot smoke tests cannot catch that.
+
+The compaction boundary also increased risk: the implementation continued correctly from the summary, but the summary emphasized completed acceptance items and test results more than unresolved manual-audit questions. That made it easier to stop at green tests instead of re-walking every interactive element and alternate exit path.
+
+**Audit Findings:**
+- Fonts remain on track. D0 extracted DM Sans, Space Grotesk, JetBrains Mono, and Playfair Display as reference-only. D1-D3 Swift uses `SpotterV2Typography` and `.system(...)` only; static scans found no custom/external font usage.
+- Colors remain on track. Feature screens use `SpotterV2.Tokens` plus `SpotterThemeOption` accents. Static scans found raw V2 hex only in `SpotterV2Tokens.swift` and token round-trip tests, not in D3 feature screens.
+- Icons remain on track. D3 maps Phosphor/iconify references to SF Symbols (`viewfinder`, `person.fill`, `person.crop.circle`, `lock.fill`, `arrow.right`, `trophy.fill`, `person.crop.square`, `iphone`, `xmark`) and does not embed Iconify, Phosphor, Tailwind, WebView, or external assets.
+- Elements are directionally aligned with the D0/D3 references: brutalist cream borders, dark cards, hard accent offsets, uppercase editorial headings, monospaced numerals, bottom CTAs, local coach imagery, calibration trophy shell, and camera readiness overlay. D3 still uses SwiftUI-native approximations rather than production HTML.
+- Scope is preserved. No backend repository, Firestore rule, sync, privacy, MediaPipe, camera manager, pose estimator, rep counter, feedback engine, hand gesture detector, exertion analyzer, ready coordinator, face landmarker, or frame position analyzer file was changed.
+- Feature-flag behavior remains correct. V1 onboarding/calibration/main tabs still route when V2 is off; V2 root gates to V2 onboarding/calibration/main shell when V2 is on. The shared stores remain injected above the root swap.
+- Design-only login remains deferred. The V2 welcome link presents a coming-soon alert and does not call Firebase auth.
+- Code-only production fields are preserved and styled in V2 language: name, "prefer not to say", all equipment/limitations, session length, days per week, calibration failure messaging, and camera readiness non-ready states.
+
+**Fix Applied:**
+Updated `CameraReadinessView` so the V2 close button calls a new `closeReadiness()` helper. When camera permission is denied, it delegates to the existing `handlePermissionDeniedExit()` path; in calibration mode this preserves the V1 failed-calibration callback, and in free-analysis mode it dismisses as before. Non-denied close behavior still dismisses normally.
+
+Added explicit accessibility labels and values to the V2 display name, age, height, and weight text fields. The visual layout did not change.
+
+**Verification:**
+Static guardrails passed after the audit fixes:
+
+`git diff --check`
+
+No whitespace errors.
+
+`rg -n "TODO|FIXME|HACK|WebView|WKWebView|Tailwind|tailwind|Iconify|iconify|Phosphor|ph:|Font\\.custom|\\.custom\\(|DM Sans|Space Grotesk|JetBrains Mono|Playfair Display|font-family|UIFont\\(name:|FirebaseAuth|Auth\\.auth|linkAnonymous|signIn\\(" VirtualTrainer/UI/V2 VirtualTrainer/UI/CameraTabView.swift VirtualTrainerTests/DesignSystemV2Tests.swift --glob '*.swift'`
+
+No matches.
+
+`rg -n "Color\\(hex:|#[0-9A-Fa-f]{6}|0x[0-9A-Fa-f]{6}" VirtualTrainer/UI/V2 VirtualTrainer/UI/CameraTabView.swift VirtualTrainerTests/DesignSystemV2Tests.swift --glob '*.swift'`
+
+Matches only the intentional `Color(hex:)` token round-trip tests in `VirtualTrainerTests/DesignSystemV2Tests.swift`.
+
+Required workspace build passed after the audit fixes:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed after the audit fixes:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 450
+- Failed: 0
+- Skipped: 4
+- Total: 454
+
+Known local build warnings remain unchanged: Firebase client config copy notice and AppIntents metadata skipped because the app has no AppIntents dependency.
+
+**Prevention Rule:**
+For D4-D6, green builds and snapshot smoke tests are necessary but not sufficient. Every design phase needs an explicit exit-path matrix (primary CTA, secondary CTA, close, back, denied/error, skip, cancel), an accessibility pass over each interactive element rather than each visible card, and a visual comparison against both NEW_DESIGN and V1 interaction quality. Snapshot smoke tests should be kept, but they must not be treated as pixel-accurate visual QA. After any compaction, re-run the audit checklist from DL-076 before finalizing.
+
+**Pattern Tags:** #design-system-v2 #d3 #post-implementation-audit #rca #accessibility #camera-readiness #calibration #visual-qa #compaction-risk
