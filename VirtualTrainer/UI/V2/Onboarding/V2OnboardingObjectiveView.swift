@@ -15,6 +15,7 @@ struct V2OnboardingObjectiveView: View {
             title: "Define your",
             accentTitle: "objective",
             subtitle: "Your plan adjusts based on your focus.",
+            titleSize: 38,
             canContinue: onboardingStore.canContinue(from: .goalEquipment),
             onBack: onBack,
             onNext: onNext
@@ -239,6 +240,7 @@ private struct V2CheckRow: View {
                 VStack(alignment: .leading, spacing: SpotterV2.Spacing.xxs) {
                     Text(title)
                         .font(SpotterV2Typography.heading(size: 16, weight: .black))
+                        .fontWidth(.compressed)
                         .textCase(.uppercase)
                         .foregroundStyle(SpotterV2.Tokens.foreground)
                         .lineLimit(1)

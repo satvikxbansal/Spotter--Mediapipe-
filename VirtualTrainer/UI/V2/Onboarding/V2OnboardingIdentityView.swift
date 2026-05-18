@@ -29,11 +29,12 @@ struct V2OnboardingIdentityView: View {
             title: "Who are we",
             accentTitle: "training?",
             subtitle: "Spotter customizes coaching to your body.",
+            titleSize: 38,
             canContinue: canContinue,
             onBack: onBack,
             onNext: onNext
         ) {
-            VStack(alignment: .leading, spacing: SpotterV2.Spacing.xl) {
+            VStack(alignment: .leading, spacing: SpotterV2.Spacing.lg) {
                 nameField
                 genderSelector
                 ageCard
@@ -45,7 +46,8 @@ struct V2OnboardingIdentityView: View {
     private var nameField: some View {
         HStack(spacing: SpotterV2.Spacing.md) {
             TextField("Satvik Bansal", text: $onboardingStore.draft.displayName)
-                .font(SpotterV2Typography.heading(size: 25, weight: .black))
+                .font(SpotterV2Typography.heading(size: 23, weight: .black))
+                .fontWidth(.compressed)
                 .foregroundStyle(SpotterV2.Tokens.foreground)
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
@@ -57,7 +59,7 @@ struct V2OnboardingIdentityView: View {
                 .foregroundStyle(SpotterV2.Tokens.mutedForeground.opacity(0.45))
         }
         .padding(.horizontal, SpotterV2.Spacing.lg)
-        .frame(minHeight: 72)
+        .frame(minHeight: 66)
         .background(SpotterV2.Tokens.card)
         .clipShape(RoundedRectangle(cornerRadius: SpotterV2.Radius.xl))
         .overlay(
@@ -80,7 +82,7 @@ struct V2OnboardingIdentityView: View {
                 V2CompactSelectorTile(
                     theme: themeStore.selectedTheme,
                     title: GenderIdentity.male.displayName,
-                    systemImage: "person.fill",
+                    symbolText: "♂",
                     isSelected: onboardingStore.draft.genderIdentity == .male
                 ) {
                     onboardingStore.draft.genderIdentity = .male
@@ -89,7 +91,7 @@ struct V2OnboardingIdentityView: View {
                 V2CompactSelectorTile(
                     theme: themeStore.selectedTheme,
                     title: GenderIdentity.female.displayName,
-                    systemImage: "person.fill",
+                    symbolText: "♀",
                     isSelected: onboardingStore.draft.genderIdentity == .female
                 ) {
                     onboardingStore.draft.genderIdentity = .female
@@ -98,7 +100,7 @@ struct V2OnboardingIdentityView: View {
                 V2CompactSelectorTile(
                     theme: themeStore.selectedTheme,
                     title: GenderIdentity.other.displayName,
-                    systemImage: "person.crop.circle",
+                    symbolText: "⚲",
                     isSelected: onboardingStore.draft.genderIdentity == .other
                 ) {
                     onboardingStore.draft.genderIdentity = .other
@@ -122,6 +124,7 @@ struct V2OnboardingIdentityView: View {
             value: $onboardingStore.draft.age,
             unit: "yrs",
             keyboardType: .numberPad,
+            scale: .age,
             validationMessage: ageMessage
         )
     }
@@ -133,15 +136,17 @@ struct V2ValueEntryCard: View {
     @Binding var value: String
     let unit: String
     var keyboardType: UIKeyboardType = .decimalPad
+    var scale: V2ScaleConfiguration
     var validationMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SpotterV2.Spacing.lg) {
+        VStack(alignment: .leading, spacing: SpotterV2.Spacing.md) {
             V2FieldLabel(title: title)
 
             HStack(alignment: .lastTextBaseline, spacing: SpotterV2.Spacing.xs) {
-                TextField("24", text: $value)
-                    .font(SpotterV2Typography.display(size: 72))
+                TextField(scale.formattedValue(scale.defaultValue), text: $value)
+                    .font(SpotterV2Typography.display(size: 64))
+                    .fontWidth(.compressed)
                     .italic()
                     .multilineTextAlignment(.center)
                     .keyboardType(keyboardType)
@@ -152,17 +157,22 @@ struct V2ValueEntryCard: View {
                     .accessibilityValue(value.isEmpty ? "Empty" : value)
 
                 Text(unit.uppercased())
-                    .font(SpotterV2Typography.mono(size: 18, weight: .black))
+                    .font(SpotterV2Typography.mono(size: 17, weight: .black))
                     .tracking(1.2)
                     .foregroundStyle(SpotterV2.Tokens.primary(theme))
             }
             .frame(maxWidth: .infinity)
 
-            V2RulerStrip(theme: theme, value: value)
+            V2ScrollableScalePicker(
+                theme: theme,
+                title: title,
+                value: $value,
+                configuration: scale
+            )
 
             V2ValidationMessage(message: validationMessage)
         }
-        .padding(SpotterV2.Spacing.lg)
+        .padding(SpotterV2.Spacing.md)
         .background(SpotterV2.Tokens.card)
         .clipShape(RoundedRectangle(cornerRadius: SpotterV2.Radius.xl))
         .overlay(
@@ -170,70 +180,6 @@ struct V2ValueEntryCard: View {
                 .stroke(SpotterV2.Tokens.border, lineWidth: SpotterV2.BorderWidth.standard)
         )
         .accessibilityElement(children: .contain)
-    }
-}
-
-struct V2RulerStrip: View {
-    let theme: SpotterThemeOption
-    let value: String
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: SpotterV2.Radius.lg)
-                .fill(SpotterV2.Tokens.foreground.opacity(0.04))
-                .overlay(
-                    RoundedRectangle(cornerRadius: SpotterV2.Radius.lg)
-                        .stroke(SpotterV2.Tokens.border.opacity(0.10), lineWidth: 1)
-                )
-
-            HStack(spacing: SpotterV2.Spacing.md) {
-                Text(neighbor(-1))
-                ticks
-                Text(displayValue)
-                    .foregroundStyle(SpotterV2.Tokens.primary(theme))
-                ticks
-                Text(neighbor(1))
-            }
-            .font(SpotterV2Typography.heading(size: 22, weight: .black))
-            .foregroundStyle(SpotterV2.Tokens.foreground.opacity(0.22))
-            .lineLimit(1)
-            .minimumScaleFactor(0.70)
-
-            Rectangle()
-                .fill(SpotterV2.Tokens.primary(theme))
-                .frame(width: 3, height: 54)
-                .shadow(color: SpotterV2.Tokens.primary(theme).opacity(0.8), radius: 14)
-        }
-        .frame(height: 82)
-        .accessibilityHidden(true)
-    }
-
-    private var displayValue: String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "24" : trimmed
-    }
-
-    private var parsed: Double? {
-        Double(displayValue)
-    }
-
-    private func neighbor(_ delta: Double) -> String {
-        guard let parsed else { return delta < 0 ? "23" : "25" }
-        let rounded = parsed + delta
-        if rounded.rounded() == rounded {
-            return String(Int(rounded))
-        }
-        return String(format: "%.1f", rounded)
-    }
-
-    private var ticks: some View {
-        HStack(alignment: .bottom, spacing: 6) {
-            ForEach(0..<5, id: \.self) { index in
-                Rectangle()
-                    .fill(SpotterV2.Tokens.foreground.opacity(index == 0 ? 0.45 : 0.18))
-                    .frame(width: 1, height: index == 0 ? 18 : 9)
-            }
-        }
     }
 }
 

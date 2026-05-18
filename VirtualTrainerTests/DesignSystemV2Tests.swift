@@ -350,9 +350,40 @@ final class DesignSystemV2Tests: XCTestCase {
         XCTAssertTrue(V2WelcomeView.loginComingSoonMessage.contains("local-first"))
     }
 
+    func testV2OnboardingScaleConfigurationsStayInsideStoreValidationRanges() {
+        XCTAssertEqual(V2ScaleConfiguration.age.lowerBound, 13)
+        XCTAssertEqual(V2ScaleConfiguration.age.upperBound, 100)
+        XCTAssertEqual(V2ScaleConfiguration.heightMetric.lowerBound, 120)
+        XCTAssertEqual(V2ScaleConfiguration.heightMetric.upperBound, 230)
+        XCTAssertEqual(V2ScaleConfiguration.heightImperial.lowerBound, 48)
+        XCTAssertEqual(V2ScaleConfiguration.heightImperial.upperBound, 90)
+        XCTAssertEqual(V2ScaleConfiguration.weightMetric.lowerBound, 30)
+        XCTAssertEqual(V2ScaleConfiguration.weightMetric.upperBound, 250)
+        XCTAssertEqual(V2ScaleConfiguration.weightImperial.lowerBound, 66)
+        XCTAssertEqual(V2ScaleConfiguration.weightImperial.upperBound, 550)
+    }
+
+    func testV2OnboardingScaleFormattingStaysParseableForDraftValues() {
+        XCTAssertEqual(
+            V2ScaleConfiguration.age.formattedValue(
+                for: V2ScaleConfiguration.age.index(for: 34)
+            ),
+            "34"
+        )
+        XCTAssertEqual(
+            V2ScaleConfiguration.weightMetric.formattedValue(
+                for: V2ScaleConfiguration.weightMetric.index(for: 84.5)
+            ),
+            "84.5"
+        )
+        XCTAssertEqual(Double(V2ScaleConfiguration.weightMetric.formattedValue(84.5)), 84.5)
+        XCTAssertEqual(Int(V2ScaleConfiguration.heightImperial.formattedValue(70)), 70)
+    }
+
     func testSnapshotSmokeForD3V2ScreensAcrossDeviceSizesAndLaunchThemes() throws {
         let sizes: [(String, CGSize)] = [
             ("SE", CGSize(width: 375, height: 667)),
+            ("Pro", CGSize(width: 402, height: 874)),
             ("ProMax", CGSize(width: 440, height: 956))
         ]
 

@@ -9,12 +9,14 @@ struct V2CalibrationIntroView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { proxy in
-                ZStack(alignment: .bottom) {
+                let sheetWidth = min(proxy.size.width, UIScreen.main.bounds.width)
+                let isStandardPhone = proxy.size.height < 900 || sheetWidth < 430
+                ZStack(alignment: .bottomLeading) {
                     backgroundIllustration
 
                     VStack(spacing: 0) {
                         Spacer()
-                        sheetContent
+                        sheetContent(maxWidth: sheetWidth, compact: isStandardPhone)
                             .padding(.bottom, max(proxy.safeAreaInsets.bottom, SpotterV2.Spacing.xl))
                     }
                 }
@@ -33,11 +35,25 @@ struct V2CalibrationIntroView: View {
         ZStack(alignment: .top) {
             SpotterV2.Tokens.background.ignoresSafeArea()
 
-            Image(systemName: "iphone.gen3")
-                .font(.system(size: 190, weight: .thin))
-                .foregroundStyle(SpotterV2.Tokens.foreground.opacity(0.05))
-                .rotationEffect(.degrees(-8))
-                .offset(y: 110)
+            Image("SpotterCalibrationBackplate")
+                .resizable()
+                .scaledToFill()
+                .saturation(0)
+                .opacity(0.60)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
+                .overlay(
+                    LinearGradient(
+                        colors: [
+                            SpotterV2.Tokens.background.opacity(0.40),
+                            SpotterV2.Tokens.background.opacity(0.04),
+                            SpotterV2.Tokens.background.opacity(0.80)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .ignoresSafeArea()
+                )
                 .accessibilityHidden(true)
 
             VStack {
@@ -66,18 +82,22 @@ struct V2CalibrationIntroView: View {
         }
     }
 
-    private var sheetContent: some View {
-        VStack(spacing: SpotterV2.Spacing.xl) {
+    private func sheetContent(maxWidth: CGFloat, compact: Bool) -> some View {
+        let horizontalPadding = compact ? SpotterV2.Spacing.lg : SpotterV2.Spacing.xl
+        let innerWidth = max(0, maxWidth - (horizontalPadding * 2))
+
+        return VStack(spacing: compact ? SpotterV2.Spacing.lg : SpotterV2.Spacing.xl) {
             Capsule()
                 .fill(SpotterV2.Tokens.foreground.opacity(0.10))
                 .frame(width: 64, height: 6)
                 .accessibilityHidden(true)
 
-            trophyIllustration
+            trophyIllustration(compact: compact)
 
-            VStack(spacing: SpotterV2.Spacing.md) {
+            VStack(spacing: compact ? SpotterV2.Spacing.sm : SpotterV2.Spacing.md) {
                 Text("Earn your")
-                    .font(SpotterV2Typography.display(size: 45))
+                    .font(SpotterV2Typography.display(size: compact ? 38 : 45))
+                    .fontWidth(.compressed)
                     .italic()
                     .textCase(.uppercase)
                     .foregroundStyle(SpotterV2.Tokens.foreground)
@@ -85,7 +105,8 @@ struct V2CalibrationIntroView: View {
                     .minimumScaleFactor(0.58)
 
                 Text("first trophy")
-                    .font(SpotterV2Typography.display(size: 45))
+                    .font(SpotterV2Typography.display(size: compact ? 38 : 45))
+                    .fontWidth(.compressed)
                     .italic()
                     .textCase(.uppercase)
                     .foregroundStyle(SpotterV2.Tokens.primary(themeStore.selectedTheme))
@@ -99,7 +120,11 @@ struct V2CalibrationIntroView: View {
                     .textCase(.uppercase)
                     .foregroundStyle(SpotterV2.Tokens.mutedForeground)
                     .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.70)
+                    .frame(maxWidth: .infinity)
             }
+            .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Earn your first trophy. Track 3 air squats to proceed.")
 
@@ -136,10 +161,11 @@ struct V2CalibrationIntroView: View {
                 }
             }
         }
-        .padding(.horizontal, SpotterV2.Spacing.xl)
-        .padding(.top, SpotterV2.Spacing.md)
-        .padding(.bottom, SpotterV2.Spacing.xl)
-        .frame(maxWidth: .infinity)
+        .frame(width: innerWidth)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.top, compact ? SpotterV2.Spacing.sm : SpotterV2.Spacing.md)
+        .padding(.bottom, compact ? SpotterV2.Spacing.lg : SpotterV2.Spacing.xl)
+        .frame(width: maxWidth, alignment: .center)
         .background(SpotterV2.Tokens.background)
         .clipShape(RoundedRectangle(cornerRadius: 40))
         .overlay(
@@ -149,17 +175,21 @@ struct V2CalibrationIntroView: View {
         .shadow(color: .black.opacity(0.80), radius: 28, y: -10)
     }
 
-    private var trophyIllustration: some View {
-        ZStack {
+    private func trophyIllustration(compact: Bool) -> some View {
+        let glowSize: CGFloat = compact ? 104 : 120
+        let tileSize: CGFloat = compact ? 82 : 98
+        let iconSize: CGFloat = compact ? 48 : 58
+
+        return ZStack {
             RoundedRectangle(cornerRadius: SpotterV2.Radius.xxl)
                 .fill(SpotterV2.Tokens.primary(themeStore.selectedTheme).opacity(0.16))
                 .blur(radius: 26)
-                .frame(width: 120, height: 120)
+                .frame(width: glowSize, height: glowSize)
 
             Image(systemName: "trophy.fill")
-                .font(.system(size: 58, weight: .black))
+                .font(.system(size: iconSize, weight: .black))
                 .foregroundStyle(SpotterV2.Tokens.primary(themeStore.selectedTheme))
-                .frame(width: 98, height: 98)
+                .frame(width: tileSize, height: tileSize)
                 .background(SpotterV2.Tokens.card)
                 .clipShape(RoundedRectangle(cornerRadius: SpotterV2.Radius.xxl))
                 .overlay(
@@ -180,6 +210,7 @@ struct V2CalibrationIntroView: View {
             VStack(alignment: .leading, spacing: SpotterV2.Spacing.xs) {
                 Text("Calibration did not finish")
                     .font(SpotterV2Typography.heading(size: 16))
+                    .fontWidth(.compressed)
                     .textCase(.uppercase)
                     .foregroundStyle(SpotterV2.Tokens.foreground)
                 Text(calibrationStore.record?.notes ?? "Retry now or skip and use Spotter without calibration.")

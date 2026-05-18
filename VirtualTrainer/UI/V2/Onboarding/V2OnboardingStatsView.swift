@@ -16,11 +16,12 @@ struct V2OnboardingStatsView: View {
             title: "Enter your",
             accentTitle: "vitals",
             subtitle: "Used to personalize your daily coaching.",
+            titleSize: 32,
             canContinue: onboardingStore.canContinue(from: .stats),
             onBack: onBack,
             onNext: onNext
         ) {
-            VStack(alignment: .leading, spacing: SpotterV2.Spacing.xl) {
+            VStack(alignment: .leading, spacing: SpotterV2.Spacing.lg) {
                 V2MeasurementEntryCard(
                     theme: themeStore.selectedTheme,
                     title: "Height",
@@ -80,6 +81,19 @@ private enum V2MeasurementKind {
             return "LB"
         }
     }
+
+    func scaleConfiguration(for unit: UnitPreference) -> V2ScaleConfiguration {
+        switch (self, unit) {
+        case (.height, .metric):
+            return .heightMetric
+        case (.height, .imperial):
+            return .heightImperial
+        case (.weight, .metric):
+            return .weightMetric
+        case (.weight, .imperial):
+            return .weightImperial
+        }
+    }
 }
 
 private struct V2MeasurementEntryCard: View {
@@ -91,7 +105,7 @@ private struct V2MeasurementEntryCard: View {
     let validationMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SpotterV2.Spacing.lg) {
+        VStack(alignment: .leading, spacing: SpotterV2.Spacing.md) {
             HStack(alignment: .center) {
                 V2FieldLabel(title: title)
                 Spacer(minLength: SpotterV2.Spacing.md)
@@ -100,7 +114,8 @@ private struct V2MeasurementEntryCard: View {
 
             HStack(alignment: .lastTextBaseline, spacing: SpotterV2.Spacing.xs) {
                 TextField(sampleValue, text: $value)
-                    .font(SpotterV2Typography.display(size: 76))
+                    .font(SpotterV2Typography.display(size: 68))
+                    .fontWidth(.compressed)
                     .italic()
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.center)
@@ -111,17 +126,23 @@ private struct V2MeasurementEntryCard: View {
                     .accessibilityValue(value.isEmpty ? "Empty" : value)
 
                 Text(measurementKind.unitLabel(for: unit).uppercased())
-                    .font(SpotterV2Typography.mono(size: 18, weight: .black))
+                    .font(SpotterV2Typography.mono(size: 17, weight: .black))
                     .tracking(1.2)
                     .foregroundStyle(SpotterV2.Tokens.primary(theme))
             }
             .frame(maxWidth: .infinity)
 
-            V2RulerStrip(theme: theme, value: value)
+            V2ScrollableScalePicker(
+                theme: theme,
+                title: title,
+                value: $value,
+                configuration: measurementKind.scaleConfiguration(for: unit)
+            )
+            .id("\(measurementKind)-\(unit.rawValue)")
 
             V2ValidationMessage(message: validationMessage)
         }
-        .padding(SpotterV2.Spacing.lg)
+        .padding(SpotterV2.Spacing.md)
         .background(SpotterV2.Tokens.card)
         .clipShape(RoundedRectangle(cornerRadius: SpotterV2.Radius.xl))
         .overlay(
@@ -159,6 +180,7 @@ private struct V2MeasurementEntryCard: View {
         } label: {
             Text(label)
                 .font(SpotterV2Typography.caption())
+                .fontWidth(.compressed)
                 .italic()
                 .foregroundStyle(unit == unitValue ? .black : SpotterV2.Tokens.mutedForeground)
                 .frame(minWidth: 48, minHeight: 32)

@@ -28,23 +28,22 @@ struct V2Card<Content: View>: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            if let hardShadowColor {
+        content
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(SpotterV2.Tokens.card)
+            .clipShape(RoundedRectangle(cornerRadius: radius))
+            .overlay(
                 RoundedRectangle(cornerRadius: radius)
-                    .fill(hardShadowColor)
-                    .offset(x: 4, y: 4)
-            }
-
-            content
-                .padding(padding)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(SpotterV2.Tokens.card)
-                .clipShape(RoundedRectangle(cornerRadius: radius))
-                .overlay(
+                    .stroke(borderColor, lineWidth: lineWidth)
+            )
+            .background(alignment: .topLeading) {
+                if let hardShadowColor {
                     RoundedRectangle(cornerRadius: radius)
-                        .stroke(borderColor, lineWidth: lineWidth)
-                )
-        }
+                        .fill(hardShadowColor)
+                        .offset(x: 4, y: 4)
+                }
+            }
     }
 }
 
@@ -58,6 +57,7 @@ private struct V2ButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(SpotterV2Typography.heading(size: 16, weight: .black))
+            .fontWidth(.compressed)
             .tracking(1.0)
             .textCase(.uppercase)
             .multilineTextAlignment(.center)

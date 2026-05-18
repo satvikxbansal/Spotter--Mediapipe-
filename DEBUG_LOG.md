@@ -2926,3 +2926,304 @@ Known local build warnings remain unchanged: Firebase client config copy notice 
 For D4-D6, every phase needs a tester-state matrix, not just a route-state matrix. Include at least: existing completed user, onboarding-only reset, calibration-only reset, combined first-run reset, V2 Force On from ready state, V2 Force On from first-run state, Local backend, and Firebase backend with remote records present. When debug UX is the intended way to reach a phase, the debug UX must expose the exact state transition being tested.
 
 **Pattern Tags:** #design-system-v2 #d3 #first-run #routing #debug-reset #calibration-gate #firebase-local-boundary #rca
+
+---
+
+### [DL-080] D3 Onboarding Scrollable Measurement Scales
+**Date:** 2026-05-18
+**Severity:** enhancement
+**Category:** design-system, v2, onboarding, interaction, haptics, accessibility, tests
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingIdentityView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingStatsView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingSupport.swift`, `VirtualTrainerTests/DesignSystemV2Tests.swift`
+
+**Error:**
+The V2 onboarding age, height, and weight cards visually showed ruler strips below the large numeric values, but those strips were static. The NEW_DESIGN reference implies the scale is a direct manipulation control: drag the ruler, feel each tick, and have the number update.
+
+**Root Cause:**
+D3 implemented the ruler as a visual translation first, while preserving the existing `TextField` bindings and `OnboardingStore` validation. That met data correctness but missed the tactile interaction in the design. Snapshot tests could not catch this because the static strip looked correct in still images.
+
+**Fix Applied:**
+Added `V2ScaleConfiguration` and `V2ScrollableScalePicker`, a reusable SwiftUI-native ruler control built with horizontal `ScrollView`, `scrollTargetLayout()`, `scrollTargetBehavior(.viewAligned)`, and `scrollPosition(id:anchor:)`. The picker snaps each tick to the center marker and uses `sensoryFeedback(.selection, trigger:)` for selection haptics as values change.
+
+The large numeric `TextField` remains editable. Scrolling the scale writes the same draft strings already used by `OnboardingStore`; typing a value scrolls the ruler back to the closest valid tick. Unit conversion still flows through `OnboardingStore.updateHeightUnit` and `updateWeightUnit`.
+
+Configured ranges mirror current production validation:
+
+- Age: 13-100 years, step 1.
+- Height metric: 120-230 cm, step 1.
+- Height imperial: 48-90 in, step 1.
+- Weight metric: 30-250 kg, step 0.5.
+- Weight imperial: 66-550 lb, step 1.
+
+Added VoiceOver adjustable actions so swiping up/down increments and decrements the scale without relying on drag gestures.
+
+**Verification:**
+`git diff --check` passed.
+
+Required workspace build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 453
+- Failed: 0
+- Skipped: 4
+- Total: 457
+
+Added tests to lock scale ranges to store validation limits and keep formatted scale output parseable by `OnboardingDraft`.
+
+**Prevention Rule:**
+For V2 screens, visual controls that look draggable, scrollable, or tactile must be tested as interactions, not only as static screenshots. For D4-D6, call out every decorative-looking element that is actually intended to accept gesture input.
+
+**Pattern Tags:** #design-system-v2 #d3 #onboarding #scroll-target #haptics #accessibility #snapshot-limits
+
+---
+
+### [DL-081] D3 Welcome And Onboarding Vertical Density RCA
+**Date:** 2026-05-18
+**Severity:** bugfix
+**Category:** design-system, v2, onboarding, layout-density, visual-qa, rca
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/DesignSystem/SpotterV2Components.swift`, `VirtualTrainer/UI/V2/Onboarding/V2WelcomeView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingIdentityView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingStatsView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingSupport.swift`
+
+**Error:**
+On device, the V2 welcome screen did not fit as a complete first view. The header consumed too much vertical space, the "Elite Form & REP AI" hero card was too tall, and the bottom CTA floated over content because the page still scrolled underneath a scrim footer. The identity screen also felt vertically stretched: the age value card began below the fold and was partly hidden behind the fixed bottom CTA.
+
+**Root Cause:**
+The welcome screen was composed as a vertical `ScrollView` plus a bottom-aligned CTA overlay. It reserved `safeAreaBottom + 150` points for the footer, while the hero and child cards still had desktop-like heights and large spacing. That made the CTA visually cover the hero card in real simulator screenshots even though snapshot smoke tests still rendered a valid view hierarchy.
+
+The shared `V2OnboardingPage` shell also used D3's first-pass generous spacing: `xxxl`/safe-area top padding, `xl` inter-section spacing, large display type, and large bottom padding. Combined with the newly interactive ruler controls, the first value card had too little visible room on identity/stats screens.
+
+A live simulator screenshot after the first density pass exposed one more issue: the V2 first-run views were effectively double-counting safe-area space. The parent root already positioned the content inside the safe area, while the child pages added `safeAreaInsets.top`/`safeAreaInsets.bottom` again. That kept the welcome screen technically fitting, but still left too much top and bottom dead space.
+
+The same simulator screenshot also exposed that `V2Card` hard shadows could expand beyond the card content. The shadow shape lived as a sibling in an unconstrained `ZStack`, so a card proposed extra vertical space could render a large tinted block behind nearby content.
+
+**Why It Was Missed:**
+The D3 implementation and follow-up audits focused on route correctness, data preservation, V1/V2 gating, and static snapshot smoke coverage. Those checks proved that the right screens existed and did not break persistence, but they did not replay the exact device screenshots for first-viewport fit. The visual reference was translated component-by-component, then the bottom CTA was anchored independently; the review did not do a full vertical-budget pass after the scale interaction added height.
+
+Context compaction amplified the miss because earlier assumptions about "matches reference" survived, while the later live-device screenshots showed a different truth: first-pass spacing that looked dramatic in isolation was too tall once real safe areas, the CTA, and the ruler cards were all present.
+
+**Fix Applied:**
+Rebuilt `V2WelcomeView` as a single-viewport layout instead of a scroll view with a floating footer. The CTA and login link now sit in normal layout flow, with a spacer pushing them to the bottom only after the header, hero, and child cards have been measured. The welcome layout now uses geometry-driven compact sizing for top/bottom padding, title scale, hero height, and the two supporting cards.
+
+Reduced the hero card height and padding, tightened the "Elite Form & REP AI" typography, and increased the `CoachBennet` image visibility so the hero no longer reads as an oversized dark block. The two supporting cards are now compact cards for first-screen fit rather than large square blocks.
+
+Tightened the shared onboarding shell: smaller top padding, smaller title sizes on compact devices, reduced section spacing, smaller bottom padding, and smaller back-button affordance where height is constrained. Tightened identity/stats value cards by reducing field/card padding, display number size, unit label size, selector tile height, and ruler height while keeping the scrollable haptic scale behavior from DL-080.
+
+Removed the duplicated safe-area padding from the V2 welcome and onboarding shells so the parent safe-area behavior is respected once, not twice.
+
+Constrained `V2Card` hard shadows by attaching the shadow shape as a background of the measured card body. This preserves the existing hard-shadow look while preventing the shadow from stretching beyond the card's actual bounds.
+
+No onboarding store behavior, calibration store behavior, backend behavior, camera pipeline behavior, MediaPipe, WorkoutReadyCoordinator, or feature-flag routing changed.
+
+**Verification:**
+Toolchain paths were checked again per DL-045:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both resolved under `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`.
+
+The first rebuild caught a Swift opaque return compile issue in the compact child-card helper. Adding the explicit `return LazyVGrid(...)` fixed it.
+
+`git diff --check` passed.
+
+Required workspace build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 453
+- Failed: 0
+- Skipped: 4
+- Total: 457
+
+Known local build warnings remain unchanged: Firebase client config copy notice and AppIntents metadata skipped because the app has no AppIntents dependency.
+
+Manual simulator smoke:
+
+1. Booted the iPhone 17 Pro simulator.
+2. Reinstalled the rebuilt app from `/tmp/VirtualTrainerDerivedData/Build/Products/Debug-iphonesimulator/VirtualTrainer.app`.
+3. Set `spotter.designSystemV2Override` to `forceOn` in the app defaults.
+4. Launched `satvik.VirtualTrainer` with a clean app container.
+5. Captured `/tmp/spotter-v2-welcome-final-layout.png`.
+
+Result: V2 first-run routes to the welcome screen; the full welcome composition is visible in one viewport; the CTA no longer overlays the hero; the coach image is visible in the hero; and the hard-shadow block no longer leaks below the hero card.
+
+**Prevention Rule:**
+For D4-D6, every fixed-bottom CTA screen needs a vertical-budget review on at least iPhone SE and the current Pro target after all interactions are added. If a design screen is expected to be first-viewport complete, do not implement it as a scroll view with a CTA overlay unless there is an explicit compact fallback and a screenshot proves the overlay is not covering content.
+
+**Pattern Tags:** #design-system-v2 #d3 #welcome #onboarding #vertical-density #visual-qa #snapshot-limits #fixed-cta
+
+---
+
+### [DL-082] D3 Typography And Illustration Fidelity RCA
+**Date:** 2026-05-18
+**Severity:** bugfix
+**Category:** design-system, v2, onboarding, calibration, camera-readiness, typography, illustration, visual-qa, rca
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/DesignSystem/SpotterV2Typography.swift`, `VirtualTrainer/DesignSystem/SpotterV2Components.swift`, `VirtualTrainer/UI/V2/Onboarding/V2WelcomeView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingSupport.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingIdentityView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingStatsView.swift`, `VirtualTrainer/UI/V2/Onboarding/V2OnboardingObjectiveView.swift`, `VirtualTrainer/UI/V2/Calibration/V2CalibrationIntroView.swift`, `VirtualTrainer/UI/V2/Camera/V2CameraReadinessView.swift`, `VirtualTrainer/Assets.xcassets/SpotterWelcomeHero.imageset`, `VirtualTrainer/Assets.xcassets/SpotterCalibrationBackplate.imageset`, `VirtualTrainer/Assets.xcassets/SpotterCameraReadinessBackplate.imageset`
+
+**Error:**
+D3 screens compiled and routed correctly, but the first visual pass still drifted from the exported designs. The onboarding headers read like generic SF UI text instead of the planned V2 heading treatment, identity gender tiles used generic person symbols instead of the design's gender-symbol language, and the welcome/calibration/camera visual backplates were substituted with existing coach photos or SF Symbol-only placeholders.
+
+The age entry also had a local mismatch after the scrollable ruler work: the ruler defaulted to the design value of 34, while the empty `TextField` placeholder still showed the old hardcoded 24.
+
+**Root Cause:**
+The D3 implementation used the new `SpotterV2Typography` helpers, but those helpers still returned plain `.system(..., design: .default)` for display, heading, and caption text. That meant call sites looked tokenized in code while missing the actual D0/D1 rosetta fallback for `font-heading`.
+
+The HTML was treated correctly as visual reference rather than production code, but the asset portion was under-translated. The implementation avoided remote images at runtime, which was correct, but did not bring the exported visual backplates into the asset catalog. That left large hero/illustration surfaces approximated with available app assets or SF Symbols.
+
+The identity icon drift came from mapping the Phosphor gender icons through a too-generic SF Symbol substitute. It passed accessibility and layout checks, but not visual intent.
+
+**Why It Was Missed:**
+Earlier audits emphasized V1/V2 routing, store preservation, calibration/backend safety, scroll interactions, and first-viewport fit. Those are necessary gates, but they can all pass while typography silhouette and illustration source are still wrong.
+
+Context compaction made the miss easier to carry forward because "use typography helpers" survived as a proxy for "matches typography." The actual helper implementation had not been re-audited against the D0/D1 rosetta table after the later D3 screen work. Snapshot smoke tests also rendered views successfully but did not compare against the design screenshots pixel-for-pixel or assert specific asset usage.
+
+**Fix Applied:**
+Updated `SpotterV2Typography.display`, `heading`, and `caption` to use the allowed rounded system fallback, then applied `.fontWidth(.compressed)` to the headline-style V2 surfaces that correspond to `font-heading tracking-tighter` in the HTML. This keeps the phase compliant with the no-custom-font rule while getting closer to the Space Grotesk silhouette.
+
+Added local asset-catalog backplates for the exported welcome hero, calibration intro, and camera readiness visuals. The SwiftUI screens now render those as local images with native overlays, gradients, and controls; there is still no WebView, Tailwind, Iconify runtime, Phosphor runtime, external font dependency, backend behavior change, or camera-pipeline behavior change.
+
+Changed the identity gender selector tiles to support text-symbol icons and mapped Male/Female/Other to the gender-symbol treatment shown in the design. Existing accessibility labels remain driven by the tile titles.
+
+Added per-page onboarding heading sizing so identity/objective can stay at the large design scale while stats uses the smaller vitals heading scale from `onboarding-stats-v2.html`.
+
+Aligned the age `TextField` placeholder with the active scale configuration default so the empty state no longer shows 24 above a centered 34 ruler.
+
+**Verification:**
+Toolchain paths were checked per DL-045:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both resolved under `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`.
+
+`git diff --check` passed.
+
+Required workspace build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 453
+- Failed: 0
+- Skipped: 4
+- Total: 457
+
+Manual simulator smoke:
+
+1. Booted iPhone 17 Pro simulator.
+2. Reinstalled `/tmp/VirtualTrainerDerivedData/Build/Products/Debug-iphonesimulator/VirtualTrainer.app`.
+3. Set `spotter.designSystemV2Override` to `forceOn`.
+4. Launched `satvik.VirtualTrainer` with a clean app container.
+5. Captured `/tmp/spotter-v2-welcome-final-font-assets.png` and `/tmp/spotter-v2-identity-final-font-assets.png`.
+
+Result: V2 welcome uses the exported hero artwork and still fits in one viewport. V2 identity uses the corrected compressed heading treatment, gender-symbol selector tiles, and matching age placeholder/ruler value.
+
+**Prevention Rule:**
+For D4-D6, every V2 phase must audit typography helper implementation and asset source usage, not only call-site token usage. A screen can pass routing, persistence, and snapshot smoke while still missing the product reference if the helper output or art source is wrong.
+
+**Pattern Tags:** #design-system-v2 #d3 #typography #illustrations #visual-qa #asset-catalog #snapshot-limits
+
+---
+
+### [DL-083] D3 Welcome Support Card Scale Adjustment
+**Date:** 2026-05-18
+**Severity:** visual-tune
+**Category:** design-system, v2, welcome, onboarding, layout-density
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/UI/V2/Onboarding/V2WelcomeView.swift`
+
+**Change:**
+Removed the "Never train alone again." subtitle from the V2 welcome screen and used the reclaimed vertical space to enlarge the coach picker and "100% Local & Secure" support cards.
+
+**Reason:**
+The subtitle was no longer desired in the first viewport, and the support cards felt too small relative to the hero card and CTA. Increasing the card height, inner padding, avatar stack, lock icon, and label sizes makes those two promises easier to scan without changing routing, onboarding state, login-alert behavior, or feature-flag gating.
+
+**Verification:**
+Required workspace build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Manual simulator smoke:
+
+1. Reinstalled the rebuilt app on iPhone 17 Pro simulator.
+2. Set `spotter.designSystemV2Override` to `forceOn`.
+3. Launched `satvik.VirtualTrainer`.
+4. Captured `/tmp/spotter-v2-welcome-bigger-support-cards.png`.
+
+Result: subtitle is removed, the support cards are larger, and the CTA plus login link remain visible in the first viewport.
+
+**Pattern Tags:** #design-system-v2 #d3 #welcome #visual-density #support-cards
+
+---
+
+### [DL-084] D3 Calibration Bottom Sheet Width Clamp
+**Date:** 2026-05-18
+**Severity:** bugfix
+**Category:** design-system, v2, calibration, onboarding, layout, visual-qa, rca
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/UI/V2/Calibration/V2CalibrationIntroView.swift`, `VirtualTrainerTests/DesignSystemV2Tests.swift`
+
+**Error:**
+On the iPhone 17 Pro simulator, the V2 calibration intro bottom sheet shown after onboarding could render out of proportion: the headline and CTA were pushed off the right edge, with "FIRST TROPHY" and the "Start Calibration" button visibly clipped.
+
+**Root Cause:**
+The sheet content was built inside a `GeometryReader`/`NavigationStack` layout where the bottom sheet could inherit a wider-than-viewport layout context. The first attempted fix constrained the outer sheet frame, but the content still laid out from an oversized centered context, so the visible phone viewport captured only the left portion of a too-wide sheet.
+
+The D3 snapshot smoke covered iPhone SE and Pro Max sizes, but it did not include the standard Pro size where the simulator screenshot exposed the issue. That left a real device-width problem hidden until manual review.
+
+**Why It Was Missed:**
+D3 verification proved route correctness, store preservation, and broad small/large snapshot rendering, but it did not include the exact standard iPhone 17 Pro viewport used during manual onboarding testing. The visual review also focused first on welcome/onboarding typography, ruler interactions, and the route into calibration; the calibration sheet was checked as present rather than audited for edge clipping at the intermediate phone size.
+
+**Fix Applied:**
+Clamped the V2 calibration sheet width to the current screen width, anchored the sheet to the leading edge of the viewport instead of allowing a centered oversized context, and constrained the inner content width before padding. Added compact sizing for standard-width phones so the trophy, headline, and CTA stack stay within the visible sheet.
+
+Extended the D3 V2 screen snapshot smoke matrix with a standard Pro size (`402 x 874`) in addition to the existing iPhone SE and Pro Max sizes, so future layout passes render the exact class of viewport that exposed this bug.
+
+No calibration store behavior, `CalibrationSessionView` flow, live camera pipeline, MediaPipe, `WorkoutReadyCoordinator`, backend mode, Firestore sync, or privacy-rule behavior changed.
+
+**Verification:**
+Toolchain paths were checked per DL-045:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both resolved under `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`.
+
+`git diff --check` passed.
+
+Required workspace build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Focused D3 snapshot smoke passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData -only-testing:VirtualTrainerTests/DesignSystemV2Tests/testSnapshotSmokeForD3V2ScreensAcrossDeviceSizesAndLaunchThemes -resultBundlePath /tmp/VirtualTrainerD3Snapshot.xcresult`
+
+Exported and inspected `/tmp/VirtualTrainerD3SnapshotAttachments/26A2098F-B7E5-48F7-9640-C3B513FB59B2.png` for the new standard Pro calibration snapshot. The headline and both CTAs fit inside the sheet; the neon CTA no longer touches or bleeds past the right image edge.
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 453
+- Failed: 0
+- Skipped: 4
+- Total: 457
+
+Known local build warnings remain unchanged: Firebase client config copy notice and AppIntents metadata skipped because the app has no AppIntents dependency.
+
+**Prevention Rule:**
+For D4-D6, any full-width bottom sheet or fixed CTA surface must be snapshot-rendered at the active standard Pro viewport, not only the smallest and largest devices. A parent frame clamp is not enough when child content can inherit an oversized layout context; constrain the inner content width and inspect exported attachments for edge bleed.
+
+**Pattern Tags:** #design-system-v2 #d3 #calibration #bottom-sheet #iphone-17-pro #visual-qa #snapshot-limits #layout-clamp

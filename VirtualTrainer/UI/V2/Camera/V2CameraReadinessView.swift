@@ -135,7 +135,16 @@ struct V2CameraReadinessView: View {
 
     var body: some View {
         ZStack {
-            SpotterV2.Tokens.background.opacity(0.48)
+            Image("SpotterCameraReadinessBackplate")
+                .resizable()
+                .scaledToFill()
+                .saturation(0)
+                .brightness(-0.28)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
+
+            SpotterV2.Tokens.background.opacity(0.42)
                 .ignoresSafeArea()
 
             VStack {
@@ -191,6 +200,7 @@ struct V2CameraReadinessView: View {
             VStack(spacing: SpotterV2.Spacing.md) {
                 Text(state.title)
                     .font(SpotterV2Typography.display(size: state.kind == .countdown ? 82 : 42))
+                    .fontWidth(.compressed)
                     .textCase(.uppercase)
                     .foregroundStyle(SpotterV2.Tokens.foreground)
                     .multilineTextAlignment(.center)
