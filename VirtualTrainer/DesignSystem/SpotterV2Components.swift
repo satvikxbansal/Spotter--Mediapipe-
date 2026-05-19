@@ -558,6 +558,9 @@ struct V2ExerciseRow: View {
     let index: Int
     let name: String
     let target: String
+    var subtitle: String?
+    var ctaTitle: String?
+    var systemImage: String?
     var isDisabled = false
 
     var body: some View {
@@ -576,20 +579,39 @@ struct V2ExerciseRow: View {
                     .foregroundStyle(isDisabled ? SpotterV2.Tokens.mutedForeground : SpotterV2.Tokens.foreground)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
-                Text(isDisabled ? "Coming soon" : target)
+                Text(isDisabled ? "Coming soon" : (subtitle ?? target))
                     .font(SpotterV2Typography.caption(weight: .bold))
                     .tracking(0.8)
                     .textCase(.uppercase)
                     .foregroundStyle(isDisabled ? SpotterV2.Tokens.destructive : SpotterV2.Tokens.mutedForeground)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.72)
             }
 
             Spacer()
 
-            V2StatusPill(
-                theme: theme,
-                label: isDisabled ? "Locked" : target,
-                pulsingDot: false
-            )
+            VStack(alignment: .trailing, spacing: SpotterV2.Spacing.xs) {
+                V2StatusPill(
+                    theme: theme,
+                    label: isDisabled ? "Locked" : target,
+                    pulsingDot: false
+                )
+
+                if let ctaTitle {
+                    HStack(spacing: SpotterV2.Spacing.xxs) {
+                        Text(ctaTitle)
+                        if let systemImage {
+                            Image(systemName: systemImage)
+                        }
+                    }
+                    .font(SpotterV2Typography.caption(weight: .black))
+                    .tracking(0.8)
+                    .textCase(.uppercase)
+                    .foregroundStyle(isDisabled ? SpotterV2.Tokens.mutedForeground : SpotterV2.Tokens.primary(theme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                }
+            }
         }
         .padding(SpotterV2.Spacing.md)
         .background(SpotterV2.Tokens.card)

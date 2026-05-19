@@ -84,9 +84,13 @@ struct V2MainShellView: View {
     private var selectedContent: some View {
         switch selectedTab {
         case .dashboard:
-            V2DashboardPlaceholder(theme: themeStore.selectedTheme)
+            V2DashboardView(onOpenCameraTab: {
+                withAnimation(reduceMotion ? nil : SpotterV2.Motion.snappy) {
+                    selectedTab = .camera
+                }
+            })
         case .camera:
-            V2CameraPlaceholder(theme: themeStore.selectedTheme)
+            V2CameraTabView()
         case .trophies:
             V2TrophiesPlaceholder(theme: themeStore.selectedTheme)
         case .profile:
@@ -397,12 +401,21 @@ private struct V2ShellPreviewHost: View {
     @State private var appPresentation = AppLevelPresentationState()
 
     var body: some View {
+        let dependencies = AppDependencies.local()
         V2MainShellView(
             initialSelectedTab: selectedTab,
             navStyleOverride: reduceTransparency ? .solid : .liquidGlass
         )
+            .environmentObject(AccountContext())
+            .environmentObject(dependencies)
+            .environmentObject(OnboardingStore())
+            .environmentObject(CalibrationStore())
+            .environmentObject(WorkoutHistoryStore())
+            .environmentObject(TrophyStore())
             .environmentObject(ThemeStore(defaultTheme: theme))
+            .environmentObject(InsightStore())
             .environmentObject(BackendStatusStore())
+            .environmentObject(RemoteFeatureFlagService.local(defaults: FeatureFlags(designSystemV2Enabled: true)))
             .environmentObject(
                 DesignSystemV2ToggleStore(
                     remoteFlagSnapshotProvider: { true },

@@ -3227,3 +3227,223 @@ Known local build warnings remain unchanged: Firebase client config copy notice 
 For D4-D6, any full-width bottom sheet or fixed CTA surface must be snapshot-rendered at the active standard Pro viewport, not only the smallest and largest devices. A parent frame clamp is not enough when child content can inherit an oversized layout context; constrain the inner content width and inspect exported attachments for edge bleed.
 
 **Pattern Tags:** #design-system-v2 #d3 #calibration #bottom-sheet #iphone-17-pro #visual-qa #snapshot-limits #layout-clamp
+
+---
+
+### [DL-085] D4 V2 Dashboard and Form Check Shell
+**Date:** 2026-05-19
+**Severity:** feature
+**Category:** design-system, v2, dashboard, camera, quick-start, form-check, feature-flag
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/DesignSystem/SpotterV2Components.swift`, `VirtualTrainer/UI/CameraTabView.swift`, `VirtualTrainer/UI/V2/Dashboard/V2DashboardView.swift`, `VirtualTrainer/UI/V2/Camera/V2CameraTabView.swift`, `VirtualTrainer/UI/V2/Camera/V2CameraReadinessView.swift`, `VirtualTrainer/UI/V2/V2MainShellView.swift`, `VirtualTrainerTests/DesignSystemV2Tests.swift`
+
+**Change:**
+Replaced the V2 dashboard placeholder with a real Quick Start dashboard and replaced the V2 camera placeholder with a Form Check exercise-selection screen. The dashboard now binds to existing profile, history, trophy, trend, stats, quick-start deck, weekly recap, insight, backend status, and plan preview data. The camera tab now filters the supported free-analysis exercise catalog by V2 categories and routes into the existing `CameraReadinessView` flow through a shared launch configuration.
+
+**Reason:**
+D4 moves the V2 shell from placeholder surfaces to real training entry points while preserving the current V1 app when the D1 feature flag/toggle is off. The change keeps live camera setup, MediaPipe, pose estimation, rep counting, planned workouts, Firestore sync, and backend-mode behavior untouched.
+
+**Design Deltas:**
+Design-only items deferred or marked coming soon: running analysis active flow, unsupported pull-up-style library content, third-party avatar imagery, and any fabricated milestone/metric values not backed by current stores.
+
+Code-only items styled in V2 language: backend fallback status banner, weekly recap, coach insight evidence/engagement actions, no-history metric empty states, camera permission denied state, and poor body-visibility readiness guidance.
+
+**Verification:**
+Toolchain paths were checked per DL-045:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both resolved under `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`.
+
+No raw hex colors were found in the touched V2 feature screens.
+
+`git diff --check` passed.
+
+Focused D4/V2 design-system tests passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData -only-testing:VirtualTrainerTests/DesignSystemV2Tests`
+
+Required workspace build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 460
+- Failed: 0
+- Skipped: 4
+- Total: 464
+
+Known local build warnings remain unchanged: Firebase client config copy notice and AppIntents metadata skipped because the app has no AppIntents dependency.
+
+**Prevention Rule:**
+For D5-D6, new V2 shell tabs must prove both data binding and route preservation with small adapter tests before snapshot smoke. Any design element that implies unsupported health, account, or exercise capabilities must be listed as a design-only delta instead of being mocked as live functionality.
+
+**Pattern Tags:** #design-system-v2 #d4 #dashboard #quick-start #camera #form-check #feature-flag #snapshot-tests #route-preservation
+
+---
+
+### [DL-086] D4 Dashboard Hyper Reference Audit And Snapshot False Positive
+**Date:** 2026-05-19
+**Severity:** bugfix
+**Category:** design-system, v2, d4, dashboard, visual-qa, snapshot-tests, rca
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/UI/V2/Dashboard/V2DashboardView.swift`, `VirtualTrainer/UI/V2/V2MainShellView.swift`, `VirtualTrainerTests/DesignSystemV2Tests.swift`
+
+**Error:**
+D4 was functionally wired, but the dashboard pass did not sufficiently use `NEW_DESIGN/export-html/hyper-theme-preview-(copy)-(copy).html` and `NEW_DESIGN/screenshots/hyper-theme-preview-(copy)-(copy).png` as the dashboard body reference. The prior V2 dashboard leaned more on the written D4 task bullets, `quick-start.html`, and `liquid-glass-nav-iteration.html` than on the exact Hyper preview the product expected.
+
+The largest visual misses were the top header and Smart Start hierarchy. The reference uses a lime mono `SPOTTER AI` eyebrow, a huge uppercase italic `Keep it up, Satvik.` greeting, a cream-bordered avatar treatment, and an immediate photo-backed workout hero card with a hard lime shadow and press affordance. The previous D4 dashboard had the correct real data plumbing, but its Smart Start card sat lower and read more like a standard data card than the launch-card hero in the reference.
+
+A second miss was in verification: the D4 dashboard snapshot smoke test had passed while one exported attachment was only the dark background plus a small loading spinner. The assertion only checked PNG byte size, so an async-loading dashboard could pass without proving that the real dashboard content was rendered.
+
+**Root Cause:**
+The reference set for D4 is unusually overlapping: `quick-start.html`, `liquid-glass-nav-iteration.html`, and the Hyper preview variants all contain dashboard-like material. During the large implementation pass, the prompt's functional checklist stayed visible while the exact Hyper preview variant was under-weighted. That led to correct bindings and routing but a weaker product silhouette.
+
+The snapshot false positive came from mounting `V2DashboardView` with normal `onAppear` async refresh behavior. The test captured quickly, before dashboard content was loaded, and only asserted image size. That made "screen exists" look like "screen matches direction."
+
+The first audit fix exposed a separate test harness issue: repeated `UIHostingController` teardown around SwiftUI `ScrollView.refreshable` could crash in XCTest with a task-local/malloc abort. Using `ImageRenderer` avoided the crash but rendered this environment-object-heavy tree as a black-only image, so the final harness keeps the faithful hosting render and retains snapshot windows for the test process lifetime.
+
+**Why It Was Missed:**
+Context compaction happened in the middle of a large D4 change set, so "D4 dashboard" survived as a broad implementation target while the user's exact Hyper preview expectation did not remain prominent enough. The test suite emphasized route preservation, store preservation, real data, and feature-flag safety, all of which passed, but it did not guard against a loading-state-only screenshot.
+
+The visual QA also treated exported attachments as evidence that snapshots ran rather than as artifacts that needed manual inspection. Without a visible-pixel/content guard, a spinner screenshot could be accepted as a smoke pass.
+
+**Fix Applied:**
+Reworked the V2 dashboard top stack to follow the Hyper preview direction more closely while keeping code truth:
+
+- Header now uses `SPOTTER AI`, a huge uppercase italic `Keep it up, [first name].` heading, the required pulsing `Status: Training Active` pill, and a cream-bordered avatar fallback.
+- Smart Start now appears immediately below the header as a full hero card with local bundled imagery, a lime recommended label, real Quick Start title/duration/reason/pills, a large lime `Start Training` CTA, a shuffle icon button, hard-offset lime shadow, and Reduce Motion-aware press animation.
+- Next milestone and the 2x2 metric grid follow the hero, matching the reference hierarchy more closely while still binding to `TrophyStore`, `StatsEngine`, `TrendEngine`, and workout history.
+- Added snapshot injection for precomputed dashboard content so the test captures the actual dashboard instead of waiting on `onAppear`.
+- Added a visible-pixel guard to D4 dashboard snapshots so dark loading screens cannot pass.
+- Added a snapshot-only no-navigation mode for `V2DashboardView` and retained XCTest snapshot windows to avoid SwiftUI hosting teardown crashes.
+
+No MediaPipe, live camera pipeline, backend repository behavior, Firestore sync behavior, or privacy rules were changed.
+
+**Verification:**
+Toolchain paths were checked per DL-045:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both resolved under `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`.
+
+No raw hex colors, WebView/WKWebView, Tailwind, Iconify, Phosphor runtime, external font, or custom-font usage was found in the touched D4 feature screens.
+
+`git diff --check` passed.
+
+Focused D4 dashboard snapshot test passed after the harness fix:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData -only-testing:VirtualTrainerTests/DesignSystemV2Tests/testSnapshotSmokeForD4V2DashboardStatesAcrossHyperAndHotGirlThemes`
+
+Exported and inspected the passing rich Hyper Pro Max attachment at `/tmp/VirtualTrainerD4FocusedAttachmentsPass/FC3E8B7F-4007-4A90-A042-01927DB9B4E9.png`. It shows the Hyper-style header, hero Smart Start card, milestone, and metrics rather than the prior spinner-only state.
+
+Required workspace build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 460
+- Failed: 0
+- Skipped: 4
+- Total: 464
+
+Known local build warnings remain unchanged: Firebase client config copy notice and AppIntents metadata skipped because the app has no AppIntents dependency.
+
+**Prevention Rule:**
+For D5-D7, every visual snapshot smoke test must either preload its async content or explicitly wait for a content-ready condition, and it must assert that enough non-background UI pixels rendered. Passing `xcodebuild` and attaching a PNG is not enough; at least one representative exported attachment must be manually inspected against the named design screenshot before calling the phase done.
+
+When multiple HTML files can plausibly describe the same screen, the exact reference variant named by the prompt or by the user wins. Functional checklist completion does not substitute for inspecting that exact HTML plus screenshot pair.
+
+**Pattern Tags:** #design-system-v2 #d4 #dashboard #hyper-reference #visual-qa #snapshot-false-positive #rca #test-hardening
+
+---
+
+### [DL-087] D4 Font Fidelity And Small-Device Layout Follow-Up
+**Date:** 2026-05-19
+**Severity:** bugfix
+**Category:** design-system, v2, d4, dashboard, quick-start, form-check, typography, visual-qa, rca
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/DesignSystem/SpotterV2Typography.swift`, `VirtualTrainer/UI/V2/Dashboard/V2DashboardView.swift`, `VirtualTrainer/UI/V2/Camera/V2CameraTabView.swift`
+
+**Error:**
+The D4 dashboard and form-check pass still had visual fidelity misses after the first Hyper reference audit. The main issue was typography: the V2 display, heading, and caption helpers used SwiftUI's rounded system design as the fallback for the HTML reference's `Space Grotesk`. That read too soft and bubbly compared with `NEW_DESIGN/export-html/hyper-theme-preview-(copy)-(copy).html`, `NEW_DESIGN/export-html/quick-start.html`, and `NEW_DESIGN/export-html/form-check-selection.html`, where headings are sharp, black-weight, compressed, uppercase, italic, and tightly spaced.
+
+The second issue was small-device layout. The Smart Start hero card could still ask for more ideal width than an iPhone SE viewport because the image, metadata pills, greeting, and inner card content were not all pinned to the measured scroll width. That created horizontal clipping in the focused SE snapshot even though the Pro Max snapshot looked acceptable.
+
+The third issue was exact component state treatment. The Form Check category chips used abbreviated labels (`Upper`, `Lower`) instead of the design's `Upper Body` and `Lower Body`, the selected state did not yet have the same hard lime-outline/lime-shadow feel, and the V2 Form Check heading carried extra helper copy that was not present in the referenced bottom-sheet design. The dashboard metric tiles also placed the hero value too prominently before the caption/title rhythm used in the Hyper preview metrics.
+
+**Root Cause:**
+The original implementation correctly followed the D4 functional checklist, but the visual target was split across three HTML references. The product expectation was specifically the dashboard body in `Hyper Theme Preview (Copy) (Copy)`, while `quick-start.html` and the written bullet list used slightly different copy and hierarchy. That made it too easy to satisfy the data and routing requirements without tightening the exact typography, selected states, and press affordances.
+
+The font miss came from interpreting "system fonts only" as permission to choose the friendliest SF design variant. The reference's `Space Grotesk` personality is closer to a sharp/default system face with compressed width and black weight than to `.rounded`. Because external fonts are explicitly forbidden for this phase, the fix is an improved system approximation, not bundling `Space Grotesk` or `JetBrains Mono`.
+
+The iPhone SE miss came from relying on a Pro Max visual artifact and a snapshot smoke guard that checked rendered pixels, not horizontal fit. SwiftUI `ScrollView` children can keep an oversized ideal width unless the content stack and oversized hero internals are explicitly constrained from the measured viewport.
+
+**Why It Was Missed:**
+The D4 change set was large and crossed a context compaction, so the implementation review over-weighted route preservation, feature-flag safety, and real-data binding. Those were important and did pass, but they do not catch "wrong font personality" or "selected pill state does not match the design." Font mismatches are especially easy to miss in code review because the source says `.system`, which is policy-compliant, while the actual rendered feel can still be wrong.
+
+Small-device layout was missed because the rich Hyper Pro Max snapshot looked healthy and the earlier test hardening only proved the screen was not a spinner/blank state. It did not prove the Smart Start card and chips stayed inside the SE content width. Generated Quick Start subtitles are also longer than static design copy, which exposed layout pressure that the HTML did not have.
+
+**Fix Applied:**
+- Changed `SpotterV2Typography.display`, `heading`, and `caption` from `.rounded` to `.default`, keeping compressed width/black weight/italic at call sites to better approximate the HTML `Space Grotesk` direction without custom fonts.
+- Reworked the V2 dashboard scroll body to pin content to the measured viewport width and passed that width into the Smart Start hero so its image, overlay content, CTA, and pills cannot expand beyond iPhone SE bounds.
+- Shortened the Smart Start focus pill to the meaningful final subtitle segment, keeping generated plan metadata real while avoiding static-design overflow.
+- Added a dashboard-specific hero CTA style with 70 pt height, hard offset shadow, and Reduce Motion-aware press behavior matching the Hyper hero CTA interaction more closely.
+- Adjusted metric tile hierarchy so the title/caption rhythm and big compressed italic value feel closer to the Hyper preview.
+- Routed the Weekly Volume tile through `TrendEngine.dailyIntensitySummary(...).volumeUnits` over current-week summaries so the metric uses the existing volume calculation instead of a dashboard-local formula.
+- Updated Form Check category labels to `Upper Body` and `Lower Body`, removed the extra helper paragraph, matched the uppercase search placeholder, and tightened selected chip styling with lime text, lime border, compact shape, and hard offset selected-state shadow.
+- Added a V2-only Free Analysis Summary branch behind the same toggle so the code-only post-camera summary uses V2 cards, typography, buttons, and trophy styling while the existing V1 summary remains unchanged when the toggle is off.
+- Kept the dashboard background image local (`SpotterWelcomeHero`) rather than using the remote/static design image. This is an intentional phase constraint: the prompt forbids external fonts and production use of HTML assets; the HTML is visual/product reference only.
+
+No MediaPipe, `CameraManager`, `PoseEstimator`, `UniversalRepCounter`, `FormFeedbackEngine`, `HandGestureDetector`, `ExertionAnalyzer`, `WorkoutReadyCoordinator`, `FaceLandmarkerService`, `FramePositionAnalyzer`, backend repository behavior, Firestore sync behavior, or privacy rules were changed.
+
+**Verification:**
+Toolchain paths were rechecked per DL-045:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both resolved under `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`.
+
+No raw hex colors, WebView/WKWebView, Tailwind, Iconify, Phosphor runtime, external font, `Font.custom`, or rounded-design system font usage was found in the touched D4 V2 feature screens.
+
+`git diff --check` passed.
+
+Focused D4 dashboard snapshot test passed after the font/layout fixes:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedDataD4DesignAudit -only-testing:VirtualTrainerTests/DesignSystemV2Tests/testSnapshotSmokeForD4V2DashboardStatesAcrossHyperAndHotGirlThemes`
+
+The latest inspected focused artifacts were:
+
+- `/tmp/VirtualTrainerD4DesignAuditAttachments7/A896A360-E4AD-4E86-B8C6-1978ED4FEFFC.png` for Hyper on iPhone SE.
+- `/tmp/VirtualTrainerD4DesignAuditAttachments7/E5CDEBC7-8367-4402-8C7A-64F66458001B.png` for Hyper on iPhone 17 Pro Max.
+
+The SE artifact now shows the sharp uppercase heading, bounded Smart Start hero, visible selected-style pills, contained CTA, and no horizontal clipping. The Pro Max artifact keeps the same hierarchy with the metric grid peeking below the hero.
+
+Required workspace build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData -resultBundlePath /tmp/VirtualTrainerD4FullTest-20260519-1424.xcresult`
+
+- Passed: 460
+- Failed: 0
+- Skipped: 4
+- Total: 464
+
+Known local build warnings remain unchanged: Firebase client config copy notice, AppIntents metadata skipped because the app has no AppIntents dependency, and no new V2-specific build warnings were introduced.
+
+**Prevention Rule:**
+For the remaining V2 phases, visual QA must include the exact named HTML and screenshot variant, not just the broad phase reference set. Dashboard/Quick Start work must inspect both iPhone SE and Pro Max artifacts before signoff, and snapshot checks should be extended from "nonblank content rendered" toward explicit small-device layout-fit checks where practical. Any time the design uses custom fonts but the phase forbids bundling them, the debug log or PR summary should name the chosen system approximation so reviewers do not mistake a policy-compliant fallback for a bundled-font miss.
+
+**Pattern Tags:** #design-system-v2 #d4 #font-fidelity #quick-start #form-check #iphone-se #visual-qa #rca

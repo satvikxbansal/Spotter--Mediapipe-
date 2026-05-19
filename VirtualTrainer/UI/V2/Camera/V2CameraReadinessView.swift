@@ -219,6 +219,10 @@ struct V2CameraReadinessView: View {
 
             phaseDots
 
+            if state.kind == .visibilityIssue {
+                visibilityIssueCard
+            }
+
             VStack(spacing: SpotterV2.Spacing.md) {
                 if let primaryActionTitle = state.primaryActionTitle {
                     V2CTAButton(
@@ -252,6 +256,55 @@ struct V2CameraReadinessView: View {
             }
         }
         .accessibilityLabel("Readiness phase \(state.phaseIndex) of 3")
+    }
+
+    private var visibilityIssueCard: some View {
+        HStack(spacing: SpotterV2.Spacing.sm) {
+            Image(systemName: "figure.walk.motion")
+                .font(.system(size: 21, weight: .black))
+                .foregroundStyle(SpotterV2.Tokens.primary(theme))
+
+            VStack(alignment: .leading, spacing: SpotterV2.Spacing.xxxs) {
+                Text("Adjust position")
+                    .font(SpotterV2Typography.caption())
+                    .tracking(1.2)
+                    .textCase(.uppercase)
+                    .foregroundStyle(SpotterV2.Tokens.primary(theme))
+                Text(state.message)
+                    .font(SpotterV2Typography.body(size: 13, weight: .semibold))
+                    .foregroundStyle(SpotterV2.Tokens.foreground)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+
+            ZStack {
+                Circle()
+                    .stroke(SpotterV2.Tokens.secondary, lineWidth: 4)
+                Circle()
+                    .trim(from: 0, to: min(max(Double(visibilityPercent) / 100, 0), 1))
+                    .stroke(
+                        SpotterV2.Tokens.primary(theme),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                Text("\(visibilityPercent)")
+                    .font(SpotterV2Typography.caption(weight: .bold))
+                    .foregroundStyle(SpotterV2.Tokens.mutedForeground)
+            }
+            .frame(width: 38, height: 38)
+        }
+        .padding(SpotterV2.Spacing.md)
+        .frame(maxWidth: 360)
+        .background(SpotterV2.Tokens.secondary.opacity(0.82))
+        .clipShape(RoundedRectangle(cornerRadius: SpotterV2.Radius.lg))
+        .overlay(
+            RoundedRectangle(cornerRadius: SpotterV2.Radius.lg)
+                .stroke(SpotterV2.Tokens.primary(theme).opacity(0.24), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Adjust position. \(state.message). Visibility \(visibilityPercent) percent.")
     }
 
     private var orientationCard: some View {

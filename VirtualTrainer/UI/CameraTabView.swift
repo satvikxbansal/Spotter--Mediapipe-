@@ -1,5 +1,20 @@
 import SwiftUI
 
+nonisolated struct FreeAnalysisCameraLaunchConfiguration: Equatable {
+    let exerciseType: ExerciseType
+    let coach: CoachPersonality
+
+    static func make(
+        exerciseType: ExerciseType,
+        profile: UserProfile?
+    ) -> FreeAnalysisCameraLaunchConfiguration {
+        FreeAnalysisCameraLaunchConfiguration(
+            exerciseType: exerciseType,
+            coach: profile?.preferredCoach.coachPersonality ?? .good
+        )
+    }
+}
+
 struct CameraTabView: View {
     @State private var summary: FreeAnalysisSummary?
 
@@ -71,10 +86,14 @@ struct FormCheckSelectionView: View {
                     Section(category.freeAnalysisTitle) {
                         ForEach(exercises) { option in
                             if let exerciseType = option.type {
+                                let launchConfiguration = FreeAnalysisCameraLaunchConfiguration.make(
+                                    exerciseType: exerciseType,
+                                    profile: onboardingStore.profile
+                                )
                                 NavigationLink {
                                     CameraReadinessView(
-                                        exerciseType: exerciseType,
-                                        coach: onboardingStore.profile?.preferredCoach.coachPersonality ?? .good,
+                                        exerciseType: launchConfiguration.exerciseType,
+                                        coach: launchConfiguration.coach,
                                         onSummary: onSummary
                                     )
                                 } label: {
@@ -468,6 +487,8 @@ struct FreeAnalysisSummaryView: View {
     @EnvironmentObject private var calibrationStore: CalibrationStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
     @EnvironmentObject private var trophyStore: TrophyStore
+    @EnvironmentObject private var themeStore: ThemeStore
+    @EnvironmentObject private var designSystemV2Toggle: DesignSystemV2ToggleStore
     @State private var didSave = false
     @State private var savedHistorySummary: WorkoutSessionSummary?
     @State private var detailSummary: WorkoutSessionSummary?
@@ -475,6 +496,28 @@ struct FreeAnalysisSummaryView: View {
     @State private var nearestTrophyProgress: TrophyProgress?
 
     var body: some View {
+        Group {
+            if designSystemV2Toggle.isEffectivelyEnabled {
+                v2Body
+            } else {
+                v1Body
+            }
+        }
+        .onAppear {
+            if let existing = historyStore.fetchSummary(id: summary.id) {
+                didSave = true
+                savedHistorySummary = existing
+            }
+        }
+        .sheet(item: $detailSummary) { detail in
+            WorkoutDetailSheetView(summary: detail)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private var v1Body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                 Text("Free Analysis Summary")
@@ -526,18 +569,93 @@ struct FreeAnalysisSummaryView: View {
             .padding(Theme.Spacing.lg)
         }
         .background(Theme.Colors.background)
-        .onAppear {
-            if let existing = historyStore.fetchSummary(id: summary.id) {
-                didSave = true
-                savedHistorySummary = existing
+    }
+
+    private var v2Body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: SpotterV2.Spacing.xl) {
+                VStack(alignment: .leading, spacing: SpotterV2.Spacing.xs) {
+                    Text("Form Check")
+                        .font(SpotterV2Typography.caption())
+                        .tracking(1.6)
+                        .textCase(.uppercase)
+                        .foregroundStyle(SpotterV2.Tokens.primary(themeStore.selectedTheme))
+
+                    Text("Session Summary")
+                        .font(SpotterV2Typography.display(size: 38))
+                        .fontWidth(.compressed)
+                        .italic()
+                        .textCase(.uppercase)
+                        .foregroundStyle(SpotterV2.Tokens.foreground)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.58)
+                }
+
+                V2Card(theme: themeStore.selectedTheme, radius: SpotterV2.Radius.xl) {
+                    VStack(alignment: .leading, spacing: SpotterV2.Spacing.md) {
+                        V2SummaryRow(theme: themeStore.selectedTheme, label: "Exercise", value: summary.exerciseType.displayName, systemImage: "figure.strengthtraining.traditional")
+                        V2SummaryRow(theme: themeStore.selectedTheme, label: "Duration", value: summary.durationText, systemImage: "timer")
+                        V2SummaryRow(theme: themeStore.selectedTheme, label: "Reps", value: "\(summary.reps)", systemImage: "repeat")
+                        if summary.holdDuration > 0 {
+                            V2SummaryRow(theme: themeStore.selectedTheme, label: "Hold", value: "\(Int(summary.holdDuration.rounded()))s", systemImage: "pause.fill")
+                        }
+                        V2SummaryRow(
+                            theme: themeStore.selectedTheme,
+                            label: "Form",
+                            value: summary.latestFormScore.map { "\($0.grade.rawValue) \($0.score)" } ?? "No completed rep yet",
+                            systemImage: "checkmark.seal.fill"
+                        )
+                        V2SummaryRow(theme: themeStore.selectedTheme, label: "Peak Effort", value: "\(Int(summary.peakEffort * 100))%", systemImage: "bolt.fill")
+                        V2SummaryRow(theme: themeStore.selectedTheme, label: "Last Cue", value: summary.lastCue?.message ?? "None", systemImage: "quote.bubble.fill")
+                    }
+                }
+
+                if let persistenceError = historyStore.persistenceError {
+                    V2Card(
+                        theme: themeStore.selectedTheme,
+                        borderColor: SpotterV2.Tokens.destructive
+                    ) {
+                        Text(persistenceError)
+                            .font(SpotterV2Typography.body(size: 13, weight: .bold))
+                            .foregroundStyle(SpotterV2.Tokens.destructive)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                V2FreeAnalysisTrophySection(
+                    theme: themeStore.selectedTheme,
+                    events: newlyEarnedTrophyEvents,
+                    nearestProgress: nearestTrophyProgress
+                )
+
+                VStack(spacing: SpotterV2.Spacing.md) {
+                    V2CTAButton(
+                        title: didSave ? "Saved to History" : "Save to History",
+                        systemImage: didSave ? "checkmark" : "tray.and.arrow.down.fill",
+                        theme: themeStore.selectedTheme,
+                        isDisabled: didSave
+                    ) {
+                        Task {
+                            await saveSummary()
+                        }
+                    }
+
+                    if let savedHistorySummary {
+                        V2SecondaryButton(
+                            title: "View Detail",
+                            systemImage: "arrow.right",
+                            theme: themeStore.selectedTheme
+                        ) {
+                            HapticsEngine.shared.buttonTap()
+                            detailSummary = savedHistorySummary
+                        }
+                    }
+                }
             }
+            .padding(SpotterV2.Spacing.xl)
+            .padding(.bottom, SpotterV2.Spacing.xl)
         }
-        .sheet(item: $detailSummary) { detail in
-            WorkoutDetailSheetView(summary: detail)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
-        .preferredColorScheme(.dark)
+        .background(SpotterV2.Tokens.background)
     }
 
     private func saveSummary() async {
@@ -602,6 +720,112 @@ private struct FreeAnalysisTrophySection: View {
                     .foregroundStyle(Theme.Colors.textPrimary)
                 TrophyProgressCard(definition: definition, progress: nearestProgress)
             }
+        }
+    }
+}
+
+private struct V2FreeAnalysisTrophySection: View {
+    let theme: SpotterThemeOption
+    let events: [TrophyUnlockEvent]
+    let nearestProgress: TrophyProgress?
+
+    var body: some View {
+        if !events.isEmpty {
+            V2Card(
+                theme: theme,
+                radius: SpotterV2.Radius.lg,
+                borderColor: SpotterV2.Tokens.primary(theme).opacity(0.55)
+            ) {
+                VStack(alignment: .leading, spacing: SpotterV2.Spacing.md) {
+                    V2SectionHeader(title: "Trophies Earned")
+                    ForEach(events) { event in
+                        HStack(spacing: SpotterV2.Spacing.md) {
+                            Image(systemName: "trophy.fill")
+                                .font(.system(size: 18, weight: .black))
+                                .foregroundStyle(.black)
+                                .frame(width: 42, height: 42)
+                                .background(SpotterV2.Tokens.primary(theme))
+                                .clipShape(RoundedRectangle(cornerRadius: SpotterV2.Radius.sm))
+
+                            VStack(alignment: .leading, spacing: SpotterV2.Spacing.xxxs) {
+                                Text(event.title)
+                                    .font(SpotterV2Typography.heading(size: 15))
+                                    .fontWidth(.compressed)
+                                    .textCase(.uppercase)
+                                    .foregroundStyle(SpotterV2.Tokens.primary(theme))
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.72)
+                                Text(event.reason)
+                                    .font(SpotterV2Typography.body(size: 12, weight: .semibold))
+                                    .foregroundStyle(SpotterV2.Tokens.mutedForeground)
+                                    .lineLimit(3)
+                            }
+
+                            Spacer(minLength: SpotterV2.Spacing.xs)
+                        }
+                    }
+                }
+            }
+        } else if let nearestProgress,
+                  let definition = TrophyDefinitionCatalog.definition(for: nearestProgress.trophyId) {
+            V2Card(theme: theme, radius: SpotterV2.Radius.lg) {
+                HStack(spacing: SpotterV2.Spacing.md) {
+                    Image(systemName: definition.iconName)
+                        .font(.system(size: 20, weight: .black))
+                        .foregroundStyle(SpotterV2.Tokens.primary(theme))
+                        .frame(width: 44, height: 44)
+                        .background(SpotterV2.Tokens.primary(theme).opacity(0.14))
+                        .clipShape(RoundedRectangle(cornerRadius: SpotterV2.Radius.sm))
+
+                    VStack(alignment: .leading, spacing: SpotterV2.Spacing.xxxs) {
+                        Text("Closest Trophy")
+                            .font(SpotterV2Typography.caption())
+                            .tracking(1.2)
+                            .textCase(.uppercase)
+                            .foregroundStyle(SpotterV2.Tokens.mutedForeground)
+                        Text(definition.title)
+                            .font(SpotterV2Typography.heading(size: 17))
+                            .fontWidth(.compressed)
+                            .textCase(.uppercase)
+                            .foregroundStyle(SpotterV2.Tokens.foreground)
+                        Text(nearestProgress.progressLabel)
+                            .font(SpotterV2Typography.body(size: 12, weight: .semibold))
+                            .foregroundStyle(SpotterV2.Tokens.mutedForeground)
+                    }
+                    Spacer(minLength: SpotterV2.Spacing.xs)
+                }
+            }
+        }
+    }
+}
+
+private struct V2SummaryRow: View {
+    let theme: SpotterThemeOption
+    let label: String
+    let value: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: SpotterV2.Spacing.md) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .black))
+                .foregroundStyle(SpotterV2.Tokens.primary(theme))
+                .frame(width: 34, height: 34)
+                .background(SpotterV2.Tokens.foreground.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: SpotterV2.Radius.xs))
+
+            VStack(alignment: .leading, spacing: SpotterV2.Spacing.xxxs) {
+                Text(label)
+                    .font(SpotterV2Typography.caption())
+                    .tracking(1.2)
+                    .textCase(.uppercase)
+                    .foregroundStyle(SpotterV2.Tokens.mutedForeground)
+                Text(value)
+                    .font(SpotterV2Typography.body(size: 15, weight: .bold))
+                    .foregroundStyle(SpotterV2.Tokens.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: SpotterV2.Spacing.xs)
         }
     }
 }
