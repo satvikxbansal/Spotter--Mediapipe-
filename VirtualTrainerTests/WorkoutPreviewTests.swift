@@ -222,6 +222,65 @@ final class WorkoutPreviewTests: XCTestCase {
 
         XCTAssertNil(state.targetDraft(for: firstExerciseId()))
     }
+
+    func testD5V2TargetChipReflectsEditedPlanVolume() throws {
+        var state = WorkoutPreviewState(plan: makeBodyweightPlan(coach: .good))
+        var draft = try XCTUnwrap(state.targetDraft(for: firstExerciseId()))
+
+        draft.draftSetCount = 3
+        draft.draftTargetValue = 11
+        _ = state.applyTargetDraft(draft)
+
+        let exercise = try XCTUnwrap(state.displayPlan.blocks.first?.exercises.first)
+        XCTAssertEqual(V2WorkoutPreviewPresentation.targetChip(for: exercise), "3 x 11 reps")
+    }
+
+    func testD5V2PreviewDoesNotExposeSwapAllOrAIAlternatives() {
+        let deferredDesignOnlyActions = ["Swap All", "AI Alternatives"]
+
+        for deferredAction in deferredDesignOnlyActions {
+            XCTAssertFalse(V2WorkoutPreviewPresentation.supportedActionTitles.contains(deferredAction))
+        }
+        XCTAssertTrue(V2WorkoutPreviewPresentation.supportedActionTitles.contains("Adjust"))
+    }
+
+    func testD5V2PreviewCarriesCodeOnlyCameraSetupForward() {
+        let state = WorkoutPreviewState(plan: makeMixedCameraPlan(coach: .good))
+
+        XCTAssertEqual(state.cameraSequenceText, "Front -> Side")
+        XCTAssertEqual(state.cameraSwitchCount, 1)
+        XCTAssertEqual(state.cameraSwitchLimit, PlanSessionLength(rawMinutes: state.displayPlan.estimatedMinutes).maxCameraSwitches)
+    }
+
+    func testD5FreeAnalysisSummaryPresentationHidesPlanCompletionAndTrophies() {
+        XCTAssertEqual(V2WorkoutSummaryPresentation.eyebrow(isFreeAnalysis: true), "FREE ANALYSIS")
+        XCTAssertFalse(V2WorkoutSummaryPresentation.showsTrophyStack(isFreeAnalysis: true))
+        XCTAssertFalse(V2WorkoutSummaryPresentation.showsPlanCompletion(isFreeAnalysis: true))
+
+        XCTAssertEqual(V2WorkoutSummaryPresentation.eyebrow(isFreeAnalysis: false), "MISSION COMPLETE")
+        XCTAssertTrue(V2WorkoutSummaryPresentation.showsTrophyStack(isFreeAnalysis: false))
+        XCTAssertTrue(V2WorkoutSummaryPresentation.showsPlanCompletion(isFreeAnalysis: false))
+    }
+
+    func testD5SyncPendingBannerUsesWorkoutSummaryMetadata() {
+        let pending = makeHistorySummary(
+            syncMetadata: .initialPendingUpload(operationId: UUID(), now: Date(timeIntervalSince1970: 1_776_000_000))
+        )
+        let synced = makeHistorySummary(
+            syncMetadata: .initialPendingUpload(operationId: UUID(), now: Date(timeIntervalSince1970: 1_776_000_000))
+                .markedSynced()
+        )
+
+        XCTAssertEqual(V2WorkoutSummaryPresentation.syncBannerLabel(for: pending), "Saving to cloud…")
+        XCTAssertNil(V2WorkoutSummaryPresentation.syncBannerLabel(for: synced))
+        XCTAssertNil(V2WorkoutSummaryPresentation.syncBannerLabel(for: nil))
+    }
+
+    func testD5LiveHudEffortTrendUsesSupportedStates() {
+        XCTAssertEqual(V2WorkoutEffortTrend(score: 0.8), .rising)
+        XCTAssertEqual(V2WorkoutEffortTrend(score: 0.5), .steady)
+        XCTAssertEqual(V2WorkoutEffortTrend(score: 0.1), .falling)
+    }
 }
 
 private extension WorkoutPreviewTests {
@@ -359,6 +418,75 @@ private extension WorkoutPreviewTests {
             generatedAt: Date(timeIntervalSince1970: 1_776_000_000),
             planReason: "Generated locally for open target editing.",
             source: .generatedLocal
+        )
+    }
+
+    func makeMixedCameraPlan(coach: CoachPersonality) -> WorkoutPlanV2 {
+        WorkoutPlanV2(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000811") ?? UUID(),
+            title: "Preview Camera",
+            subtitle: "Generated preview",
+            goal: "Keep the existing camera setup visible in V2.",
+            estimatedMinutes: 25,
+            difficulty: .intermediate,
+            coach: coach,
+            blocks: [
+                WorkoutBlock(
+                    title: "Mixed Views",
+                    type: .main,
+                    exercises: [
+                        PlannedExercise(
+                            exerciseType: .squat,
+                            sets: [PlannedSet(setIndex: 1, target: .reps(10))],
+                            restSeconds: 45,
+                            coachingFocus: "Depth.",
+                            cameraPosition: .front,
+                            allowSwap: true
+                        ),
+                        PlannedExercise(
+                            exerciseType: .plank,
+                            sets: [PlannedSet(setIndex: 1, target: .hold(seconds: 30))],
+                            restSeconds: 45,
+                            coachingFocus: "Stable hips.",
+                            cameraPosition: .side,
+                            allowSwap: true
+                        )
+                    ]
+                )
+            ],
+            generatedAt: Date(timeIntervalSince1970: 1_776_000_000),
+            planReason: "Camera setup regression coverage.",
+            source: .generatedLocal
+        )
+    }
+
+    func makeHistorySummary(syncMetadata: SyncMetadata) -> WorkoutSessionSummary {
+        WorkoutSessionSummary(
+            mode: .plannedWorkout,
+            planId: UUID(uuidString: "00000000-0000-0000-0000-000000000808"),
+            planTitle: "Preview Strength",
+            title: "Preview Strength",
+            goal: "Build clean strength without extra equipment.",
+            coach: .good,
+            startedAt: Date(timeIntervalSince1970: 1_776_000_000),
+            endedAt: Date(timeIntervalSince1970: 1_776_000_600),
+            durationSeconds: 600,
+            totalReps: 18,
+            totalHoldSeconds: 0,
+            averageFormScore: 88,
+            completionPercent: 1,
+            exerciseSummaries: [
+                ExerciseSetSummary(
+                    exerciseType: .squat,
+                    target: .reps(9),
+                    achievedReps: 18,
+                    achievedHoldSeconds: 0,
+                    averageFormScore: 88
+                )
+            ],
+            topCue: nil,
+            effortSummary: "Steady effort.",
+            syncMetadata: syncMetadata
         )
     }
 

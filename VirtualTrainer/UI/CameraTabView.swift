@@ -483,6 +483,7 @@ struct CameraReadinessView: View {
 struct FreeAnalysisSummaryView: View {
     let summary: FreeAnalysisSummary
 
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appDependencies: AppDependencies
     @EnvironmentObject private var calibrationStore: CalibrationStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
@@ -572,90 +573,35 @@ struct FreeAnalysisSummaryView: View {
     }
 
     private var v2Body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: SpotterV2.Spacing.xl) {
-                VStack(alignment: .leading, spacing: SpotterV2.Spacing.xs) {
-                    Text("Form Check")
-                        .font(SpotterV2Typography.caption())
-                        .tracking(1.6)
-                        .textCase(.uppercase)
-                        .foregroundStyle(SpotterV2.Tokens.primary(themeStore.selectedTheme))
-
-                    Text("Session Summary")
-                        .font(SpotterV2Typography.display(size: 38))
-                        .fontWidth(.compressed)
-                        .italic()
-                        .textCase(.uppercase)
-                        .foregroundStyle(SpotterV2.Tokens.foreground)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.58)
+        V2WorkoutSummaryView(
+            theme: themeStore.selectedTheme,
+            summary: V2WorkoutSummaryPresentation.workoutSummary(from: summary),
+            historySummary: savedHistorySummary,
+            recap: WorkoutRecapBuilder().build(summary: savedHistorySummary ?? WorkoutSessionSummary.freeAnalysis(from: summary)),
+            trophyEvents: [],
+            nearestTrophyProgress: nil,
+            coachInsight: nil,
+            isFreeAnalysis: true,
+            currentStreakDayCount: historyStore.aggregateStats().currentStreak,
+            persistenceError: historyStore.persistenceError,
+            auxiliaryActionTitle: didSave ? "Saved to History" : "Save to History",
+            auxiliarySystemImage: didSave ? "checkmark" : "tray.and.arrow.down.fill",
+            isAuxiliaryActionDisabled: didSave,
+            onAuxiliaryAction: {
+                Task {
+                    await saveSummary()
                 }
-
-                V2Card(theme: themeStore.selectedTheme, radius: SpotterV2.Radius.xl) {
-                    VStack(alignment: .leading, spacing: SpotterV2.Spacing.md) {
-                        V2SummaryRow(theme: themeStore.selectedTheme, label: "Exercise", value: summary.exerciseType.displayName, systemImage: "figure.strengthtraining.traditional")
-                        V2SummaryRow(theme: themeStore.selectedTheme, label: "Duration", value: summary.durationText, systemImage: "timer")
-                        V2SummaryRow(theme: themeStore.selectedTheme, label: "Reps", value: "\(summary.reps)", systemImage: "repeat")
-                        if summary.holdDuration > 0 {
-                            V2SummaryRow(theme: themeStore.selectedTheme, label: "Hold", value: "\(Int(summary.holdDuration.rounded()))s", systemImage: "pause.fill")
-                        }
-                        V2SummaryRow(
-                            theme: themeStore.selectedTheme,
-                            label: "Form",
-                            value: summary.latestFormScore.map { "\($0.grade.rawValue) \($0.score)" } ?? "No completed rep yet",
-                            systemImage: "checkmark.seal.fill"
-                        )
-                        V2SummaryRow(theme: themeStore.selectedTheme, label: "Peak Effort", value: "\(Int(summary.peakEffort * 100))%", systemImage: "bolt.fill")
-                        V2SummaryRow(theme: themeStore.selectedTheme, label: "Last Cue", value: summary.lastCue?.message ?? "None", systemImage: "quote.bubble.fill")
-                    }
-                }
-
-                if let persistenceError = historyStore.persistenceError {
-                    V2Card(
-                        theme: themeStore.selectedTheme,
-                        borderColor: SpotterV2.Tokens.destructive
-                    ) {
-                        Text(persistenceError)
-                            .font(SpotterV2Typography.body(size: 13, weight: .bold))
-                            .foregroundStyle(SpotterV2.Tokens.destructive)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                V2FreeAnalysisTrophySection(
-                    theme: themeStore.selectedTheme,
-                    events: newlyEarnedTrophyEvents,
-                    nearestProgress: nearestTrophyProgress
-                )
-
-                VStack(spacing: SpotterV2.Spacing.md) {
-                    V2CTAButton(
-                        title: didSave ? "Saved to History" : "Save to History",
-                        systemImage: didSave ? "checkmark" : "tray.and.arrow.down.fill",
-                        theme: themeStore.selectedTheme,
-                        isDisabled: didSave
-                    ) {
-                        Task {
-                            await saveSummary()
-                        }
-                    }
-
-                    if let savedHistorySummary {
-                        V2SecondaryButton(
-                            title: "View Detail",
-                            systemImage: "arrow.right",
-                            theme: themeStore.selectedTheme
-                        ) {
-                            HapticsEngine.shared.buttonTap()
-                            detailSummary = savedHistorySummary
-                        }
-                    }
-                }
+            },
+            detailActionTitle: savedHistorySummary == nil ? nil : "View Detail",
+            onDetailAction: savedHistorySummary == nil ? nil : {
+                HapticsEngine.shared.buttonTap()
+                detailSummary = savedHistorySummary
+            },
+            onDone: {
+                HapticsEngine.shared.buttonTap()
+                dismiss()
             }
-            .padding(SpotterV2.Spacing.xl)
-            .padding(.bottom, SpotterV2.Spacing.xl)
-        }
-        .background(SpotterV2.Tokens.background)
+        )
     }
 
     private func saveSummary() async {
@@ -671,7 +617,7 @@ struct FreeAnalysisSummaryView: View {
         appDependencies.analytics.trackTrophyUnlocks(newlyEarnedTrophyEvents)
         nearestTrophyProgress = trophyStore.snapshot.nearestInProgress
         didSave = true
-        savedHistorySummary = historySummary
+        savedHistorySummary = historyStore.fetchSummary(id: historySummary.id) ?? historySummary
     }
 }
 

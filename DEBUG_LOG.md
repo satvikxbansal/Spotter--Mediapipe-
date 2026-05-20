@@ -3447,3 +3447,197 @@ Known local build warnings remain unchanged: Firebase client config copy notice,
 For the remaining V2 phases, visual QA must include the exact named HTML and screenshot variant, not just the broad phase reference set. Dashboard/Quick Start work must inspect both iPhone SE and Pro Max artifacts before signoff, and snapshot checks should be extended from "nonblank content rendered" toward explicit small-device layout-fit checks where practical. Any time the design uses custom fonts but the phase forbids bundling them, the debug log or PR summary should name the chosen system approximation so reviewers do not mistake a policy-compliant fallback for a bundled-font miss.
 
 **Pattern Tags:** #design-system-v2 #d4 #font-fidelity #quick-start #form-check #iphone-se #visual-qa #rca
+
+---
+
+### [DL-088] D5 V2 Workout Flow Shells
+**Date:** 2026-05-20
+**Severity:** implementation
+**Category:** design-system, v2, d5, workout-preview, live-hud, rest, summary, target-edit, free-analysis
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/UI/WorkoutPreviewView.swift`, `VirtualTrainer/UI/TrainerSessionView.swift`, `VirtualTrainer/UI/RestScreenView.swift`, `VirtualTrainer/UI/WorkoutSummaryView.swift`, `VirtualTrainer/UI/CameraTabView.swift`, `VirtualTrainer/UI/V2/Workout/V2WorkoutPreviewView.swift`, `VirtualTrainer/UI/V2/Workout/V2TargetVolumeEditSheet.swift`, `VirtualTrainer/UI/V2/Workout/V2LiveWorkoutShell.swift`, `VirtualTrainer/UI/V2/Workout/V2RestScreenView.swift`, `VirtualTrainer/UI/V2/Workout/V2WorkoutSummaryView.swift`, `VirtualTrainerTests/DesignSystemV2Tests.swift`, `VirtualTrainerTests/WorkoutPreviewTests.swift`
+
+**Change:**
+D5 added the V2 planned workout flow surfaces behind the D1 design-system toggle:
+
+- `V2WorkoutPreviewView` renders plan title, duration/focus chips, coach selector pills, plan insight, exercise rows, target chips, and a bottom `Start Workout` CTA.
+- `V2TargetVolumeEditSheet` wraps the existing `PlanTargetEditService` draft/save/reset path in a V2 bottom sheet.
+- `V2LiveWorkoutShell` is a HUD overlay only; it does not own camera, pose, rep, form, exertion, hand, face, readiness, or skeleton processing.
+- `V2RestScreenView` wraps existing `RestScreenView` state/actions with V2 timer, last-set, coach-note, up-next, skip, extend-rest, and start-set surfaces.
+- `V2WorkoutSummaryView` renders planned and free-analysis summaries with V2 metrics, form quality, exercise rows, coach insight, streak, trophy/closest-trophy handling, detail/done controls, and pending cloud-save status.
+- Free-analysis summary now reuses the V2 summary shell when the toggle is enabled, hides trophy/completion sections, and keeps the existing save-to-history path.
+
+The existing V1 workout flow remains the rendered hierarchy when the design-system toggle is off.
+
+**Design Deltas Honored:**
+The D5 references include plan-level `Swap All`, AI alternatives, a static live-camera placeholder, and range-of-motion percent styling. These were not added as production features. `Swap All` and AI alternatives are not exposed in the V2 workout preview or target-edit sheet; the live HUD continues to show the real camera/skeleton stack; rest range is styled as available quality trend/not-tracked evidence rather than inventing an unsupported ROM percentage.
+
+Code-only surfaces styled in V2 language include free-analysis summary, pending sync status, existing detail route, save-to-history controls, and existing no-trophy closest-progress fallback.
+
+**Safety Notes:**
+No MediaPipe, `CameraManager`, `PoseEstimator`, `UniversalRepCounter`, `FormFeedbackEngine`, `HandGestureDetector`, `ExertionAnalyzer`, `WorkoutReadyCoordinator`, `FaceLandmarkerService`, `FramePositionAnalyzer`, backend repository behavior, Firestore sync behavior, privacy rules, onboarding, calibration, profile, history, trophy, or insight store reset behavior was changed.
+
+**Verification:**
+Toolchain paths were rechecked per DL-045:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both resolved under `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`.
+
+No raw hex colors, `Color(hex:)`, WebView/WKWebView, Tailwind, Iconify, Phosphor runtime, `font-family`, or external-font usage was found in the touched D5 feature screens.
+
+`git diff --check` passed.
+
+Required workspace build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 466
+- Failed: 0
+- Skipped: 4
+- Total: 470
+
+The test result bundle was `/tmp/VirtualTrainerDerivedData/Logs/Test/Test-VirtualTrainer-2026.05.20_12-02-12-+0530.xcresult`. Known local warnings remain: Firebase client config copy notice and an existing async-context warning in `WorkoutDetailEvidenceModelTests.swift`.
+
+**Prevention Rule:**
+Future V2 workout phases should keep camera/session processing owned by the existing trainer stack and layer visual shells around coordinator/store contracts. Design-only workout affordances must be named in the PR summary when omitted, especially AI swaps, plan-level swaps, unsupported ROM percentages, and any static camera imagery.
+
+**Pattern Tags:** #design-system-v2 #d5 #workout-flow #feature-flag #camera-pipeline-safe #target-volume-only #free-analysis
+
+---
+
+### [DL-089] D5 V2 Workout Flow Audit RCA
+**Date:** 2026-05-20
+**Severity:** RCA / corrective patch
+**Category:** design-system, v2, d5, workout-flow, audit, accessibility, visual-qa, regression-prevention
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/UI/WorkoutPreviewView.swift`, `VirtualTrainer/UI/TrainerSessionView.swift`, `VirtualTrainer/UI/WorkoutSummaryView.swift`, `VirtualTrainer/UI/CameraTabView.swift`, `VirtualTrainer/UI/V2/Workout/V2WorkoutPreviewView.swift`, `VirtualTrainer/UI/V2/Workout/V2TargetVolumeEditSheet.swift`, `VirtualTrainer/UI/V2/Workout/V2LiveWorkoutShell.swift`, `VirtualTrainer/UI/V2/Workout/V2WorkoutSummaryView.swift`, `VirtualTrainerTests/DesignSystemV2Tests.swift`, `VirtualTrainerTests/WorkoutPreviewTests.swift`
+
+**Trigger:**
+After the initial D5 V2 workout flow implementation, a full audit was requested because the phase landed through two context compactions and added a large amount of UI code. The audit compared the original D5 prompt, V1 workout flow code, D5 V2 code, D0/D1 design-system notes, V2 design references, and the required safety constraints.
+
+**Misses Found:**
+- The V2 planned workout preview initially did not carry forward the V1 camera setup and camera-switch summary. The HTML did not show this surface, but the prompt's design-vs-code delta rule requires code-only workout behavior to be styled in V2 rather than dropped.
+- The target-volume sheet included implementation/process copy explaining that only target volume was editable in this V2 phase. That text was accurate for the PR summary, but it was not part of the user-facing design language and did not belong in the app UI.
+- The target stepper rows combined child accessibility and hid the numeric value, which risked making the plus/minus controls and current value less useful to VoiceOver users.
+- The V2 workout summary streak card used generic copy instead of binding to the real current streak count already available from `WorkoutHistoryStore.aggregateStats()`.
+- The live camera chrome kept the old V1 amber glow while the V2 HUD was active. This was visual-only, but it made the V2 live workout feel partially unthemed.
+- V2 live glass pills needed an explicit Reduce Transparency fallback to a solid tokenized surface.
+- Snapshot coverage initially covered too narrow a D5 set. It exercised preview and summary, but not the target sheet, live HUD, rest surface, and free-analysis summary as a coherent phase set.
+- A test fixture introduced during the audit briefly used a `String` where `CueEvent?` was required, and a follow-up cleanup briefly left a removed test sentinel reference. Both were caught by the required test runs before signoff.
+
+**Root Cause:**
+The first pass over-weighted the named design screens and critical safety constraints, especially "do not touch the camera pipeline" and "do not expose Swap All or AI alternatives." That correctly protected backend/camera behavior, but it under-weighted the global code-only-surface rule. Context compaction also removed local working memory of the V1 preview's camera plan card, so the visual translation checklist did not include it until the audit compared V1 and V2 side-by-side. The implementation note in the target sheet slipped in because the product decision "target editing only" was treated as UI clarification instead of as a deferred-design delta to document outside the app. Finally, the original tests asserted route safety and hidden design-only features more strongly than V1 surface parity, accessibility semantics, and full D5 snapshot breadth.
+
+**Fix Applied:**
+- Added a V2 camera setup card to `V2WorkoutPreviewView`, fed by `WorkoutPreviewState.cameraSequenceText`, `cameraSwitchCount`, and `cameraSwitchLimit`.
+- Removed deferred-feature strings from the production preview presentation helper and kept Swap All / AI alternatives as test and PR-summary concerns only.
+- Removed the phase-explanation copy from `V2TargetVolumeEditSheet`.
+- Made target stepper buttons and values individually accessible.
+- Bound the V2 summary streak card to the real current streak count for both planned workouts and free-analysis summaries.
+- Swapped the non-calibration live glow border to the active V2 theme accent when V2 is enabled, and disabled the repeating glow animation when Reduce Motion is enabled.
+- Added Reduce Transparency handling to V2 live HUD glass pills.
+- Expanded D5 snapshot smoke coverage to preview, target sheet, live HUD, rest screen, planned summary, and free-analysis summary across representative V2 themes and small/large device sizes.
+- Added a regression test that the V2 preview carries forward the code-only camera setup information, and kept tests proving no Swap All / AI alternative production actions are exposed.
+
+**Safety Notes:**
+No MediaPipe, `CameraManager`, `PoseEstimator`, `UniversalRepCounter`, `FormFeedbackEngine`, `HandGestureDetector`, `ExertionAnalyzer`, `WorkoutReadyCoordinator`, `FaceLandmarkerService`, `FramePositionAnalyzer`, backend repository behavior, Firestore sync behavior, privacy rules, onboarding reset behavior, calibration reset behavior, profile reset behavior, history reset behavior, trophy reset behavior, or insight reset behavior was changed. The live workout work remains a visual shell over the existing trainer/camera stack.
+
+**Verification:**
+Toolchain paths were rechecked per DL-045:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both resolved under `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`.
+
+No raw hex colors, `Color(hex:)`, WebView/WKWebView, Tailwind, Iconify, Phosphor runtime, `font-family`, `Font.custom`, or production Swap All / AI alternative labels were found in the touched D5 app surfaces.
+
+`git diff --check` passed.
+
+Required workspace build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed after the corrective patches:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 467
+- Failed: 0
+- Skipped: 4
+- Total: 471
+
+The final test result bundle was `/tmp/VirtualTrainerDerivedData/Logs/Test/Test-VirtualTrainer-2026.05.20_12-25-36-+0530.xcresult`. An earlier audit rerun failed before execution because a removed production test sentinel was still referenced from `WorkoutPreviewTests`; that test-only compile failure was patched and the final full suite passed.
+
+**Prevention Rule:**
+For remaining V2 phases, each screen audit must include both directions: design-to-code for requested visual/product surfaces, and V1-to-V2 for code-only surfaces that the HTML omits. Product decisions like "coming soon", "deferred", or "target-only" should be documented in the PR/debug log, not rendered as implementation guidance inside the app. Snapshot smoke coverage should include every new phase surface, at least one code-only variant, and explicit small/large device coverage before signoff.
+
+**Pattern Tags:** #design-system-v2 #d5 #workout-flow #audit-rca #code-only-surface-parity #accessibility #visual-qa #feature-flag
+
+---
+
+### [DL-090] D5 V2 Workout Flow Second-Pass Audit
+**Date:** 2026-05-20
+**Severity:** RCA / corrective patch
+**Category:** design-system, v2, d5, workout-flow, live-hud, accessibility, reduce-motion, code-only-surface-parity
+**File(s):** `DEBUG_LOG.md`, `VirtualTrainer/UI/TrainerSessionView.swift`, `VirtualTrainer/UI/V2/Workout/V2LiveWorkoutShell.swift`, `VirtualTrainer/UI/V2/Workout/V2RestScreenView.swift`, `VirtualTrainerTests/DesignSystemV2Tests.swift`
+
+**Trigger:**
+A second audit was requested after the D5 corrective patch itself added another focused set of changes. This pass re-read the D5 prompt, the D5 rows in `Documentation/DesignSystemV2Inventory.md`, the named HTML references, the current Swift diff, and the V1/V2 live workout surfaces side-by-side.
+
+**Misses Found:**
+- The V2 live HUD did not carry forward the V1 active side-view cue. V1 shows `Side view` while a side-camera exercise is active; V2 kept the pre-active side-view positioning guide but dropped the active HUD cue.
+- The V2 live HUD and rest timer numeric transitions were not explicitly Reduce Motion-aware. V2 buttons and status pills already respected Reduce Motion, but the D5-specific numeric transitions and V2 glow opacity animation still needed the same treatment.
+- The pre-active ready-check overlay is a code-only live-workout state. It was still using V1 accent/rounded-type treatment while the V2 HUD was enabled, even though the underlying ready coordinator behavior was correctly preserved.
+
+**Root Cause:**
+The first RCA pass focused on the largest user-visible omissions: preview camera setup, target-sheet copy, summary streak truth, and snapshot breadth. That caught the code-only preview surface, but it did not perform the same V1-to-V2 surface parity check inside the active live HUD. The side-view cue was easy to miss because the side-positioning guide still appeared before the exercise starts, making the broader camera-position behavior look preserved at a glance. The Reduce Motion miss happened because shared V2 components already handled press/pulse animation, so the audit did not separately enumerate D5-specific numeric transitions and live glow opacity.
+
+**Fix Applied:**
+- Added optional `cameraViewText` to `V2LiveWorkoutShell`.
+- Passed `Side view` from `TrainerSessionView` only when the active exercise definition requires side camera positioning.
+- Included the side-view pill in the D5 live-HUD snapshot fixture.
+- Disabled V2 HUD numeric content transitions, V2 rest timer numeric transitions, V2 live HUD smooth animations, and live glow opacity animation when Reduce Motion is enabled.
+- Routed the ready-check overlay's accent color, foreground color, muted copy, side-view guide, visibility progress, and countdown typography through V2 tokens/system typography when V2 is enabled. Calibration still keeps the existing V1/calibration treatment.
+
+**Safety Notes:**
+The fixes are UI shell-only. No MediaPipe, `CameraManager`, `PoseEstimator`, `UniversalRepCounter`, `FormFeedbackEngine`, `HandGestureDetector`, `ExertionAnalyzer`, `WorkoutReadyCoordinator`, `FaceLandmarkerService`, `FramePositionAnalyzer`, backend repository behavior, Firestore sync behavior, privacy rules, onboarding, calibration, profile, history, trophy, or insight store behavior was changed.
+
+**Verification:**
+Toolchain paths were rechecked per DL-045:
+
+`xcrun --find clang`
+
+`xcrun --find swiftc`
+
+Both resolved under `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`.
+
+No raw hex colors, `Color(hex:)`, WebView/WKWebView, Tailwind, Iconify, Phosphor runtime, `font-family`, `Font.custom`, or production Swap All / AI alternative labels were found in the touched D5 app surfaces.
+
+`git diff --check` passed.
+
+Required workspace build passed:
+
+`xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+Required full test suite passed:
+
+`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/VirtualTrainerDerivedData`
+
+- Passed: 467
+- Failed: 0
+- Skipped: 4
+- Total: 471
+
+The final test result bundle was `/tmp/VirtualTrainerDerivedData/Logs/Test/Test-VirtualTrainer-2026.05.20_12-35-31-+0530.xcresult`.
+
+**Prevention Rule:**
+For live workout phases, code-only parity must include transient states as well as static screens: pre-active positioning, active HUD cues, visibility warnings, rest transitions, and completed summary states. Accessibility audits should enumerate animations introduced in the phase itself, not just animations in shared V2 components.
+
+**Pattern Tags:** #design-system-v2 #d5 #live-hud #side-view #reduce-motion #accessibility #audit-rca

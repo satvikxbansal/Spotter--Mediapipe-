@@ -5,6 +5,9 @@ struct RestScreenView: View {
     let restContext: PlannedWorkoutRestContext
     let onStartNext: (PlannedWorkoutRestResult) -> Void
 
+    @EnvironmentObject private var themeStore: ThemeStore
+    @EnvironmentObject private var designSystemV2Toggle: DesignSystemV2ToggleStore
+
     @State private var secondsRemaining: Int
     @State private var totalRestSeconds: Int
     @State private var didSignalRestComplete: Bool = false
@@ -23,18 +26,21 @@ struct RestScreenView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-                skipRestHeader
-                countdownSection
-                lastSetCard
-                upNextSection
+        Group {
+            if designSystemV2Toggle.isEffectivelyEnabled {
+                V2RestScreenView(
+                    theme: themeStore.selectedTheme,
+                    restContext: restContext,
+                    secondsRemaining: secondsRemaining,
+                    totalRestSeconds: totalRestSeconds,
+                    onSkipRest: startNextSet,
+                    onAddRest: addRest,
+                    onStartSet: startNextSet
+                )
+            } else {
+                v1Body
             }
-            .padding(Theme.Spacing.lg)
-            .padding(.top, Theme.Spacing.lg)
-            .padding(.bottom, Theme.Spacing.xxxl)
         }
-        .background(Theme.Colors.background.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .onAppear {
             signalRestCompleteIfNeeded()
@@ -47,6 +53,21 @@ struct RestScreenView: View {
             secondsRemaining -= 1
             signalRestCompleteIfNeeded()
         }
+    }
+
+    private var v1Body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+                skipRestHeader
+                countdownSection
+                lastSetCard
+                upNextSection
+            }
+            .padding(Theme.Spacing.lg)
+            .padding(.top, Theme.Spacing.lg)
+            .padding(.bottom, Theme.Spacing.xxxl)
+        }
+        .background(Theme.Colors.background.ignoresSafeArea())
     }
 
     private var skipRestHeader: some View {
@@ -405,4 +426,6 @@ private struct RestReviewRow: View {
         ),
         onStartNext: { _ in }
     )
+    .environmentObject(ThemeStore())
+    .environmentObject(DesignSystemV2ToggleStore(remoteFlagSnapshotProvider: { false }))
 }

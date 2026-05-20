@@ -4,6 +4,8 @@ struct WorkoutSummaryView: View {
     @EnvironmentObject private var appDependencies: AppDependencies
     @EnvironmentObject private var insightStore: InsightStore
     @EnvironmentObject private var historyStore: WorkoutHistoryStore
+    @EnvironmentObject private var themeStore: ThemeStore
+    @EnvironmentObject private var designSystemV2Toggle: DesignSystemV2ToggleStore
 
     let summary: WorkoutSummary
     let historySummary: WorkoutSessionSummary?
@@ -35,6 +37,71 @@ struct WorkoutSummaryView: View {
     }
 
     var body: some View {
+        Group {
+            if designSystemV2Toggle.isEffectivelyEnabled {
+                v2Body
+            } else {
+                v1Body
+            }
+        }
+        .sheet(isPresented: $isShowingDetail) {
+            if let visibleHistorySummary {
+                WorkoutDetailSheetView(summary: visibleHistorySummary)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
+        .sheet(item: $selectedInsightEvidence) { insight in
+            InsightEvidenceSheetView(
+                insight: insight,
+                summaries: evidenceSummaries
+            ) { kind in
+                Task {
+                    await recordInsightEngagement(insight, kind: kind)
+                }
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private var v2Body: some View {
+        V2WorkoutSummaryView(
+            theme: themeStore.selectedTheme,
+            summary: summary,
+            historySummary: visibleHistorySummary,
+            recap: recap,
+            trophyEvents: trophyEvents,
+            nearestTrophyProgress: nearestTrophyProgress,
+            coachInsight: coachInsight,
+            isFreeAnalysis: false,
+            currentStreakDayCount: historyStore.aggregateStats().currentStreak,
+            detailActionTitle: visibleHistorySummary == nil ? nil : "View Detail",
+            onDetailAction: visibleHistorySummary == nil ? nil : {
+                HapticsEngine.shared.buttonTap()
+                isShowingDetail = true
+            },
+            onCoachInsightAppeared: recordCoachInsightImpression,
+            onOpenInsightEvidence: { insight in
+                Task {
+                    await recordInsightEngagement(insight, kind: .opened)
+                }
+                selectedInsightEvidence = insight
+            },
+            onInsightEngagement: { insight, kind in
+                Task {
+                    await recordInsightEngagement(insight, kind: kind)
+                }
+            },
+            onDone: {
+                HapticsEngine.shared.buttonTap()
+                onDone()
+            }
+        )
+    }
+
+    private var v1Body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                 header
@@ -73,26 +140,6 @@ struct WorkoutSummaryView: View {
             .padding(.bottom, Theme.Spacing.sm)
             .background(Theme.Colors.background)
         }
-        .sheet(isPresented: $isShowingDetail) {
-            if let visibleHistorySummary {
-                WorkoutDetailSheetView(summary: visibleHistorySummary)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-            }
-        }
-        .sheet(item: $selectedInsightEvidence) { insight in
-            InsightEvidenceSheetView(
-                insight: insight,
-                summaries: evidenceSummaries
-            ) { kind in
-                Task {
-                    await recordInsightEngagement(insight, kind: kind)
-                }
-            }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-        }
-        .preferredColorScheme(.dark)
     }
 
     private var visibleHistorySummary: WorkoutSessionSummary? {
@@ -317,6 +364,16 @@ struct WorkoutSummaryView: View {
             break
         }
     }
+
+    private func recordCoachInsightImpression(_ insight: AIInsight) {
+        Task {
+            await insightStore.recordImpression(insight, on: .workoutSummary)
+            appDependencies.analytics.trackInsightImpression(
+                type: insight.type,
+                surface: .workoutSummary
+            )
+        }
+    }
 }
 
 private struct RecapEvidenceRow: View {
@@ -534,4 +591,6 @@ private struct WorkoutSummaryExerciseRow: View {
     .environmentObject(CalibrationStore())
     .environmentObject(TrophyStore())
     .environmentObject(AppDependencies.local())
+    .environmentObject(ThemeStore())
+    .environmentObject(DesignSystemV2ToggleStore(remoteFlagSnapshotProvider: { false }))
 }

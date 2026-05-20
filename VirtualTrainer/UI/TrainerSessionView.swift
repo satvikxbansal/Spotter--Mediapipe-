@@ -17,6 +17,9 @@ import simd
 struct TrainerSessionView: View {
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @EnvironmentObject private var themeStore: ThemeStore
+    @EnvironmentObject private var designSystemV2Toggle: DesignSystemV2ToggleStore
 
     private let context: LiveSessionContext
     private let workoutSessionContext: WorkoutSessionContext?
@@ -147,7 +150,7 @@ struct TrainerSessionView: View {
             cameraLayer
             skeletonLayer
             glowBorder
-            hudOverlay
+            workoutHudOverlay
             readyCheckOverlay
             motivationOverlay
             VStack {
@@ -200,10 +203,14 @@ struct TrainerSessionView: View {
                 faceLandmarker?.processFrame(sampleBuffer)
             }
             cameraManager.start()
-            withAnimation(
-                .easeInOut(duration: 1.6).repeatForever(autoreverses: true)
-            ) {
+            if reduceMotion {
                 glowPulse = true
+            } else {
+                withAnimation(
+                    .easeInOut(duration: 1.6).repeatForever(autoreverses: true)
+                ) {
+                    glowPulse = true
+                }
             }
 
             voiceCoach.prefetchRepCounts(
@@ -392,14 +399,39 @@ struct TrainerSessionView: View {
     private var glowBorder: some View {
         RoundedRectangle(cornerRadius: 0)
             .stroke(
-                Theme.Colors.accent,
+                activeGlowColor,
                 lineWidth: borderWidth
             )
-            .shadow(color: Theme.Colors.accent.opacity(0.6), radius: glowPulse ? 18 : 8)
+            .shadow(color: activeGlowColor.opacity(0.6), radius: glowPulse ? 18 : 8)
             .opacity(cameraManager.isRunning ? 1 : 0)
-            .animation(Theme.Motion.smooth, value: cameraManager.isRunning)
+            .animation(reduceMotion ? nil : Theme.Motion.smooth, value: cameraManager.isRunning)
             .ignoresSafeArea()
             .allowsHitTesting(false)
+    }
+
+    private var activeGlowColor: Color {
+        if usesV2WorkoutShell {
+            return SpotterV2.Tokens.primary(themeStore.selectedTheme)
+        }
+        return Theme.Colors.accent
+    }
+
+    private var usesV2WorkoutShell: Bool {
+        designSystemV2Toggle.isEffectivelyEnabled && !context.isCalibration
+    }
+
+    private var activeTrainerForeground: Color {
+        usesV2WorkoutShell ? SpotterV2.Tokens.foreground : Theme.Colors.textPrimary
+    }
+
+    private var activeTrainerMutedForeground: Color {
+        usesV2WorkoutShell ? SpotterV2.Tokens.mutedForeground : Theme.Colors.textSecondary
+    }
+
+    private var readyMessageFont: Font {
+        usesV2WorkoutShell
+            ? SpotterV2Typography.display(size: readyCoordinator.state.isCountdown ? 72 : 28)
+            : .system(size: readyCoordinator.state.isCountdown ? 72 : 28, weight: .heavy, design: .rounded)
     }
 
     // MARK: - Ready-Check Overlay
@@ -420,8 +452,8 @@ struct TrainerSessionView: View {
 
                         if readyCoordinator.state == .positioning {
                             Text(exerciseDefinition.setupInstruction)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Theme.Colors.accent)
+                                .font(usesV2WorkoutShell ? SpotterV2Typography.body(size: 14, weight: .bold) : .system(size: 14, weight: .semibold))
+                                .foregroundStyle(activeGlowColor)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, Theme.Spacing.xl)
                                 .padding(.vertical, Theme.Spacing.sm)
@@ -437,17 +469,18 @@ struct TrainerSessionView: View {
                         }
 
                         Text(readyCoordinator.state.displayMessage)
-                            .font(.system(size: readyCoordinator.state.isCountdown ? 72 : 28, weight: .heavy, design: .rounded))
-                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .font(readyMessageFont)
+                            .fontWidth(usesV2WorkoutShell ? .compressed : .standard)
+                            .foregroundStyle(activeTrainerForeground)
                             .shadow(color: .black.opacity(0.5), radius: 8)
-                            .contentTransition(.numericText())
-                            .animation(.snappy(duration: 0.3), value: readyCoordinator.state)
+                            .contentTransition(reduceMotion ? .identity : .numericText())
+                            .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: readyCoordinator.state)
 
                         // Subtitle
                         if let subtitle = readyCoordinator.state.subtitle {
                             Text(subtitle)
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .font(usesV2WorkoutShell ? SpotterV2Typography.body(size: 15) : .system(size: 15, weight: .medium))
+                                .foregroundStyle(activeTrainerMutedForeground)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, Theme.Spacing.xl)
                         }
@@ -477,7 +510,7 @@ struct TrainerSessionView: View {
                 .transition(.opacity)
             }
         }
-        .animation(Theme.Motion.smooth, value: readyCoordinator.state)
+        .animation(reduceMotion ? nil : Theme.Motion.smooth, value: readyCoordinator.state)
     }
 
     private var gestureIndicator: some View {
@@ -506,13 +539,13 @@ struct TrainerSessionView: View {
         VStack(spacing: Theme.Spacing.xs) {
             ProgressView(value: visibilityResult.visibility)
                 .progressViewStyle(.linear)
-                .tint(Theme.Colors.accent)
+                .tint(activeGlowColor)
                 .frame(width: 200)
 
             if let message = visibilityResult.message {
                 Text(message)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .font(usesV2WorkoutShell ? SpotterV2Typography.body(size: 13) : .system(size: 13, weight: .medium))
+                    .foregroundStyle(activeTrainerMutedForeground)
                     .multilineTextAlignment(.center)
             }
         }
@@ -524,27 +557,27 @@ struct TrainerSessionView: View {
         HStack(spacing: Theme.Spacing.sm) {
             Image(systemName: "rotate.3d.fill")
                 .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(Theme.Colors.accent)
+                .foregroundStyle(activeGlowColor)
 
             VStack(alignment: .leading, spacing: Theme.Spacing.xxxs) {
                 Text("SIDE VIEW REQUIRED")
-                    .font(.system(size: 11, weight: .heavy))
+                    .font(usesV2WorkoutShell ? SpotterV2Typography.caption() : .system(size: 11, weight: .heavy))
                     .tracking(1.2)
-                    .foregroundStyle(Theme.Colors.accent)
+                    .foregroundStyle(activeGlowColor)
 
                 Text("Turn sideways to the camera")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .font(usesV2WorkoutShell ? SpotterV2Typography.body(size: 14) : .system(size: 14, weight: .medium))
+                    .foregroundStyle(activeTrainerMutedForeground)
             }
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .fill(Theme.Colors.accent.opacity(0.12))
+                .fill(activeGlowColor.opacity(0.12))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .stroke(Theme.Colors.accent.opacity(0.3), lineWidth: 1)
+                        .stroke(activeGlowColor.opacity(0.3), lineWidth: 1)
                 )
         )
     }
@@ -567,6 +600,45 @@ struct TrainerSessionView: View {
     }
 
     // MARK: - HUD Overlay
+
+    @ViewBuilder
+    private var workoutHudOverlay: some View {
+        if designSystemV2Toggle.isEffectivelyEnabled, !context.isCalibration {
+            v2HudOverlay
+        } else {
+            hudOverlay
+        }
+    }
+
+    private var v2HudOverlay: some View {
+        V2LiveWorkoutShell(
+            theme: themeStore.selectedTheme,
+            eyebrow: v2HudEyebrow,
+            exerciseName: exerciseType.displayName,
+            setText: v2SetText,
+            heroValue: v2HeroValue,
+            heroCaption: v2HeroCaption,
+            targetText: targetText,
+            cameraViewText: v2CameraViewText,
+            formScoreText: v2FormScoreText,
+            cueText: v2CueText,
+            effortTrend: V2WorkoutEffortTrend(score: currentEffortScore),
+            effortValueText: faceLandmarker.faceDetected ? "\(Int((currentEffortScore * 100).rounded()))%" : nil,
+            elapsedText: shouldShowElapsedTimeBadge ? elapsedTimeText : nil,
+            visibilityWarning: v2VisibilityWarning,
+            isLive: cameraManager.isRunning && readyCoordinator.state == .exerciseActive,
+            showsSkipButton: shouldShowCompleteSetButton,
+            showsFinishButton: context.isFreeAnalysis || onPlannedSessionCancelled != nil,
+            onSkip: {
+                if shouldShowCompleteSetButton {
+                    completePlannedSet(source: .manual)
+                }
+            },
+            onFinish: finishV2LiveSession
+        )
+        .animation(reduceMotion ? nil : Theme.Motion.smooth, value: visibilityResult.isReady)
+        .animation(reduceMotion ? nil : Theme.Motion.smooth, value: coachCues.first?.id)
+    }
 
     private var hudOverlay: some View {
         VStack {
@@ -635,6 +707,93 @@ struct TrainerSessionView: View {
         }
         .animation(Theme.Motion.smooth, value: visibilityResult.isReady)
         .animation(Theme.Motion.smooth, value: coachCues.first?.id)
+    }
+
+    private var v2HudEyebrow: String {
+        if context.isFreeAnalysis { return "Free analysis" }
+        return workoutSessionContext?.planTitle ?? context.title
+    }
+
+    private var v2SetText: String? {
+        if let workoutSessionContext {
+            return "Set \(workoutSessionContext.setIndex + 1) of \(workoutSessionContext.totalSets)"
+        }
+        if let setIndex = context.setIndex,
+           let totalSets = context.totalSets {
+            return "Set \(setIndex + 1) of \(totalSets)"
+        }
+        return nil
+    }
+
+    private var v2HeroValue: String {
+        if isIsometric {
+            return holdTimerText
+        }
+        return String(format: "%02d", repCount)
+    }
+
+    private var v2HeroCaption: String {
+        if isIsometric {
+            return targetText.map { "Hold of \($0)" } ?? "Hold"
+        }
+        if let target = workoutSessionContext?.target {
+            switch target {
+            case .reps(let count):
+                return "Reps of \(count)"
+            case .hold(let seconds), .timed(let seconds):
+                return "Seconds of \(seconds)"
+            case .amrap(let seconds):
+                return seconds.map { "AMRAP \($0)s" } ?? "AMRAP"
+            case .open:
+                return "Open reps"
+            }
+        }
+        if case .some(.reps(let count)) = context.target {
+            return "Reps of \(count)"
+        }
+        return targetText ?? "Reps"
+    }
+
+    private var v2FormScoreText: String? {
+        guard let score = lastFormScore else { return nil }
+        return "\(score.score)%"
+    }
+
+    private var v2CameraViewText: String? {
+        exerciseDefinition.cameraPosition == .side ? "Side view" : nil
+    }
+
+    private var v2CueText: String {
+        if let cue = coachCues.first {
+            return cue.message
+        }
+        if readyCoordinator.state != .exerciseActive {
+            return readyCoordinator.state.displayMessage
+        }
+        if let message = visibilityResult.message, !visibilityResult.isReady {
+            return message
+        }
+        return "Move with control and finish the rep clean."
+    }
+
+    private var v2VisibilityWarning: String? {
+        guard readyCoordinator.state == .exerciseActive,
+              !visibilityResult.isReady
+        else { return nil }
+        return visibilityResult.message
+    }
+
+    private func finishV2LiveSession() {
+        if context.isFreeAnalysis {
+            endFreeAnalysis()
+            return
+        }
+
+        if onPlannedSessionCancelled != nil {
+            HapticsEngine.shared.warningPulse()
+            stopLivePipelines()
+            onPlannedSessionCancelled?()
+        }
     }
 
     // MARK: - Workout Title
@@ -1563,4 +1722,6 @@ extension WorkoutReadyState {
 
 #Preview {
     TrainerSessionView(workout: WorkoutPlan.MockData.legDay)
+        .environmentObject(ThemeStore())
+        .environmentObject(DesignSystemV2ToggleStore(remoteFlagSnapshotProvider: { false }))
 }

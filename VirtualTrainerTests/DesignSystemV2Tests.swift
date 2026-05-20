@@ -432,6 +432,165 @@ final class DesignSystemV2Tests: XCTestCase {
         }
     }
 
+    func testSnapshotSmokeForD5V2WorkoutFlowSurfacesAcrossThemes() throws {
+        let sizes: [(String, CGSize)] = [
+            ("SE", CGSize(width: 375, height: 667)),
+            ("ProMax", CGSize(width: 440, height: 956))
+        ]
+        let previewState = WorkoutPreviewState(plan: d5Plan)
+
+        for theme in [SpotterThemeOption.hyper, .hotGirl] {
+            for (sizeName, size) in sizes {
+                try renderScreenSnapshot(
+                    name: "D5WorkoutPreview-\(theme.rawValue)-\(sizeName)",
+                    size: size,
+                    view: V2WorkoutPreviewView(
+                        theme: theme,
+                        plan: d5Plan,
+                        selectedCoach: .good,
+                        hasUserEdits: true,
+                        exerciseCount: d5Plan.blocks.flatMap(\.exercises).count,
+                        cameraSequenceText: previewState.cameraSequenceText,
+                        cameraSwitchCount: previewState.cameraSwitchCount,
+                        cameraSwitchLimit: previewState.cameraSwitchLimit,
+                        statusMessage: "Target volume updated.",
+                        planInsight: nil,
+                        canSaveDefaultCoach: false,
+                        canAdjust: { _ in true },
+                        onAdjust: { _ in },
+                        onSelectCoach: { _ in },
+                        onSaveDefaultCoach: {},
+                        onPlanInsightAppeared: { _ in },
+                        onOpenInsightEvidence: { _ in },
+                        onInsightEngagement: { _, _ in },
+                        onStart: {}
+                    ),
+                    minimumVisiblePixelRatio: 0.08
+                )
+
+                try renderScreenSnapshot(
+                    name: "D5TargetVolumeSheet-\(theme.rawValue)-\(sizeName)",
+                    size: size,
+                    view: ZStack(alignment: .bottom) {
+                        SpotterV2.Tokens.background.ignoresSafeArea()
+                        V2TargetVolumeEditSheet(
+                            theme: theme,
+                            draft: d5TargetDraft,
+                            onSave: { .accepted($0, didClamp: false, message: nil) },
+                            onReset: { _ in }
+                        )
+                    },
+                    minimumVisiblePixelRatio: 0.08
+                )
+
+                try renderScreenSnapshot(
+                    name: "D5LiveHUD-\(theme.rawValue)-\(sizeName)",
+                    size: size,
+                    view: ZStack {
+                        LinearGradient(
+                            colors: [SpotterV2.Tokens.secondary, SpotterV2.Tokens.background],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .ignoresSafeArea()
+
+                        V2LiveWorkoutShell(
+                            theme: theme,
+                            eyebrow: "Lower Body Engine",
+                            exerciseName: "Air Squats",
+                            setText: "Set 2 of 3",
+                            heroValue: "07",
+                            heroCaption: "Reps of 12",
+                            targetText: "12 reps",
+                            cameraViewText: "Side view",
+                            formScoreText: "92%",
+                            cueText: "Go deeper and keep your chest tall.",
+                            effortTrend: .rising,
+                            effortValueText: "74%",
+                            elapsedText: "1:22",
+                            visibilityWarning: nil,
+                            isLive: true,
+                            showsSkipButton: true,
+                            showsFinishButton: true,
+                            onSkip: {},
+                            onFinish: {}
+                        )
+                    },
+                    minimumVisiblePixelRatio: 0.08
+                )
+
+                try renderScreenSnapshot(
+                    name: "D5RestScreen-\(theme.rawValue)-\(sizeName)",
+                    size: size,
+                    view: V2RestScreenView(
+                        theme: theme,
+                        restContext: d5RestContext,
+                        secondsRemaining: 44,
+                        totalRestSeconds: 60,
+                        onSkipRest: {},
+                        onAddRest: {},
+                        onStartSet: {}
+                    ),
+                    minimumVisiblePixelRatio: 0.08
+                )
+
+                try renderScreenSnapshot(
+                    name: "D5WorkoutSummary-\(theme.rawValue)-\(sizeName)",
+                    size: size,
+                    view: V2WorkoutSummaryView(
+                        theme: theme,
+                        summary: d5WorkoutSummary,
+                        historySummary: d5HistorySummary,
+                        recap: WorkoutRecap(
+                            headline: "Depth improved late.",
+                            bodyMessage: "You finished stronger once the coaching cue landed.",
+                            highlightStat: "Average form: 89%.",
+                            nextStep: "Keep the first two reps controlled."
+                        ),
+                        trophyEvents: [],
+                        nearestTrophyProgress: nil,
+                        coachInsight: nil,
+                        isFreeAnalysis: false,
+                        currentStreakDayCount: 5,
+                        detailActionTitle: "View Detail",
+                        onDetailAction: {},
+                        onDone: {}
+                    ),
+                    minimumVisiblePixelRatio: 0.08
+                )
+
+                try renderScreenSnapshot(
+                    name: "D5FreeAnalysisSummary-\(theme.rawValue)-\(sizeName)",
+                    size: size,
+                    view: V2WorkoutSummaryView(
+                        theme: theme,
+                        summary: d5FreeAnalysisWorkoutSummary,
+                        historySummary: d5FreeAnalysisHistorySummary,
+                        recap: WorkoutRecap(
+                            headline: "Strong open analysis.",
+                            bodyMessage: "Your free-analysis set captured clean reps and useful cue evidence.",
+                            highlightStat: "Average form: 91%.",
+                            nextStep: "Repeat this movement in a planned session."
+                        ),
+                        trophyEvents: [],
+                        nearestTrophyProgress: nil,
+                        coachInsight: nil,
+                        isFreeAnalysis: true,
+                        currentStreakDayCount: 2,
+                        auxiliaryActionTitle: "Saved to History",
+                        auxiliarySystemImage: "checkmark",
+                        isAuxiliaryActionDisabled: true,
+                        onAuxiliaryAction: {},
+                        detailActionTitle: "View Detail",
+                        onDetailAction: {},
+                        onDone: {}
+                    ),
+                    minimumVisiblePixelRatio: 0.08
+                )
+            }
+        }
+    }
+
     func testV2OnboardingDraftCompletesAndWritesUserProfile() async {
         let store = OnboardingStore(fileURL: temporaryDirectory().appendingPathComponent("V2UserProfile.json"))
         store.draft = validV2Draft()
@@ -755,6 +914,197 @@ private extension DesignSystemV2Tests {
                 )
             },
             newlyEarnedEvents: []
+        )
+    }
+
+    var d5Plan: WorkoutPlanV2 {
+        WorkoutPlanV2(
+            title: "Lower Body Engine",
+            subtitle: "Depth, tempo, and clean reps",
+            goal: "Build squat control without changing the camera flow.",
+            estimatedMinutes: 24,
+            difficulty: .intermediate,
+            coach: .good,
+            blocks: [
+                WorkoutBlock(
+                    title: "Main Work",
+                    type: .main,
+                    exercises: [
+                        PlannedExercise(
+                            exerciseType: .squat,
+                            sets: [
+                                PlannedSet(setIndex: 1, target: .reps(12)),
+                                PlannedSet(setIndex: 2, target: .reps(12)),
+                                PlannedSet(setIndex: 3, target: .reps(12))
+                            ],
+                            restSeconds: 60,
+                            coachingFocus: "Depth and knee tracking.",
+                            cameraPosition: .front,
+                            allowSwap: true
+                        ),
+                        PlannedExercise(
+                            exerciseType: .plank,
+                            sets: [
+                                PlannedSet(setIndex: 1, target: .hold(seconds: 30)),
+                                PlannedSet(setIndex: 2, target: .hold(seconds: 30))
+                            ],
+                            restSeconds: 45,
+                            coachingFocus: "Stable hips and long spine.",
+                            cameraPosition: .side,
+                            allowSwap: true
+                        )
+                    ]
+                )
+            ],
+            generatedAt: date(year: 2026, month: 5, day: 7),
+            planReason: "Recent free-analysis evidence supports a controlled lower-body session.",
+            source: .generatedLocal
+        )
+    }
+
+    var d5WorkoutSummary: WorkoutSummary {
+        WorkoutSummary(
+            planId: d5Plan.id,
+            planTitle: d5Plan.title,
+            duration: 1_420,
+            exercisesCompleted: 2,
+            totalExercises: 2,
+            completedSets: 5,
+            totalSets: 5,
+            totalReps: 36,
+            totalHoldSeconds: 60,
+            averageFormScore: 89,
+            completionPercentage: 1,
+            exerciseSummaries: [
+                WorkoutExerciseSummary(exerciseIndex: 0, exerciseType: .squat, setsCompleted: 3, totalReps: 36, totalHoldSeconds: 0),
+                WorkoutExerciseSummary(exerciseIndex: 1, exerciseType: .plank, setsCompleted: 2, totalReps: 0, totalHoldSeconds: 60)
+            ]
+        )
+    }
+
+    var d5FreeAnalysisWorkoutSummary: WorkoutSummary {
+        WorkoutSummary(
+            planId: UUID(uuidString: "00000000-0000-0000-0000-000000005105") ?? UUID(),
+            planTitle: "Air Squats",
+            duration: 330,
+            exercisesCompleted: 1,
+            totalExercises: 1,
+            completedSets: 1,
+            totalSets: 1,
+            totalReps: 18,
+            totalHoldSeconds: 0,
+            averageFormScore: 91,
+            completionPercentage: 1,
+            exerciseSummaries: [
+                WorkoutExerciseSummary(exerciseIndex: 0, exerciseType: .squat, setsCompleted: 1, totalReps: 18, totalHoldSeconds: 0)
+            ]
+        )
+    }
+
+    var d5HistorySummary: WorkoutSessionSummary {
+        WorkoutSessionSummary(
+            mode: .plannedWorkout,
+            planId: d5Plan.id,
+            planTitle: d5Plan.title,
+            title: d5Plan.title,
+            goal: d5Plan.goal,
+            coach: .good,
+            startedAt: date(year: 2026, month: 5, day: 7, hour: 12).addingTimeInterval(-1_420),
+            endedAt: date(year: 2026, month: 5, day: 7, hour: 12),
+            durationSeconds: 1_420,
+            totalReps: 36,
+            totalHoldSeconds: 60,
+            averageFormScore: 89,
+            completionPercent: 1,
+            exerciseSummaries: [
+                ExerciseSetSummary(exerciseType: .squat, target: .reps(12), achievedReps: 36, achievedHoldSeconds: 0, averageFormScore: 90),
+                ExerciseSetSummary(exerciseType: .plank, target: .hold(seconds: 30), achievedReps: 0, achievedHoldSeconds: 60, averageFormScore: 88)
+            ],
+            topCue: nil,
+            effortSummary: "Steady working effort."
+        )
+    }
+
+    var d5FreeAnalysisHistorySummary: WorkoutSessionSummary {
+        WorkoutSessionSummary(
+            mode: .freeAnalysis,
+            title: "Air Squats",
+            coach: .good,
+            startedAt: date(year: 2026, month: 5, day: 7, hour: 11).addingTimeInterval(-330),
+            endedAt: date(year: 2026, month: 5, day: 7, hour: 11),
+            durationSeconds: 330,
+            totalReps: 18,
+            totalHoldSeconds: 0,
+            averageFormScore: 91,
+            exerciseSummaries: [
+                ExerciseSetSummary(exerciseType: .squat, achievedReps: 18, achievedHoldSeconds: 0, averageFormScore: 91)
+            ],
+            topCue: nil,
+            effortSummary: "Peak effort reached 62%."
+        )
+    }
+
+    var d5TargetDraft: TargetVolumeDraft {
+        TargetVolumeDraft(
+            exerciseId: PlanExerciseIdentifier(blockIndex: 0, exerciseIndex: 0),
+            originalExerciseType: .squat,
+            draftSetCount: 3,
+            draftTarget: .reps(12),
+            minSetCount: 1,
+            maxSetCount: 5,
+            minTargetValue: 4,
+            maxTargetValue: 30,
+            validationMessage: nil
+        )
+    }
+
+    var d5RestContext: PlannedWorkoutRestContext {
+        let quality = SetQualitySummary.build(
+            repQualityEvents: (1...12).map { index in
+                RepQualityEvent(
+                    exerciseType: .squat,
+                    setIndex: 0,
+                    repIndex: index,
+                    secondsIntoSet: TimeInterval(index * 4),
+                    formScore: 82 + min(index, 10),
+                    formGrade: "A"
+                )
+            }
+        )
+        let lastSummary = PlannedWorkoutSetSummary(
+            planId: d5Plan.id,
+            exerciseType: .squat,
+            target: .reps(12),
+            setIndex: 0,
+            totalSets: 3,
+            exerciseIndex: 0,
+            totalExercises: 2,
+            duration: 48,
+            reps: 12,
+            holdDuration: 0,
+            latestFormScore: FormScore(score: 91, grade: .A, romPenalty: 0, tempoPenalty: 0, feedbackPenalty: 0),
+            peakEffort: 0.62,
+            lastCue: CoachCue(message: "Keep your chest tall.", severity: .info),
+            bestCue: CoachCue(message: "Depth looked strong.", severity: .info),
+            completionSource: .targetMet,
+            qualitySummary: quality
+        )
+        let upNext = WorkoutSessionContext(
+            planId: d5Plan.id,
+            planTitle: d5Plan.title,
+            exerciseType: .plank,
+            target: .hold(seconds: 30),
+            setIndex: 1,
+            totalSets: 2,
+            exerciseIndex: 1,
+            totalExercises: 2,
+            coach: .good,
+            startsActive: false
+        )
+        return PlannedWorkoutRestContext(
+            lastSummary: lastSummary,
+            upNextContext: upNext,
+            restSeconds: 60
         )
     }
 

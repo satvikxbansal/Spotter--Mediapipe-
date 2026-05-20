@@ -8,6 +8,8 @@ struct WorkoutPreviewView: View {
     @EnvironmentObject private var trophyStore: TrophyStore
     @EnvironmentObject private var insightStore: InsightStore
     @EnvironmentObject private var featureFlagService: RemoteFeatureFlagService
+    @EnvironmentObject private var themeStore: ThemeStore
+    @EnvironmentObject private var designSystemV2Toggle: DesignSystemV2ToggleStore
 
     @State private var previewState: WorkoutPreviewState
     @State private var activePlan: WorkoutPlanV2?
@@ -30,33 +32,32 @@ struct WorkoutPreviewView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                header
-                coachSelector
-                planInsightCard
-                cameraPlanCard
-                planBlocks
+        Group {
+            if designSystemV2Toggle.isEffectivelyEnabled {
+                v2Body
+            } else {
+                v1Body
             }
-            .padding(Theme.Spacing.lg)
-            .padding(.bottom, Theme.Spacing.xxxl)
-        }
-        .background(Theme.Colors.background)
-        .navigationTitle("Preview")
-        .navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom) {
-            startSessionBar
         }
         .fullScreenCover(item: $activePlan) { plan in
             PlannedWorkoutSessionView(plan: plan)
         }
         .sheet(item: $targetDraft) { draft in
-            TargetVolumeEditSheetView(
-                draft: draft,
-                onSave: saveTargetDraft,
-                onReset: resetTargetToOriginal
-            )
-            .presentationDetents([.medium, .large])
+            if designSystemV2Toggle.isEffectivelyEnabled {
+                V2TargetVolumeEditSheet(
+                    theme: themeStore.selectedTheme,
+                    draft: draft,
+                    onSave: saveTargetDraft,
+                    onReset: resetTargetToOriginal
+                )
+            } else {
+                TargetVolumeEditSheetView(
+                    draft: draft,
+                    onSave: saveTargetDraft,
+                    onReset: resetTargetToOriginal
+                )
+                .presentationDetents([.medium, .large])
+            }
         }
         .sheet(item: $selectedInsightEvidence) { insight in
             InsightEvidenceSheetView(
@@ -90,6 +91,59 @@ struct WorkoutPreviewView: View {
             Task {
                 await refreshPlanInsight()
             }
+        }
+    }
+
+    private var v2Body: some View {
+        V2WorkoutPreviewView(
+            theme: themeStore.selectedTheme,
+            plan: plan,
+            selectedCoach: previewState.selectedCoach,
+            hasUserEdits: previewState.hasUserEdits,
+            exerciseCount: previewState.exerciseCount,
+            cameraSequenceText: previewState.cameraSequenceText,
+            cameraSwitchCount: previewState.cameraSwitchCount,
+            cameraSwitchLimit: previewState.cameraSwitchLimit,
+            statusMessage: statusMessage,
+            planInsight: planInsight,
+            canSaveDefaultCoach: canSaveDefaultCoach,
+            canAdjust: canAdjustExercise,
+            onAdjust: openTargetEditor,
+            onSelectCoach: selectCoach,
+            onSaveDefaultCoach: saveCoachAsDefault,
+            onPlanInsightAppeared: recordPlanInsightImpression,
+            onOpenInsightEvidence: { insight in
+                Task {
+                    await recordInsightEngagement(insight, kind: .opened)
+                }
+                selectedInsightEvidence = insight
+            },
+            onInsightEngagement: { insight, kind in
+                Task {
+                    await recordInsightEngagement(insight, kind: kind)
+                }
+            },
+            onStart: startSession
+        )
+    }
+
+    private var v1Body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                header
+                coachSelector
+                planInsightCard
+                cameraPlanCard
+                planBlocks
+            }
+            .padding(Theme.Spacing.lg)
+            .padding(.bottom, Theme.Spacing.xxxl)
+        }
+        .background(Theme.Colors.background)
+        .navigationTitle("Preview")
+        .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+            startSessionBar
         }
     }
 
@@ -157,8 +211,7 @@ struct WorkoutPreviewView: View {
 
     @ViewBuilder
     private var saveDefaultButton: some View {
-        if let profile = onboardingStore.profile,
-           profile.preferredCoach.coachPersonality != previewState.selectedCoach {
+        if canSaveDefaultCoach {
             Button("Save default") {
                 saveCoachAsDefault()
             }
@@ -167,6 +220,11 @@ struct WorkoutPreviewView: View {
             .textCase(.uppercase)
             .foregroundStyle(Theme.Colors.accent)
         }
+    }
+
+    private var canSaveDefaultCoach: Bool {
+        guard let profile = onboardingStore.profile else { return false }
+        return profile.preferredCoach.coachPersonality != previewState.selectedCoach
     }
 
     private var planInsightCard: some View {
@@ -411,6 +469,16 @@ struct WorkoutPreviewView: View {
             appDependencies.analytics.trackInsightNotHelpful(type: insight.type)
         case .opened, .dismissed:
             break
+        }
+    }
+
+    private func recordPlanInsightImpression(_ insight: AIInsight) {
+        Task {
+            await insightStore.recordImpression(insight, on: .workoutPreview)
+            appDependencies.analytics.trackInsightImpression(
+                type: insight.type,
+                surface: .workoutPreview
+            )
         }
     }
 }
@@ -716,4 +784,6 @@ private extension View {
     .environmentObject(TrophyStore())
     .environmentObject(InsightStore())
     .environmentObject(RemoteFeatureFlagService.local())
+    .environmentObject(ThemeStore())
+    .environmentObject(DesignSystemV2ToggleStore(remoteFlagSnapshotProvider: { false }))
 }
