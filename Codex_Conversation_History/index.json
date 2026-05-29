@@ -1,15 +1,40 @@
 {
-  "generatedAt": "2026-05-25T07:38:00.388Z",
-  "generatedAtLocal": "2026-05-25 13:08:00",
+  "generatedAt": "2026-05-29T08:24:38.205Z",
+  "generatedAtLocal": "2026-05-29 13:54:38",
   "timeZone": "Asia/Kolkata",
   "workspace": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "projectName": "Spotter",
   "codexHome": "/Users/satvik.bansal/.codex",
   "sourceDatabase": "/Users/satvik.bansal/.codex/state_5.sqlite",
-  "includedThreadCount": 89,
+  "sourceTranscriptGlobs": [
+    "~/.codex/sessions/YYYY/MM/DD/*.jsonl",
+    "~/.codex/archived_sessions/*.jsonl"
+  ],
+  "includedThreadCount": 90,
+  "previousIncludedThreadCount": 89,
+  "newlyAddedThreadCount": 1,
+  "refreshedExistingThreadCount": 1,
   "missingFiles": 0,
-  "totalVisibleMessages": 2308,
+  "totalVisibleMessages": 2335,
   "totalExtractedImages": 25,
   "totalParseErrors": 0,
+  "addedThreads": [
+    {
+      "id": "019e72b9-faf4-7ad3-a338-ba74f3d00353",
+      "title": "Hey, so I am basically moving my computer and this repo is completely on GitHub, but if I were to pick up the project from where we have left off on this system in the new MacBook, how will it work? Can I just do a zip the entire project folder and upload it to my drive, which I think is difficult because it's more than a GB? GitHub should be one way to go about, but this is your experience and intelligence. What is the best way to ensure a seamless transfer so that in the new system, in the new laptop, I do not have to redo a lot of stuff that we have already done, just do some basic setup and get started and pick up where we left off.",
+      "createdAtLocal": "2026-05-29 13:24:11",
+      "fileBase": "2026-05-29_13-24_Hey-so-I-am-basically-moving-my-computer-and-this-repo-is-completely-on-__019e72b9"
+    }
+  ],
+  "refreshedThreads": [
+    {
+      "id": "019e5e09-a38f-7810-8727-c60dbda471fc",
+      "title": "hey i want to see all the chat conversations i have had abut the curent project with codex. currently i think only a fixed number of historical conversatins show in the chat panel on the left. is there a way i can view all of my past chats ? does codex store them somewhere? can you deeply research understand and help me with this please? there is a critical requriement to find an older chat \n\ncan you create a folder in the current repo with md or pdf or json files each of the historical threads' conversations? one master folder that contains all of our conversation history - dated and with the chat title with contents containing our history. dont make this a hidden folder. i want it visible.",
+      "previousUpdated": "2026-05-25 13:07:58",
+      "currentUpdated": "2026-05-29 13:54:36",
+      "fileBase": "2026-05-25_12-59_Export-chat-history-archive__019e5e09"
+    }
+  ],
   "threads": [
     {
       "id": "019df375-98ec-7d81-8de1-9c8f8b4461ca",
@@ -1333,17 +1358,32 @@
     },
     {
       "id": "019e5e09-a38f-7810-8727-c60dbda471fc",
-      "title": "Export chat history archive",
+      "title": "hey i want to see all the chat conversations i have had abut the curent project with codex. currently i think only a fixed number of historical conversatins show in the chat panel on the left. is there a way i can view all of my past chats ? does codex store them somewhere? can you deeply research understand and help me with this please? there is a critical requriement to find an older chat \n\ncan you create a folder in the current repo with md or pdf or json files each of the historical threads' conversations? one master folder that contains all of our conversation history - dated and with the chat title with contents containing our history. dont make this a hidden folder. i want it visible.",
       "createdAtLocal": "2026-05-25 12:59:10",
-      "updatedAtLocal": "2026-05-25 13:07:58",
+      "updatedAtLocal": "2026-05-29 13:54:36",
       "archived": false,
       "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
       "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/25/rollout-2026-05-25T12-59-10-019e5e09-a38f-7810-8727-c60dbda471fc.jsonl",
       "markdownFile": "threads/2026-05-25_12-59_Export-chat-history-archive__019e5e09.md",
       "jsonFile": "json/2026-05-25_12-59_Export-chat-history-archive__019e5e09.json",
-      "visibleMessageCount": 5,
+      "visibleMessageCount": 14,
       "extractedImageCount": 0,
-      "rawLineCount": 115,
+      "rawLineCount": 207,
+      "parseErrors": 0
+    },
+    {
+      "id": "019e72b9-faf4-7ad3-a338-ba74f3d00353",
+      "title": "Hey, so I am basically moving my computer and this repo is completely on GitHub, but if I were to pick up the project from where we have left off on this system in the new MacBook, how will it work? Can I just do a zip the entire project folder and upload it to my drive, which I think is difficult because it's more than a GB? GitHub should be one way to go about, but this is your experience and intelligence. What is the best way to ensure a seamless transfer so that in the new system, in the new laptop, I do not have to redo a lot of stuff that we have already done, just do some basic setup and get started and pick up where we left off.",
+      "createdAtLocal": "2026-05-29 13:24:11",
+      "updatedAtLocal": "2026-05-29 13:50:02",
+      "archived": false,
+      "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+      "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/29/rollout-2026-05-29T13-24-11-019e72b9-faf4-7ad3-a338-ba74f3d00353.jsonl",
+      "markdownFile": "threads/2026-05-29_13-24_Hey-so-I-am-basically-moving-my-computer-and-this-repo-is-completely-on-__019e72b9.md",
+      "jsonFile": "json/2026-05-29_13-24_Hey-so-I-am-basically-moving-my-computer-and-this-repo-is-completely-on-__019e72b9.json",
+      "visibleMessageCount": 18,
+      "extractedImageCount": 0,
+      "rawLineCount": 320,
       "parseErrors": 0
     }
   ]
