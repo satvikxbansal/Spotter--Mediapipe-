@@ -1,6 +1,7 @@
 .vercel
 tmp/
 firestore-debug.log
+Spotter_New_Mac_Handoff/
 
 # CocoaPods
 Pods/
