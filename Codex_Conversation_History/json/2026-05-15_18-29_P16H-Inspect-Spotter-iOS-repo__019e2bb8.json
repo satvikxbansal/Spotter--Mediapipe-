@@ -1,0 +1,427 @@
+{
+  "id": "019e2bb8-c263-7021-8b5c-8fe744ff50f4",
+  "title": "P16H: Inspect Spotter iOS repo",
+  "createdAtLocal": "2026-05-15 18:29:49",
+  "updatedAtLocal": "2026-05-15 19:05:18",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/15/rollout-2026-05-15T18-29-49-019e2bb8-c263-7021-8b5c-8fe744ff50f4.jsonl",
+  "gitBranch": "main",
+  "gitSha": "a4b84b8978c515b7aff1b4485695dab06cd676fd",
+  "firstUserMessage": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Inspect the current tree end-to-end. Read README.md, DEBUG_LOG.md, every file in\n   Documentation/, the relevant Swift files in VirtualTrainer/, and the most recent\n   git history (git log --oneline -20).\n2. Treat this prompt as guidance, not a blind spec. If the current code reveals a\n   safer approach, take it and explain why in the summary.\n3. Do NOT rewrite the live camera pipeline:\n   - CameraManager\n   - PoseEstimator\n   - UniversalRepCounter\n   - FormFeedbackEngine\n   - HandGestureDetector\n   - ExertionAnalyzer\n   - WorkoutReadyCoordinator\n   - FaceLandmarkerService\n   - FramePositionAnalyzer\n4. Preserve both training flows: Free Analysis from the Camera tab AND Planned\n   Workouts from the Dashboard. They share the live analysis stack.\n5. Preserve deterministic local planning, trophies, stats, trends, recaps, weekly\n   recaps, heatmaps, and AI insights. The local pipeline must keep working with\n   no Firebase config.\n6. Keep BackendMode.local fully functional. The app MUST build and run with\n   GoogleService-Info.plist absent.\n7. Privacy: do NOT store or upload raw video, camera frames, face images, raw\n   pose streams, raw pose timelines, raw biometric face data, raw face blendshape\n   streams, or any third-party secret.\n8. Do NOT print plist contents, Firebase API keys, App Check debug tokens, or\n   any secret-like value to stdout, logs, or test fixtures.\n9. Maintain backwards-compatible Codable decoding for existing local JSON files.\n10. Toolchain: use the bundled Xcode toolchain (XcodeDefault.xctoolchain). Verify\n    with:\n        xcrun --find clang\n        xcrun --find swiftc\n    Both must resolve under\n    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain.\n    See DEBUG_LOG.md entry DL-045 for why this matters.\n11. Builds: always use VirtualTrainer.xcworkspace, never the bare xcodeproj.\n12. Do NOT run multiple xcodebuild test commands against the same DerivedData\n    path in parallel.\n13. Keep the app compiling after every phase.\n14. After the phase, run:\n        xcodebuild build  -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n        xcodebuild test   -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n    and summarize PASS/FAIL counts.\n15. If the phase changed behavior, append a DEBUG_LOG.md entry following the\n    existing format (use the next DL-### number, real ISO date, error,\n    root cause, fix applied, verification, prevention rule, pattern tags).\n16. Summarize in the PR description: changed files, key decisions, Firebase\n    console/manual steps required of the developer, migration behavior, and\n    known follow-ups.\n17. Git pre-flight: confirm git status is clean before starting. Confirm the\n    branch you intend to target. After commits, run git diff --check to catch\n    whitespace errors.\n18. Secret pre-flight: run any available secret scan (the repo ships\n    .gitleaks.toml). Fail the phase if real secrets would be committed. \n19. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n20. Share an indepth end to end manual testing plan of the changes done - be practical and ensure all aspects are tested well before we proceed.\n\nPhase 16H goal: lock down server-side access and prepare for App Check without\nenforcing yet.\n\nTasks:\n\n1. Documentation/firestore.rules\n   Use this content as the v1 (owner-only) version, then publish via\n   Firebase Console:\n\n   rules_version = '2';\n\n   service cloud.firestore {\n     match /databases/{database}/documents {\n\n       function signedIn() {\n         return request.auth != null;\n       }\n       function owns(uid) {\n         return signedIn() && request.auth.uid == uid;\n       }\n       function isString(v) { return v is string; }\n       function nonEmpty(v) { return isString(v) && v.size() > 0; }\n       function hasAccountId(uid) {\n         return request.resource.data.accountId == uid;\n       }\n\n       // Forbid raw-sensor field names anywhere in the user tree.\n       function noRawData() {\n         return !(\n           \"rawVideo\" in request.resource.data ||\n           \"videoFrame\" in request.resource.data ||\n           \"cameraFrame\" in request.resource.data ||\n           \"faceImage\" in request.resource.data ||\n           \"rawPoseStream\" in request.resource.data ||\n           \"rawPoseTimeline\" in request.resource.data ||\n           \"rawLandmarks\" in request.resource.data ||\n           \"rawFaceBlendshapeStream\" in request.resource.data ||\n           \"biometricFaceData\" in request.resource.data ||\n           \"imageData\" in request.resource.data ||\n           \"pixelBuffer\" in request.resource.data ||\n           \"apiKey\" in request.resource.data ||\n           \"privateKey\" in request.resource.data ||\n           \"serviceAccount\" in request.resource.data\n         );\n       }\n\n       match /users/{uid} {\n         allow read, write: if owns(uid);\n\n         match /profile/{doc} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;  // delete-by-tombstone only\n         }\n\n         match /workouts/{workoutId} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n\n           match /sets/{setId} {\n             allow read: if owns(uid);\n             allow create, update: if owns(uid) && noRawData();\n             allow delete: if false;\n           }\n         }\n\n         match /trophyEvents/{eventId} {\n           allow read: if owns(uid);\n           allow create: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow update: if false;  // append-only\n           allow delete: if false;\n         }\n         match /trophyProgress/{doc} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n\n         match /insights/{dedupeKey} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n         match /insightDelivery/{dedupeKey} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n         match /insightEngagement/{dedupeKey} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n\n         match /calibration/{doc} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n\n         match /plans/{planId} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if owns(uid);  // plans may be cleared by user\n         }\n       }\n\n       // Default deny\n       match /{document=**} {\n         allow read, write: if false;\n       }\n     }\n   }\n\n   Add a TODO comment in the file noting that Phase 16J will introduce\n   schema-level field validation (required fields, types).\n\n2. Documentation/FirebaseConsoleChecklist.md\n   Bullet checklist of console steps including:\n   - Auth: anonymous on, all others off until 19\n   - Firestore Rules: paste from firestore.rules\n   - Firestore Indexes: none initially; let Firebase auto-suggest at runtime\n     and document the resulting indexes here as they appear\n   - App Check: register iOS app for debug; do NOT enable enforcement\n   - Storage / RTDB: disabled\n   - Functions: not deployed yet\n\n3. App Check debug provider.\n   - Add FirebaseAppCheck SPM dependency.\n   - In #if DEBUG before FirebaseApp.configure(), install\n     AppCheckDebugProviderFactory.\n   - Add Documentation/AppCheckRollout.md describing:\n       - How to obtain a debug token in Console\n       - Why we do not enforce yet\n       - Production path: switch to AppAttestProvider on iOS 14.5+\n\n4. Privacy assertion tests.\n   Add tests that introspect every Firestore write payload produced by every\n   repository under realistic call patterns; the assertion is the payload's\n   key set is a subset of the DTO's published keys (no surprise fields), and\n   contains none of the forbidden keys.\n\n5. Cross-uid denial smoke.\n   Add a manual checklist item: use Firebase Emulator Suite (or the live dev\n   project) to attempt a write at users/SOME_OTHER_UID/profile/current with\n   a different uid's auth token. Confirm denial. (This becomes automated in\n   Phase 17 with the emulator.)\n\nAcceptance:\n- firestore.rules file exists and matches the published rules.\n- Console checklist exists.\n- App Check debug provider installed in DEBUG only.\n- Privacy assertion tests cover every repository write path.\n- BackendMode.local and BackendMode.firebase both build.",
+  "preview": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Inspect the current tree end-to-end. Read README.md, DEBUG_LOG.md, every file in\n   Documentation/, the relevant Swift files in VirtualTrainer/, and the most recent\n   git history (git log --oneline -20).\n2. Treat this prompt as guidance, not a blind spec. If the current code reveals a\n   safer approach, take it and explain why in the summary.\n3. Do NOT rewrite the live camera pipeline:\n   - CameraManager\n   - PoseEstimator\n   - UniversalRepCounter\n   - FormFeedbackEngine\n   - HandGestureDetector\n   - ExertionAnalyzer\n   - WorkoutReadyCoordinator\n   - FaceLandmarkerService\n   - FramePositionAnalyzer\n4. Preserve both training flows: Free Analysis from the Camera tab AND Planned\n   Workouts from the Dashboard. They share the live analysis stack.\n5. Preserve deterministic local planning, trophies, stats, trends, recaps, weekly\n   recaps, heatmaps, and AI insights. The local pipeline must keep working with\n   no Firebase config.\n6. Keep BackendMode.local fully functional. The app MUST build and run with\n   GoogleService-Info.plist absent.\n7. Privacy: do NOT store or upload raw video, camera frames, face images, raw\n   pose streams, raw pose timelines, raw biometric face data, raw face blendshape\n   streams, or any third-party secret.\n8. Do NOT print plist contents, Firebase API keys, App Check debug tokens, or\n   any secret-like value to stdout, logs, or test fixtures.\n9. Maintain backwards-compatible Codable decoding for existing local JSON files.\n10. Toolchain: use the bundled Xcode toolchain (XcodeDefault.xctoolchain). Verify\n    with:\n        xcrun --find clang\n        xcrun --find swiftc\n    Both must resolve under\n    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain.\n    See DEBUG_LOG.md entry DL-045 for why this matters.\n11. Builds: always use VirtualTrainer.xcworkspace, never the bare xcodeproj.\n12. Do NOT run multiple xcodebuild test commands against the same DerivedData\n    path in parallel.\n13. Keep the app compiling after every phase.\n14. After the phase, run:\n        xcodebuild build  -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n        xcodebuild test   -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n    and summarize PASS/FAIL counts.\n15. If the phase changed behavior, append a DEBUG_LOG.md entry following the\n    existing format (use the next DL-### number, real ISO date, error,\n    root cause, fix applied, verification, prevention rule, pattern tags).\n16. Summarize in the PR description: changed files, key decisions, Firebase\n    console/manual steps required of the developer, migration behavior, and\n    known follow-ups.\n17. Git pre-flight: confirm git status is clean before starting. Confirm the\n    branch you intend to target. After commits, run git diff --check to catch\n    whitespace errors.\n18. Secret pre-flight: run any available secret scan (the repo ships\n    .gitleaks.toml). Fail the phase if real secrets would be committed. \n19. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n20. Share an indepth end to end manual testing plan of the changes done - be practical and ensure all aspects are tested well before we proceed.\n\nPhase 16H goal: lock down server-side access and prepare for App Check without\nenforcing yet.\n\nTasks:\n\n1. Documentation/firestore.rules\n   Use this content as the v1 (owner-only) version, then publish via\n   Firebase Console:\n\n   rules_version = '2';\n\n   service cloud.firestore {\n     match /databases/{database}/documents {\n\n       function signedIn() {\n         return request.auth != null;\n       }\n       function owns(uid) {\n         return signedIn() && request.auth.uid == uid;\n       }\n       function isString(v) { return v is string; }\n       function nonEmpty(v) { return isString(v) && v.size() > 0; }\n       function hasAccountId(uid) {\n         return request.resource.data.accountId == uid;\n       }\n\n       // Forbid raw-sensor field names anywhere in the user tree.\n       function noRawData() {\n         return !(\n           \"rawVideo\" in request.resource.data ||\n           \"videoFrame\" in request.resource.data ||\n           \"cameraFrame\" in request.resource.data ||\n           \"faceImage\" in request.resource.data ||\n           \"rawPoseStream\" in request.resource.data ||\n           \"rawPoseTimeline\" in request.resource.data ||\n           \"rawLandmarks\" in request.resource.data ||\n           \"rawFaceBlendshapeStream\" in request.resource.data ||\n           \"biometricFaceData\" in request.resource.data ||\n           \"imageData\" in request.resource.data ||\n           \"pixelBuffer\" in request.resource.data ||\n           \"apiKey\" in request.resource.data ||\n           \"privateKey\" in request.resource.data ||\n           \"serviceAccount\" in request.resource.data\n         );\n       }\n\n       match /users/{uid} {\n         allow read, write: if owns(uid);\n\n         match /profile/{doc} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;  // delete-by-tombstone only\n         }\n\n         match /workouts/{workoutId} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n\n           match /sets/{setId} {\n             allow read: if owns(uid);\n             allow create, update: if owns(uid) && noRawData();\n             allow delete: if false;\n           }\n         }\n\n         match /trophyEvents/{eventId} {\n           allow read: if owns(uid);\n           allow create: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow update: if false;  // append-only\n           allow delete: if false;\n         }\n         match /trophyProgress/{doc} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n\n         match /insights/{dedupeKey} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n         match /insightDelivery/{dedupeKey} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n         match /insightEngagement/{dedupeKey} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n\n         match /calibration/{doc} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n\n         match /plans/{planId} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if owns(uid);  // plans may be cleared by user\n         }\n       }\n\n       // Default deny\n       match /{document=**} {\n         allow read, write: if false;\n       }\n     }\n   }\n\n   Add a TODO comment in the file noting that Phase 16J will introduce\n   schema-level field validation (required fields, types).\n\n2. Documentation/FirebaseConsoleChecklist.md\n   Bullet checklist of console steps including:\n   - Auth: anonymous on, all others off until 19\n   - Firestore Rules: paste from firestore.rules\n   - Firestore Indexes: none initially; let Firebase auto-suggest at runtime\n     and document the resulting indexes here as they appear\n   - App Check: register iOS app for debug; do NOT enable enforcement\n   - Storage / RTDB: disabled\n   - Functions: not deployed yet\n\n3. App Check debug provider.\n   - Add FirebaseAppCheck SPM dependency.\n   - In #if DEBUG before FirebaseApp.configure(), install\n     AppCheckDebugProviderFactory.\n   - Add Documentation/AppCheckRollout.md describing:\n       - How to obtain a debug token in Console\n       - Why we do not enforce yet\n       - Production path: switch to AppAttestProvider on iOS 14.5+\n\n4. Privacy assertion tests.\n   Add tests that introspect every Firestore write payload produced by every\n   repository under realistic call patterns; the assertion is the payload's\n   key set is a subset of the DTO's published keys (no surprise fields), and\n   contains none of the forbidden keys.\n\n5. Cross-uid denial smoke.\n   Add a manual checklist item: use Firebase Emulator Suite (or the live dev\n   project) to attempt a write at users/SOME_OTHER_UID/profile/current with\n   a different uid's auth token. Confirm denial. (This becomes automated in\n   Phase 17 with the emulator.)\n\nAcceptance:\n- firestore.rules file exists and matches the published rules.\n- Console checklist exists.\n- App Check debug provider installed in DEBUG only.\n- Privacy assertion tests cover every repository write path.\n- BackendMode.local and BackendMode.firebase both build.",
+  "rawLineCount": 757,
+  "parseErrors": 0,
+  "visibleMessageCount": 37,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-15T13:00:27.876Z",
+      "role": "user",
+      "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Inspect the current tree end-to-end. Read README.md, DEBUG_LOG.md, every file in\n   Documentation/, the relevant Swift files in VirtualTrainer/, and the most recent\n   git history (git log --oneline -20).\n2. Treat this prompt as guidance, not a blind spec. If the current code reveals a\n   safer approach, take it and explain why in the summary.\n3. Do NOT rewrite the live camera pipeline:\n   - CameraManager\n   - PoseEstimator\n   - UniversalRepCounter\n   - FormFeedbackEngine\n   - HandGestureDetector\n   - ExertionAnalyzer\n   - WorkoutReadyCoordinator\n   - FaceLandmarkerService\n   - FramePositionAnalyzer\n4. Preserve both training flows: Free Analysis from the Camera tab AND Planned\n   Workouts from the Dashboard. They share the live analysis stack.\n5. Preserve deterministic local planning, trophies, stats, trends, recaps, weekly\n   recaps, heatmaps, and AI insights. The local pipeline must keep working with\n   no Firebase config.\n6. Keep BackendMode.local fully functional. The app MUST build and run with\n   GoogleService-Info.plist absent.\n7. Privacy: do NOT store or upload raw video, camera frames, face images, raw\n   pose streams, raw pose timelines, raw biometric face data, raw face blendshape\n   streams, or any third-party secret.\n8. Do NOT print plist contents, Firebase API keys, App Check debug tokens, or\n   any secret-like value to stdout, logs, or test fixtures.\n9. Maintain backwards-compatible Codable decoding for existing local JSON files.\n10. Toolchain: use the bundled Xcode toolchain (XcodeDefault.xctoolchain). Verify\n    with:\n        xcrun --find clang\n        xcrun --find swiftc\n    Both must resolve under\n    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain.\n    See DEBUG_LOG.md entry DL-045 for why this matters.\n11. Builds: always use VirtualTrainer.xcworkspace, never the bare xcodeproj.\n12. Do NOT run multiple xcodebuild test commands against the same DerivedData\n    path in parallel.\n13. Keep the app compiling after every phase.\n14. After the phase, run:\n        xcodebuild build  -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n        xcodebuild test   -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n    and summarize PASS/FAIL counts.\n15. If the phase changed behavior, append a DEBUG_LOG.md entry following the\n    existing format (use the next DL-### number, real ISO date, error,\n    root cause, fix applied, verification, prevention rule, pattern tags).\n16. Summarize in the PR description: changed files, key decisions, Firebase\n    console/manual steps required of the developer, migration behavior, and\n    known follow-ups.\n17. Git pre-flight: confirm git status is clean before starting. Confirm the\n    branch you intend to target. After commits, run git diff --check to catch\n    whitespace errors.\n18. Secret pre-flight: run any available secret scan (the repo ships\n    .gitleaks.toml). Fail the phase if real secrets would be committed. \n19. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n20. Share an indepth end to end manual testing plan of the changes done - be practical and ensure all aspects are tested well before we proceed.\n\nPhase 16H goal: lock down server-side access and prepare for App Check without\nenforcing yet.\n\nTasks:\n\n1. Documentation/firestore.rules\n   Use this content as the v1 (owner-only) version, then publish via\n   Firebase Console:\n\n   rules_version = '2';\n\n   service cloud.firestore {\n     match /databases/{database}/documents {\n\n       function signedIn() {\n         return request.auth != null;\n       }\n       function owns(uid) {\n         return signedIn() && request.auth.uid == uid;\n       }\n       function isString(v) { return v is string; }\n       function nonEmpty(v) { return isString(v) && v.size() > 0; }\n       function hasAccountId(uid) {\n         return request.resource.data.accountId == uid;\n       }\n\n       // Forbid raw-sensor field names anywhere in the user tree.\n       function noRawData() {\n         return !(\n           \"rawVideo\" in request.resource.data ||\n           \"videoFrame\" in request.resource.data ||\n           \"cameraFrame\" in request.resource.data ||\n           \"faceImage\" in request.resource.data ||\n           \"rawPoseStream\" in request.resource.data ||\n           \"rawPoseTimeline\" in request.resource.data ||\n           \"rawLandmarks\" in request.resource.data ||\n           \"rawFaceBlendshapeStream\" in request.resource.data ||\n           \"biometricFaceData\" in request.resource.data ||\n           \"imageData\" in request.resource.data ||\n           \"pixelBuffer\" in request.resource.data ||\n           \"apiKey\" in request.resource.data ||\n           \"privateKey\" in request.resource.data ||\n           \"serviceAccount\" in request.resource.data\n         );\n       }\n\n       match /users/{uid} {\n         allow read, write: if owns(uid);\n\n         match /profile/{doc} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;  // delete-by-tombstone only\n         }\n\n         match /workouts/{workoutId} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n\n           match /sets/{setId} {\n             allow read: if owns(uid);\n             allow create, update: if owns(uid) && noRawData();\n             allow delete: if false;\n           }\n         }\n\n         match /trophyEvents/{eventId} {\n           allow read: if owns(uid);\n           allow create: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow update: if false;  // append-only\n           allow delete: if false;\n         }\n         match /trophyProgress/{doc} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n\n         match /insights/{dedupeKey} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n         match /insightDelivery/{dedupeKey} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n         match /insightEngagement/{dedupeKey} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n\n         match /calibration/{doc} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n\n         match /plans/{planId} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if owns(uid);  // plans may be cleared by user\n         }\n       }\n\n       // Default deny\n       match /{document=**} {\n         allow read, write: if false;\n       }\n     }\n   }\n\n   Add a TODO comment in the file noting that Phase 16J will introduce\n   schema-level field validation (required fields, types).\n\n2. Documentation/FirebaseConsoleChecklist.md\n   Bullet checklist of console steps including:\n   - Auth: anonymous on, all others off until 19\n   - Firestore Rules: paste from firestore.rules\n   - Firestore Indexes: none initially; let Firebase auto-suggest at runtime\n     and document the resulting indexes here as they appear\n   - App Check: register iOS app for debug; do NOT enable enforcement\n   - Storage / RTDB: disabled\n   - Functions: not deployed yet\n\n3. App Check debug provider.\n   - Add FirebaseAppCheck SPM dependency.\n   - In #if DEBUG before FirebaseApp.configure(), install\n     AppCheckDebugProviderFactory.\n   - Add Documentation/AppCheckRollout.md describing:\n       - How to obtain a debug token in Console\n       - Why we do not enforce yet\n       - Production path: switch to AppAttestProvider on iOS 14.5+\n\n4. Privacy assertion tests.\n   Add tests that introspect every Firestore write payload produced by every\n   repository under realistic call patterns; the assertion is the payload's\n   key set is a subset of the DTO's published keys (no surprise fields), and\n   contains none of the forbidden keys.\n\n5. Cross-uid denial smoke.\n   Add a manual checklist item: use Firebase Emulator Suite (or the live dev\n   project) to attempt a write at users/SOME_OTHER_UID/profile/current with\n   a different uid's auth token. Confirm denial. (This becomes automated in\n   Phase 17 with the emulator.)\n\nAcceptance:\n- firestore.rules file exists and matches the published rules.\n- Console checklist exists.\n- App Check debug provider installed in DEBUG only.\n- Privacy assertion tests cover every repository write path.\n- BackendMode.local and BackendMode.firebase both build.\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Inspect the current tree end-to-end. Read README.md, DEBUG_LOG.md, every file in\n   Documentation/, the relevant Swift files in VirtualTrainer/, and the most recent\n   git history (git log --oneline -20).\n2. Treat this prompt as guidance, not a blind spec. If the current code reveals a\n   safer approach, take it and explain why in the summary.\n3. Do NOT rewrite the live camera pipeline:\n   - CameraManager\n   - PoseEstimator\n   - UniversalRepCounter\n   - FormFeedbackEngine\n   - HandGestureDetector\n   - ExertionAnalyzer\n   - WorkoutReadyCoordinator\n   - FaceLandmarkerService\n   - FramePositionAnalyzer\n4. Preserve both training flows: Free Analysis from the Camera tab AND Planned\n   Workouts from the Dashboard. They share the live analysis stack.\n5. Preserve deterministic local planning, trophies, stats, trends, recaps, weekly\n   recaps, heatmaps, and AI insights. The local pipeline must keep working with\n   no Firebase config.\n6. Keep BackendMode.local fully functional. The app MUST build and run with\n   GoogleService-Info.plist absent.\n7. Privacy: do NOT store or upload raw video, camera frames, face images, raw\n   pose streams, raw pose timelines, raw biometric face data, raw face blendshape\n   streams, or any third-party secret.\n8. Do NOT print plist contents, Firebase API keys, App Check debug tokens, or\n   any secret-like value to stdout, logs, or test fixtures.\n9. Maintain backwards-compatible Codable decoding for existing local JSON files.\n10. Toolchain: use the bundled Xcode toolchain (XcodeDefault.xctoolchain). Verify\n    with:\n        xcrun --find clang\n        xcrun --find swiftc\n    Both must resolve under\n    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain.\n    See DEBUG_LOG.md entry DL-045 for why this matters.\n11. Builds: always use VirtualTrainer.xcworkspace, never the bare xcodeproj.\n12. Do NOT run multiple xcodebuild test commands against the same DerivedData\n    path in parallel.\n13. Keep the app compiling after every phase.\n14. After the phase, run:\n        xcodebuild build  -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n        xcodebuild test   -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n    and summarize PASS/FAIL counts.\n15. If the phase changed behavior, append a DEBUG_LOG.md entry following the\n    existing format (use the next DL-### number, real ISO date, error,\n    root cause, fix applied, verification, prevention rule, pattern tags).\n16. Summarize in the PR description: changed files, key decisions, Firebase\n    console/manual steps required of the developer, migration behavior, and\n    known follow-ups.\n17. Git pre-flight: confirm git status is clean before starting. Confirm the\n    branch you intend to target. After commits, run git diff --check to catch\n    whitespace errors.\n18. Secret pre-flight: run any available secret scan (the repo ships\n    .gitleaks.toml). Fail the phase if real secrets would be committed. \n19. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n20. Share an indepth end to end manual testing plan of the changes done - be practical and ensure all aspects are tested well before we proceed.\n\nPhase 16H goal: lock down server-side access and prepare for App Check without\nenforcing yet.\n\nTasks:\n\n1. Documentation/firestore.rules\n   Use this content as the v1 (owner-only) version, then publish via\n   Firebase Console:\n\n   rules_version = '2';\n\n   service cloud.firestore {\n     match /databases/{database}/documents {\n\n       function signedIn() {\n         return request.auth != null;\n       }\n       function owns(uid) {\n         return signedIn() && request.auth.uid == uid;\n       }\n       function isString(v) { return v is string; }\n       function nonEmpty(v) { return isString(v) && v.size() > 0; }\n       function hasAccountId(uid) {\n         return request.resource.data.accountId == uid;\n       }\n\n       // Forbid raw-sensor field names anywhere in the user tree.\n       function noRawData() {\n         return !(\n           \"rawVideo\" in request.resource.data ||\n           \"videoFrame\" in request.resource.data ||\n           \"cameraFrame\" in request.resource.data ||\n           \"faceImage\" in request.resource.data ||\n           \"rawPoseStream\" in request.resource.data ||\n           \"rawPoseTimeline\" in request.resource.data ||\n           \"rawLandmarks\" in request.resource.data ||\n           \"rawFaceBlendshapeStream\" in request.resource.data ||\n           \"biometricFaceData\" in request.resource.data ||\n           \"imageData\" in request.resource.data ||\n           \"pixelBuffer\" in request.resource.data ||\n           \"apiKey\" in request.resource.data ||\n           \"privateKey\" in request.resource.data ||\n           \"serviceAccount\" in request.resource.data\n         );\n       }\n\n       match /users/{uid} {\n         allow read, write: if owns(uid);\n\n         match /profile/{doc} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;  // delete-by-tombstone only\n         }\n\n         match /workouts/{workoutId} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n\n           match /sets/{setId} {\n             allow read: if owns(uid);\n             allow create, update: if owns(uid) && noRawData();\n             allow delete: if false;\n           }\n         }\n\n         match /trophyEvents/{eventId} {\n           allow read: if owns(uid);\n           allow create: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow update: if false;  // append-only\n           allow delete: if false;\n         }\n         match /trophyProgress/{doc} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n\n         match /insights/{dedupeKey} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n         match /insightDelivery/{dedupeKey} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n         match /insightEngagement/{dedupeKey} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n\n         match /calibration/{doc} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if false;\n         }\n\n         match /plans/{planId} {\n           allow read: if owns(uid);\n           allow create, update: if owns(uid) && hasAccountId(uid) && noRawData();\n           allow delete: if owns(uid);  // plans may be cleared by user\n         }\n       }\n\n       // Default deny\n       match /{document=**} {\n         allow read, write: if false;\n       }\n     }\n   }\n\n   Add a TODO comment in the file noting that Phase 16J will introduce\n   schema-level field validation (required fields, types).\n\n2. Documentation/FirebaseConsoleChecklist.md\n   Bullet checklist of console steps including:\n   - Auth: anonymous on, all others off until 19\n   - Firestore Rules: paste from firestore.rules\n   - Firestore Indexes: none initially; let Firebase auto-suggest at runtime\n     and document the resulting indexes here as they appear\n   - App Check: register iOS app for debug; do NOT enable enforcement\n   - Storage / RTDB: disabled\n   - Functions: not deployed yet\n\n3. App Check debug provider.\n   - Add FirebaseAppCheck SPM dependency.\n   - In #if DEBUG before FirebaseApp.configure(), install\n     AppCheckDebugProviderFactory.\n   - Add Documentation/AppCheckRollout.md describing:\n       - How to obtain a debug token in Console\n       - Why we do not enforce yet\n       - Production path: switch to AppAttestProvider on iOS 14.5+\n\n4. Privacy assertion tests.\n   Add tests that introspect every Firestore write payload produced by every\n   repository under realistic call patterns; the assertion is the payload's\n   key set is a subset of the DTO's published keys (no surprise fields), and\n   contains none of the forbidden keys.\n\n5. Cross-uid denial smoke.\n   Add a manual checklist item: use Firebase Emulator Suite (or the live dev\n   project) to attempt a write at users/SOME_OTHER_UID/profile/current with\n   a different uid's auth token. Confirm denial. (This becomes automated in\n   Phase 17 with the emulator.)\n\nAcceptance:\n- firestore.rules file exists and matches the published rules.\n- Console checklist exists.\n- App Check debug provider installed in DEBUG only.\n- Privacy assertion tests cover every repository write path.\n- BackendMode.local and BackendMode.firebase both build.\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:00:35.741Z",
+      "role": "assistant",
+      "text": "I’ll first do the required pre-flight and repo read-through before touching anything: tree, docs, relevant Swift, toolchain, git state/history, and available secret scanning config. Then I’ll make the smallest Phase 16H changes that fit the current architecture.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll first do the required pre-flight and repo read-through before touching anything: tree, docs, relevant Swift, toolchain, git state/history, and available secret scanning config. Then I’ll make the smallest Phase 16H changes that fit the current architecture."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:00:47.935Z",
+      "role": "assistant",
+      "text": "The pre-flight shows a clean `main` branch and the Xcode toolchain paths resolve exactly under `XcodeDefault.xctoolchain`, which matches the DL-045 constraint. I also see a real `GoogleService-Info.plist` present locally, so I’ll avoid printing or touching its contents and keep all checks secret-safe.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The pre-flight shows a clean `main` branch and the Xcode toolchain paths resolve exactly under `XcodeDefault.xctoolchain`, which matches the DL-045 constraint. I also see a real `GoogleService-Info.plist` present locally, so I’ll avoid printing or touching its contents and keep all checks secret-safe."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:01:20.192Z",
+      "role": "assistant",
+      "text": "I’ve finished the README and current `Documentation/` pass. The important constraint is consistent across them: Firebase mode is optional and partial, theme remains profile-backed remotely, workouts use compact parent docs plus set subdocs, and raw sensor payloads must stay out of every persistence path.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve finished the README and current `Documentation/` pass. The important constraint is consistent across them: Firebase mode is optional and partial, theme remains profile-backed remotely, workouts use compact parent docs plus set subdocs, and raw sensor payloads must stay out of every persistence path."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:01:32.125Z",
+      "role": "assistant",
+      "text": "The debug log confirms DL-045’s toolchain lesson and the current next incident number is effectively `DL-057` despite the stale header. I’m moving into the Swift/Firebase repository layer now, especially the payload boundary where the privacy tests need to hook in.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The debug log confirms DL-045’s toolchain lesson and the current next incident number is effectively `DL-057` despite the stale header. I’m moving into the Swift/Firebase repository layer now, especially the payload boundary where the privacy tests need to hook in."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:03:50.335Z",
+      "role": "assistant",
+      "text": "The current Firebase write boundary is cleanly isolated: every production write already flows through repository DTOs or patch helpers, then through `FirestorePrivacyValidator`. I’m going to keep that shape and add the App Check hook at bootstrap plus tests that exercise the repositories rather than touching the live camera/session stack.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The current Firebase write boundary is cleanly isolated: every production write already flows through repository DTOs or patch helpers, then through `FirestorePrivacyValidator`. I’m going to keep that shape and add the App Check hook at bootstrap plus tests that exercise the repositories rather than touching the live camera/session stack."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:04:41.269Z",
+      "role": "assistant",
+      "text": "I’ve got enough context to edit now. The implementation plan is intentionally narrow: add owner-only rules/docs, add `FirebaseAppCheck` as an explicit SPM product, install the debug provider inside `FirebaseBootstrap` before configuration, and extend the existing Firestore repository test harness so repository writes are checked by payload shape and privacy boundary.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve got enough context to edit now. The implementation plan is intentionally narrow: add owner-only rules/docs, add `FirebaseAppCheck` as an explicit SPM product, install the debug provider inside `FirebaseBootstrap` before configuration, and extend the existing Firestore repository test harness so repository writes are checked by payload shape and privacy boundary."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:08:56.300Z",
+      "role": "assistant",
+      "text": "The docs and App Check bootstrap patch are in. I also added the privacy test at the repository seam: it runs realistic writes for profile, theme, calibration, plans, workouts, trophies, insights, delivery, engagement, and tombstones, then checks the captured Firestore payload keys and forbidden raw-data fields.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The docs and App Check bootstrap patch are in. I also added the privacy test at the repository seam: it runs realistic writes for profile, theme, calibration, plans, workouts, trophies, insights, delivery, engagement, and tombstones, then checks the captured Firestore payload keys and forbidden raw-data fields."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:09:55.154Z",
+      "role": "assistant",
+      "text": "The first focused run compiled far enough to prove the App Check product is resolving and linking, but the new test used two enum case names that don’t exist in this codebase. I’m tightening that fixture code to the local enum names and rerunning the focused check.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The first focused run compiled far enough to prove the App Check product is resolving and linking, but the new test used two enum case names that don’t exist in this codebase. I’m tightening that fixture code to the local enum names and rerunning the focused check."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:13:33.652Z",
+      "role": "assistant",
+      "text": "The fallback secret scan over changed and new non-ignored files passed with no findings. I’m moving into the required sequential build and test commands now, using the shared `/tmp/VirtualTrainerDerivedData` path only one `xcodebuild` at a time.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The fallback secret scan over changed and new non-ignored files passed with no findings. I’m moving into the required sequential build and test commands now, using the shared `/tmp/VirtualTrainerDerivedData` path only one `xcodebuild` at a time."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:15:08.682Z",
+      "role": "assistant",
+      "text": "I’ve got the repo context and the Phase 16H changes in place. I’m picking up at verification now: full workspace build, full test pass, then I’ll add the DEBUG_LOG entry with the actual results and do the final scans.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve got the repo context and the Phase 16H changes in place. I’m picking up at verification now: full workspace build, full test pass, then I’ll add the DEBUG_LOG entry with the actual results and do the final scans."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:15:15.914Z",
+      "role": "assistant",
+      "text": "The working tree has only the expected Phase 16H edits and we’re still on `main`. I’m running the required workspace build now with the shared DerivedData path, and I’ll keep the test run sequential after it finishes.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The working tree has only the expected Phase 16H edits and we’re still on `main`. I’m running the required workspace build now with the shared DerivedData path, and I’ll keep the test run sequential after it finishes."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:15:36.090Z",
+      "role": "assistant",
+      "text": "Full build passed. Next I’m running the full test suite with the same workspace/scheme and DerivedData path, still sequentially so the simulator build state stays boring in the best possible way.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Full build passed. Next I’m running the full test suite with the same workspace/scheme and DerivedData path, still sequentially so the simulator build state stays boring in the best possible way."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:16:14.460Z",
+      "role": "assistant",
+      "text": "The full test run is still active. No failure output has appeared yet; I’m letting xcodebuild finish rather than interrupting the simulator run.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The full test run is still active. No failure output has appeared yet; I’m letting xcodebuild finish rather than interrupting the simulator run."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:17:01.144Z",
+      "role": "assistant",
+      "text": "The required full test run passed. I’m extracting the actual pass/fail counts from the test log now, then I’ll do the extra local/firebase build checks the acceptance text calls out.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The required full test run passed. I’m extracting the actual pass/fail counts from the test log now, then I’ll do the extra local/firebase build checks the acceptance text calls out."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:17:25.206Z",
+      "role": "assistant",
+      "text": "The required build/test are green. I’m doing two extra acceptance checks now: first a local-mode build with the ignored Firebase plist temporarily moved aside, then a Firebase-mode build-setting override to make sure both backend modes still compile.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The required build/test are green. I’m doing two extra acceptance checks now: first a local-mode build with the ignored Firebase plist temporarily moved aside, then a Firebase-mode build-setting override to make sure both backend modes still compile."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:18:39.891Z",
+      "role": "assistant",
+      "text": "The no-plist local build is still running, which is normal on a fresh DerivedData path because it recompiles the package graph. The command has a trap to restore the ignored plist when it exits.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The no-plist local build is still running, which is normal on a fresh DerivedData path because it recompiles the package graph. The command has a trap to restore the ignored plist when it exits."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:19:23.045Z",
+      "role": "assistant",
+      "text": "Local mode without a Firebase plist built successfully and the ignored plist was restored. The Firebase-mode build-setting override is now compiling on its own DerivedData path.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Local mode without a Firebase plist built successfully and the ignored plist was restored. The Firebase-mode build-setting override is now compiling on its own DerivedData path."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:19:56.476Z",
+      "role": "assistant",
+      "text": "Both backend compile checks are green: local no-plist and Firebase mode. I’m checking the current DEBUG_LOG format and then I’ll append the Phase 16H entry with the real verification results.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Both backend compile checks are green: local no-plist and Firebase mode. I’m checking the current DEBUG_LOG format and then I’ll append the Phase 16H entry with the real verification results."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:21:00.794Z",
+      "role": "assistant",
+      "text": "The DEBUG_LOG entry is appended as DL-057. I’m doing the final hygiene pass now: toolchain re-check, whitespace check, and a changed-file secret scan that reports only filenames/pattern labels if anything trips.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The DEBUG_LOG entry is appended as DL-057. I’m doing the final hygiene pass now: toolchain re-check, whitespace check, and a changed-file secret scan that reports only filenames/pattern labels if anything trips."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:21:32.344Z",
+      "role": "assistant",
+      "text": "Final hygiene is clean: XcodeDefault paths verified, `git diff --check` passed, and the fallback changed-file secret scan passed because `gitleaks` is not installed here. I’m doing one last review of the changed hunks so the summary can point to the exact places.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Final hygiene is clean: XcodeDefault paths verified, `git diff --check` passed, and the fallback changed-file secret scan passed because `gitleaks` is not installed here. I’m doing one last review of the changed hunks so the summary can point to the exact places."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:22:11.593Z",
+      "role": "assistant",
+      "text": "Implemented Phase 16H on `main`. Initial git status was clean; final tree has only the expected Phase 16H files changed.\n\n**Changed**\n- Added owner-only Firestore v1 rules with raw-data/secret-like field denial and Phase 16J schema-validation TODO: [Documentation/firestore.rules](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/firestore.rules:1)\n- Added console rollout checklist, including anonymous auth only, rules publishing, no initial indexes, App Check debug registration without enforcement, disabled Storage/RTDB, no Functions, and cross-uid denial smoke: [Documentation/FirebaseConsoleChecklist.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/FirebaseConsoleChecklist.md:1)\n- Added App Check rollout notes: [Documentation/AppCheckRollout.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/AppCheckRollout.md:1)\n- Linked `FirebaseAppCheck` and installed `AppCheckDebugProviderFactory` in `#if DEBUG` before `FirebaseApp.configure()`: [FirebaseBootstrap.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/FirebaseBootstrap.swift:1)\n- Added repository write payload privacy tests covering profile, theme, calibration, plans, workouts/sets/tombstones, trophies, insights, delivery, and engagement: [FirestoreRepositoryTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/FirestoreRepositoryTests.swift:274)\n- Appended DEBUG_LOG entry `DL-057`: [DEBUG_LOG.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/DEBUG_LOG.md:1)\n\n**App Behavior**\nBefore: Firebase mode could compile and write through repositories, but the server-side owner-only rule checklist, App Check debug setup, and every-write payload guardrail were not locked down together.\n\nAfter: a developer can run Firebase mode for internal testing with DEBUG App Check tokens, publish owner-only rules, and verify repository payloads stay DTO-shaped and free of raw camera/pose/face/secret fields. Example: saving a workout still syncs derived summaries and set quality evidence, but a surprise field like `cameraFrame`, `rawPoseTimeline`, or `apiKey` would now fail the repository privacy test and be denied by the documented Firestore rules.\n\n**Verification**\n- Toolchain:\n  - `clang` and `swiftc` both resolve under `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`\n- Required build: PASS\n- Required tests: PASS, `392` passed, `0` failed\n- `BackendMode.local` no-plist build: PASS\n- `BackendMode.firebase` build-setting override: PASS\n- `git diff --check`: PASS\n- `gitleaks` was not installed; fallback changed-file secret scan: PASS\n- Protected live camera pipeline files were not modified.\n\n**Firebase Manual Steps**\nPublish `Documentation/firestore.rules` in Firebase Console, enable only anonymous auth, register App Check debug tokens, keep enforcement off, keep Storage/RTDB disabled, deploy no Functions, and document any Firebase-suggested indexes only after runtime errors surface them.\n\n**Migration**\nNo local JSON schema changes and no Codable migrations required. `BackendMode.local` remains functional with `GoogleService-Info.plist` absent.\n\n**Manual Testing Plan**\n1. Local no-plist: remove real Firebase plists, launch local mode, complete onboarding, create a dashboard plan, run Free Analysis, run a Planned Workout, save history, verify trophies/stats/trends/recaps/weekly recaps/heatmaps/insights still update.\n2. Firebase dev: restore dev plist, set Firebase mode, launch DEBUG, register the App Check debug token in Console, sign in anonymously, run profile/theme/calibration/plan/workout/trophy/insight smoke actions.\n3. Rules smoke: authenticate as UID A, attempt write to `users/UID_B/profile/current`, confirm denied.\n4. Privacy smoke: inspect Firestore documents after saves; confirm only derived DTO fields exist, no raw frames/images/pose streams/face blendshapes/secrets.\n5. Regression pass: repeat Free Analysis and Planned Workout flows to confirm the shared live analysis stack is unchanged.\n\nKnown follow-ups: Phase 16J schema-level field validation, Phase 17 emulator automation for cross-uid denial/rules tests, production App Attest provider path before App Check enforcement.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Implemented Phase 16H on `main`. Initial git status was clean; final tree has only the expected Phase 16H files changed.\n\n**Changed**\n- Added owner-only Firestore v1 rules with raw-data/secret-like field denial and Phase 16J schema-validation TODO: [Documentation/firestore.rules](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/firestore.rules:1)\n- Added console rollout checklist, including anonymous auth only, rules publishing, no initial indexes, App Check debug registration without enforcement, disabled Storage/RTDB, no Functions, and cross-uid denial smoke: [Documentation/FirebaseConsoleChecklist.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/FirebaseConsoleChecklist.md:1)\n- Added App Check rollout notes: [Documentation/AppCheckRollout.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/AppCheckRollout.md:1)\n- Linked `FirebaseAppCheck` and installed `AppCheckDebugProviderFactory` in `#if DEBUG` before `FirebaseApp.configure()`: [FirebaseBootstrap.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/FirebaseBootstrap.swift:1)\n- Added repository write payload privacy tests covering profile, theme, calibration, plans, workouts/sets/tombstones, trophies, insights, delivery, and engagement: [FirestoreRepositoryTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/FirestoreRepositoryTests.swift:274)\n- Appended DEBUG_LOG entry `DL-057`: [DEBUG_LOG.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/DEBUG_LOG.md:1)\n\n**App Behavior**\nBefore: Firebase mode could compile and write through repositories, but the server-side owner-only rule checklist, App Check debug setup, and every-write payload guardrail were not locked down together.\n\nAfter: a developer can run Firebase mode for internal testing with DEBUG App Check tokens, publish owner-only rules, and verify repository payloads stay DTO-shaped and free of raw camera/pose/face/secret fields. Example: saving a workout still syncs derived summaries and set quality evidence, but a surprise field like `cameraFrame`, `rawPoseTimeline`, or `apiKey` would now fail the repository privacy test and be denied by the documented Firestore rules.\n\n**Verification**\n- Toolchain:\n  - `clang` and `swiftc` both resolve under `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain`\n- Required build: PASS\n- Required tests: PASS, `392` passed, `0` failed\n- `BackendMode.local` no-plist build: PASS\n- `BackendMode.firebase` build-setting override: PASS\n- `git diff --check`: PASS\n- `gitleaks` was not installed; fallback changed-file secret scan: PASS\n- Protected live camera pipeline files were not modified.\n\n**Firebase Manual Steps**\nPublish `Documentation/firestore.rules` in Firebase Console, enable only anonymous auth, register App Check debug tokens, keep enforcement off, keep Storage/RTDB disabled, deploy no Functions, and document any Firebase-suggested indexes only after runtime errors surface them.\n\n**Migration**\nNo local JSON schema changes and no Codable migrations required. `BackendMode.local` remains functional with `GoogleService-Info.plist` absent.\n\n**Manual Testing Plan**\n1. Local no-plist: remove real Firebase plists, launch local mode, complete onboarding, create a dashboard plan, run Free Analysis, run a Planned Workout, save history, verify trophies/stats/trends/recaps/weekly recaps/heatmaps/insights still update.\n2. Firebase dev: restore dev plist, set Firebase mode, launch DEBUG, register the App Check debug token in Console, sign in anonymously, run profile/theme/calibration/plan/workout/trophy/insight smoke actions.\n3. Rules smoke: authenticate as UID A, attempt write to `users/UID_B/profile/current`, confirm denied.\n4. Privacy smoke: inspect Firestore documents after saves; confirm only derived DTO fields exist, no raw frames/images/pose streams/face blendshapes/secrets.\n5. Regression pass: repeat Free Analysis and Planned Workout flows to confirm the shared live analysis stack is unchanged.\n\nKnown follow-ups: Phase 16J schema-level field validation, Phase 17 emulator automation for cross-uid denial/rules tests, production App Attest provider path before App Check enforcement."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:22:11.776Z",
+      "role": "user",
+      "text": "Lot of changes done above which included a context compaction in the middle and lost stream too. 700+ lines of code were written - that's a lot. Can you go through the original prompt, code changes done in extreme detail, audit them, ensure all the required changes were done and done correctly with no downstream impact. the code before this works fine with it. all the services that needed to be changed have been changed and nothing is left or missed. be very thorough in your analysis and evaluation. use highest level of reasoning available. Log the rca in the debug log and explain why the misses were missed. use highest level of thinking possible and think deeply. Evaluate and understand very deeply. Be very thorough and detailed. Have high attention to detail\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "Lot of changes done above which included a context compaction in the middle and lost stream too. 700+ lines of code were written - that's a lot. Can you go through the original prompt, code changes done in extreme detail, audit them, ensure all the required changes were done and done correctly with no downstream impact. the code before this works fine with it. all the services that needed to be changed have been changed and nothing is left or missed. be very thorough in your analysis and evaluation. use highest level of reasoning available. Log the rca in the debug log and explain why the misses were missed. use highest level of thinking possible and think deeply. Evaluate and understand very deeply. Be very thorough and detailed. Have high attention to detail\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:22:24.960Z",
+      "role": "assistant",
+      "text": "I’m going back into audit mode and treating the prior work as suspect until proven otherwise. I’ll map each original requirement to the actual diff, inspect every repository write path against the new privacy test, run focused verification where useful, then append a new DEBUG_LOG RCA entry with any misses and why they slipped through.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m going back into audit mode and treating the prior work as suspect until proven otherwise. I’ll map each original requirement to the actual diff, inspect every repository write path against the new privacy test, run focused verification where useful, then append a new DEBUG_LOG RCA entry with any misses and why they slipped through."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:22:45.219Z",
+      "role": "assistant",
+      "text": "I’ve started with the actual diff rather than trusting the earlier summary. One thing already worth checking carefully: the new privacy test says it covers every repository write path, so I’m now enumerating the repository protocols and concrete Firestore methods method-by-method against that test.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve started with the actual diff rather than trusting the earlier summary. One thing already worth checking carefully: the new privacy test says it covers every repository write path, so I’m now enumerating the repository protocols and concrete Firestore methods method-by-method against that test."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:23:46.620Z",
+      "role": "assistant",
+      "text": "The write-path enumeration shows the app has fewer concrete Firestore write methods than the docs/rules collections imply: `trophyProgress` is currently read/cache-only in the repository layer, so there is no write path to test there yet. I did find one audit-quality weakness in the new test: it validated every captured payload, but only asserted a minimum write count rather than proving each intended write category occurred. I’m going to tighten that now so future drift cannot hide behind “enough writes happened.”",
+      "content": [
+        {
+          "type": "text",
+          "text": "The write-path enumeration shows the app has fewer concrete Firestore write methods than the docs/rules collections imply: `trophyProgress` is currently read/cache-only in the repository layer, so there is no write path to test there yet. I did find one audit-quality weakness in the new test: it validated every captured payload, but only asserted a minimum write count rather than proving each intended write category occurred. I’m going to tighten that now so future drift cannot hide behind “enough writes happened.”"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:25:17.787Z",
+      "role": "assistant",
+      "text": "I tightened the repository privacy test so it now proves the exact write categories: full profile, theme patch, calibration, active-plan save plus inactive-plan update, workout doc plus sets plus tombstone, trophy append, insight full/tombstone, delivery, and engagement. I’m running that focused test immediately to catch any false assumptions.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I tightened the repository privacy test so it now proves the exact write categories: full profile, theme patch, calibration, active-plan save plus inactive-plan update, workout doc plus sets plus tombstone, trophy append, insight full/tombstone, delivery, and engagement. I’m running that focused test immediately to catch any false assumptions."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:26:30.230Z",
+      "role": "assistant",
+      "text": "The focused test is still running because xcodebuild rebuilt after the test patch. No failure has surfaced; I’m letting it finish cleanly.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused test is still running because xcodebuild rebuilt after the test patch. No failure has surfaced; I’m letting it finish cleanly."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:26:52.923Z",
+      "role": "assistant",
+      "text": "The tightened assertion flushed out a real test-assumption problem: the focused test now fails, but xcodebuild’s tail didn’t include the assertion text. I’m pulling the failure details from the result bundle instead of guessing.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The tightened assertion flushed out a real test-assumption problem: the focused test now fails, but xcodebuild’s tail didn’t include the assertion text. I’m pulling the failure details from the result bundle instead of guessing."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:29:07.282Z",
+      "role": "assistant",
+      "text": "The failing tightened test found something useful, and it is in the test double rather than production Firestore code: the in-memory query filter compared `NSNumber(true)` from JSON serialization to Swift `true` by string, so active-plan queries missed existing active plans. That means the prior payload test accidentally skipped the inactive-plan update path. I’m fixing the test double so it behaves like Firestore for boolean filters, then the exact coverage assertion should pass.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The failing tightened test found something useful, and it is in the test double rather than production Firestore code: the in-memory query filter compared `NSNumber(true)` from JSON serialization to Swift `true` by string, so active-plan queries missed existing active plans. That means the prior payload test accidentally skipped the inactive-plan update path. I’m fixing the test double so it behaves like Firestore for boolean filters, then the exact coverage assertion should pass."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:30:48.106Z",
+      "role": "assistant",
+      "text": "The focused audit test now passes after fixing the in-memory Firestore boolean filter and making the write coverage exact. I’m moving to the full verification loop again: required workspace build, required full test suite, then the backend-mode compile checks and final scans before I write the RCA entry.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused audit test now passes after fixing the in-memory Firestore boolean filter and making the write coverage exact. I’m moving to the full verification loop again: required workspace build, required full test suite, then the backend-mode compile checks and final scans before I write the RCA entry."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:31:23.827Z",
+      "role": "assistant",
+      "text": "Required build passed after the audit patch. I’m running the full test suite now; this is the only xcodebuild test currently using `/tmp/VirtualTrainerDerivedData`.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Required build passed after the audit patch. I’m running the full test suite now; this is the only xcodebuild test currently using `/tmp/VirtualTrainerDerivedData`."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:32:35.761Z",
+      "role": "assistant",
+      "text": "The full suite is still running. The focused test already passed; I’m waiting on the full run to make sure the test-double fix didn’t disturb the older repository/sync tests.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The full suite is still running. The focused test already passed; I’m waiting on the full run to make sure the test-double fix didn’t disturb the older repository/sync tests."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:32:51.716Z",
+      "role": "assistant",
+      "text": "Full tests passed: 392 passed, 0 failed. I’m re-running the two backend-mode compile checks as the final acceptance sweep: local with the ignored Firebase plist absent, then Firebase mode with the build setting override.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Full tests passed: 392 passed, 0 failed. I’m re-running the two backend-mode compile checks as the final acceptance sweep: local with the ignored Firebase plist absent, then Firebase mode with the build setting override."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:33:52.201Z",
+      "role": "assistant",
+      "text": "Both backend-mode build checks passed again. I’m appending a separate DL-058 audit RCA now: this will explicitly call out the missed inactive-plan update coverage, why the first pass didn’t catch it, and what guardrail now prevents a repeat.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Both backend-mode build checks passed again. I’m appending a separate DL-058 audit RCA now: this will explicitly call out the missed inactive-plan update coverage, why the first pass didn’t catch it, and what guardrail now prevents a repeat."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:34:33.346Z",
+      "role": "assistant",
+      "text": "The RCA is logged. I’m doing the final non-build hygiene now: toolchain path re-check, whitespace check, changed-file secret scan, and a protected-file diff check.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The RCA is logged. I’m doing the final non-build hygiene now: toolchain path re-check, whitespace check, changed-file secret scan, and a protected-file diff check."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-15T13:35:18.583Z",
+      "role": "assistant",
+      "text": "I audited the Phase 16H work end to end and found one real miss in the first implementation. It was not a production-path bug, but it was a test-coverage bug: the privacy test claimed to cover every repository write path, yet it only asserted a loose write count. Because the in-memory Firestore test double compared boolean filters by string, the active-plan deactivation update was skipped in the fixture while the test still passed.\n\nI fixed that and logged the RCA as `DL-058` in [DEBUG_LOG.md](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/DEBUG_LOG.md:1791>).\n\n**Audit Result**\n- Firestore rules: present, owner-only, default-deny, raw-data/secret field denylist, Phase 16J TODO included: [firestore.rules](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/Documentation/firestore.rules:1>)\n- Firebase checklist: present, including cross-uid denial smoke: [FirebaseConsoleChecklist.md](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/Documentation/FirebaseConsoleChecklist.md:27>)\n- App Check rollout doc: present: [AppCheckRollout.md](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/Documentation/AppCheckRollout.md:5>)\n- DEBUG-only App Check provider: installed before Firebase configure: [FirebaseBootstrap.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/FirebaseBootstrap.swift:42>)\n- FirebaseAppCheck dependency: linked into the app target.\n- Privacy tests: now assert exact write categories and payload shape, not just “some writes happened”: [FirestoreRepositoryTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/FirestoreRepositoryTests.swift:274>)\n- Test double fix: boolean Firestore filters now behave type-faithfully for the active-plan path: [FirestoreRepositoryTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/FirestoreRepositoryTests.swift:1550>)\n- Protected live camera pipeline files: untouched.\n\n**Why The Miss Was Missed**\nThe first pass had a classic “green but not proven” weakness: it validated every captured payload, but did not prove every intended payload was captured. Context compaction and the lost stream made that easier to miss because the work resumed from a summary plus a green full-suite result instead of replaying the write trace category-by-category. The bad in-memory boolean comparison then quietly hid the inactive-plan update path.\n\n**Verification**\n- Required build: PASS\n- Required test suite: PASS, `392` passed, `0` failed\n- Focused repository privacy test: PASS\n- `BackendMode.local` no-plist build: PASS\n- `BackendMode.firebase` build-setting override: PASS\n- `xcrun --find clang` and `xcrun --find swiftc`: both under XcodeDefault\n- `git diff --check`: PASS\n- `gitleaks`: unavailable here; fallback changed-file secret scan: PASS\n- Protected pipeline diff check: PASS\n\nNo downstream app behavior was changed by the audit fix; it only strengthens tests and the in-memory Firestore test double. The app-facing Phase 16H behavior remains: Firebase mode is prepared for owner-only rules and DEBUG App Check testing, while local mode continues to build without a Firebase plist.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I audited the Phase 16H work end to end and found one real miss in the first implementation. It was not a production-path bug, but it was a test-coverage bug: the privacy test claimed to cover every repository write path, yet it only asserted a loose write count. Because the in-memory Firestore test double compared boolean filters by string, the active-plan deactivation update was skipped in the fixture while the test still passed.\n\nI fixed that and logged the RCA as `DL-058` in [DEBUG_LOG.md](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/DEBUG_LOG.md:1791>).\n\n**Audit Result**\n- Firestore rules: present, owner-only, default-deny, raw-data/secret field denylist, Phase 16J TODO included: [firestore.rules](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/Documentation/firestore.rules:1>)\n- Firebase checklist: present, including cross-uid denial smoke: [FirebaseConsoleChecklist.md](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/Documentation/FirebaseConsoleChecklist.md:27>)\n- App Check rollout doc: present: [AppCheckRollout.md](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/Documentation/AppCheckRollout.md:5>)\n- DEBUG-only App Check provider: installed before Firebase configure: [FirebaseBootstrap.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/FirebaseBootstrap.swift:42>)\n- FirebaseAppCheck dependency: linked into the app target.\n- Privacy tests: now assert exact write categories and payload shape, not just “some writes happened”: [FirestoreRepositoryTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/FirestoreRepositoryTests.swift:274>)\n- Test double fix: boolean Firestore filters now behave type-faithfully for the active-plan path: [FirestoreRepositoryTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/FirestoreRepositoryTests.swift:1550>)\n- Protected live camera pipeline files: untouched.\n\n**Why The Miss Was Missed**\nThe first pass had a classic “green but not proven” weakness: it validated every captured payload, but did not prove every intended payload was captured. Context compaction and the lost stream made that easier to miss because the work resumed from a summary plus a green full-suite result instead of replaying the write trace category-by-category. The bad in-memory boolean comparison then quietly hid the inactive-plan update path.\n\n**Verification**\n- Required build: PASS\n- Required test suite: PASS, `392` passed, `0` failed\n- Focused repository privacy test: PASS\n- `BackendMode.local` no-plist build: PASS\n- `BackendMode.firebase` build-setting override: PASS\n- `xcrun --find clang` and `xcrun --find swiftc`: both under XcodeDefault\n- `git diff --check`: PASS\n- `gitleaks`: unavailable here; fallback changed-file secret scan: PASS\n- Protected pipeline diff check: PASS\n\nNo downstream app behavior was changed by the audit fix; it only strengthens tests and the in-memory Firestore test double. The app-facing Phase 16H behavior remains: Firebase mode is prepared for owner-only rules and DEBUG App Check testing, while local mode continues to build without a Firebase plist."
+        }
+      ]
+    }
+  ]
+}

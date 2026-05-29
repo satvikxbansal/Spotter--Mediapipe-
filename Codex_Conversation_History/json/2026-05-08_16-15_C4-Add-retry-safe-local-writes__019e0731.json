@@ -1,0 +1,174 @@
+{
+  "id": "019e0731-8c88-7a62-a03d-2dfddce8f1f5",
+  "title": "C4: Add retry-safe local writes",
+  "createdAtLocal": "2026-05-08 16:15:48",
+  "updatedAtLocal": "2026-05-08 16:33:51",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/08/rollout-2026-05-08T16-15-48-019e0731-8c88-7a62-a03d-2dfddce8f1f5.jsonl",
+  "gitBranch": "main",
+  "gitSha": "1543c69b3593d5391ab4f0a2ae27da6730cd9d45",
+  "firstUserMessage": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups.\n15. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n\nGoal:\nMake local writes retry-safe before Firebase exists.\n\nCreate:\n- WriteOperation.swift\n- LocalWriteJournal.swift\n\nModels:\nenum WriteEntityKind: String, Codable {\n    case profile\n    case workout\n    case trophyEvent\n    case insight\n    case insightDelivery\n    case insightEngagement\n    case calibration\n    case theme\n    case plan\n}\n\nstruct WriteOperation<Payload: Codable & Equatable>: Codable, Equatable {\n    let operationId: UUID\n    let entityKind: WriteEntityKind\n    let payload: Payload\n    let createdAt: Date\n}\n\nLocalWriteJournal:\n- file-backed\n- stores recent operation IDs and entity kinds\n- contains(operationId:)\n- record(operationId:entityKind:createdAt:)\n- vacuum(olderThan:)\n- keep journal bounded\n\nUpdate store mutation methods to accept optional operationId:\n- WorkoutHistoryStore.addSummary(_:operationId:)\n- WorkoutHistoryStore.deleteSummary(id:operationId:)\n- OnboardingStore save/update methods\n- TrophyStore trophy update/event methods\n- InsightStore save/record delivery/record engagement/invalidate methods\n- CalibrationStore save methods\n- ThemeStore update method\n\nRules:\n- If operationId already exists, mutation is a no-op success.\n- If nil, generate an operationId.\n- Store operationId in SyncMetadata.pendingOperationId where appropriate.\n- Do not change existing call sites unless needed; default nil preserves behavior.\n\nTests:\n- same operationId twice saves once\n- different operationId saves/update normally\n- journal persists and reloads\n- journal vacuum works\n- operationId is reflected in syncMetadata where expected\n\nAcceptance:\n- Local writes are idempotency-ready for server retries.",
+  "preview": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups.\n15. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n\nGoal:\nMake local writes retry-safe before Firebase exists.\n\nCreate:\n- WriteOperation.swift\n- LocalWriteJournal.swift\n\nModels:\nenum WriteEntityKind: String, Codable {\n    case profile\n    case workout\n    case trophyEvent\n    case insight\n    case insightDelivery\n    case insightEngagement\n    case calibration\n    case theme\n    case plan\n}\n\nstruct WriteOperation<Payload: Codable & Equatable>: Codable, Equatable {\n    let operationId: UUID\n    let entityKind: WriteEntityKind\n    let payload: Payload\n    let createdAt: Date\n}\n\nLocalWriteJournal:\n- file-backed\n- stores recent operation IDs and entity kinds\n- contains(operationId:)\n- record(operationId:entityKind:createdAt:)\n- vacuum(olderThan:)\n- keep journal bounded\n\nUpdate store mutation methods to accept optional operationId:\n- WorkoutHistoryStore.addSummary(_:operationId:)\n- WorkoutHistoryStore.deleteSummary(id:operationId:)\n- OnboardingStore save/update methods\n- TrophyStore trophy update/event methods\n- InsightStore save/record delivery/record engagement/invalidate methods\n- CalibrationStore save methods\n- ThemeStore update method\n\nRules:\n- If operationId already exists, mutation is a no-op success.\n- If nil, generate an operationId.\n- Store operationId in SyncMetadata.pendingOperationId where appropriate.\n- Do not change existing call sites unless needed; default nil preserves behavior.\n\nTests:\n- same operationId twice saves once\n- different operationId saves/update normally\n- journal persists and reloads\n- journal vacuum works\n- operationId is reflected in syncMetadata where expected\n\nAcceptance:\n- Local writes are idempotency-ready for server retries.",
+  "rawLineCount": 383,
+  "parseErrors": 0,
+  "visibleMessageCount": 14,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-08T10:45:50.551Z",
+      "role": "user",
+      "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups.\n15. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n\nGoal:\nMake local writes retry-safe before Firebase exists.\n\nCreate:\n- WriteOperation.swift\n- LocalWriteJournal.swift\n\nModels:\nenum WriteEntityKind: String, Codable {\n    case profile\n    case workout\n    case trophyEvent\n    case insight\n    case insightDelivery\n    case insightEngagement\n    case calibration\n    case theme\n    case plan\n}\n\nstruct WriteOperation<Payload: Codable & Equatable>: Codable, Equatable {\n    let operationId: UUID\n    let entityKind: WriteEntityKind\n    let payload: Payload\n    let createdAt: Date\n}\n\nLocalWriteJournal:\n- file-backed\n- stores recent operation IDs and entity kinds\n- contains(operationId:)\n- record(operationId:entityKind:createdAt:)\n- vacuum(olderThan:)\n- keep journal bounded\n\nUpdate store mutation methods to accept optional operationId:\n- WorkoutHistoryStore.addSummary(_:operationId:)\n- WorkoutHistoryStore.deleteSummary(id:operationId:)\n- OnboardingStore save/update methods\n- TrophyStore trophy update/event methods\n- InsightStore save/record delivery/record engagement/invalidate methods\n- CalibrationStore save methods\n- ThemeStore update method\n\nRules:\n- If operationId already exists, mutation is a no-op success.\n- If nil, generate an operationId.\n- Store operationId in SyncMetadata.pendingOperationId where appropriate.\n- Do not change existing call sites unless needed; default nil preserves behavior.\n\nTests:\n- same operationId twice saves once\n- different operationId saves/update normally\n- journal persists and reloads\n- journal vacuum works\n- operationId is reflected in syncMetadata where expected\n\nAcceptance:\n- Local writes are idempotency-ready for server retries.\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups.\n15. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n\nGoal:\nMake local writes retry-safe before Firebase exists.\n\nCreate:\n- WriteOperation.swift\n- LocalWriteJournal.swift\n\nModels:\nenum WriteEntityKind: String, Codable {\n    case profile\n    case workout\n    case trophyEvent\n    case insight\n    case insightDelivery\n    case insightEngagement\n    case calibration\n    case theme\n    case plan\n}\n\nstruct WriteOperation<Payload: Codable & Equatable>: Codable, Equatable {\n    let operationId: UUID\n    let entityKind: WriteEntityKind\n    let payload: Payload\n    let createdAt: Date\n}\n\nLocalWriteJournal:\n- file-backed\n- stores recent operation IDs and entity kinds\n- contains(operationId:)\n- record(operationId:entityKind:createdAt:)\n- vacuum(olderThan:)\n- keep journal bounded\n\nUpdate store mutation methods to accept optional operationId:\n- WorkoutHistoryStore.addSummary(_:operationId:)\n- WorkoutHistoryStore.deleteSummary(id:operationId:)\n- OnboardingStore save/update methods\n- TrophyStore trophy update/event methods\n- InsightStore save/record delivery/record engagement/invalidate methods\n- CalibrationStore save methods\n- ThemeStore update method\n\nRules:\n- If operationId already exists, mutation is a no-op success.\n- If nil, generate an operationId.\n- Store operationId in SyncMetadata.pendingOperationId where appropriate.\n- Do not change existing call sites unless needed; default nil preserves behavior.\n\nTests:\n- same operationId twice saves once\n- different operationId saves/update normally\n- journal persists and reloads\n- journal vacuum works\n- operationId is reflected in syncMetadata where expected\n\nAcceptance:\n- Local writes are idempotency-ready for server retries.\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:45:56.540Z",
+      "role": "assistant",
+      "text": "I’ll first map the repo shape and read the README/debug notes, then I’ll trace the store types that own local mutations before touching anything. After that I’ll make the smallest idempotency layer that fits the existing persistence patterns.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll first map the repo shape and read the README/debug notes, then I’ll trace the store types that own local mutations before touching anything. After that I’ll make the smallest idempotency layer that fits the existing persistence patterns."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:46:06.380Z",
+      "role": "assistant",
+      "text": "The repo is a compact Swift/iOS project with tests already around sync metadata and the relevant stores, which is a good sign. I’m reading the project notes now and then I’ll inspect each local store’s persistence shape so the journal lands in the same style as the app.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The repo is a compact Swift/iOS project with tests already around sync metadata and the relevant stores, which is a good sign. I’m reading the project notes now and then I’ll inspect each local store’s persistence shape so the journal lands in the same style as the app."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:46:34.482Z",
+      "role": "assistant",
+      "text": "A few constraints are now clear from the docs: persistence is plain local JSON, sync prep already uses tombstones and `SyncMetadata`, and future Firebase is deliberately still behind a later abstraction phase. I’m going to hook idempotency into those existing JSON-store mutation points instead of introducing any backend-facing repository layer yet.",
+      "content": [
+        {
+          "type": "text",
+          "text": "A few constraints are now clear from the docs: persistence is plain local JSON, sync prep already uses tombstones and `SyncMetadata`, and future Firebase is deliberately still behind a later abstraction phase. I’m going to hook idempotency into those existing JSON-store mutation points instead of introducing any backend-facing repository layer yet."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:49:10.390Z",
+      "role": "assistant",
+      "text": "I’ve got the relevant mutation surfaces now. The safer shape is a shared local journal next to each store’s JSON, with each store accepting an injected journal for tests; that keeps Firebase out of scope and keeps old call sites unchanged.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve got the relevant mutation surfaces now. The safer shape is a shared local journal next to each store’s JSON, with each store accepting an injected journal for tests; that keeps Firebase out of scope and keeps old call sites unchanged."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:49:14.546Z",
+      "role": "assistant",
+      "text": "I’m making the new journal model first, then I’ll wire it through the stores. The journal will be bounded and JSON-backed, and duplicate operation IDs will short-circuit before any store state is touched.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m making the new journal model first, then I’ll wire it through the stores. The journal will be bounded and JSON-backed, and duplicate operation IDs will short-circuit before any store state is touched."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:58:16.874Z",
+      "role": "assistant",
+      "text": "The journal now reloads from disk before contains/record/vacuum so separate store instances do not overwrite each other’s entries. That matters because the app creates profile, history, trophy, theme, calibration, and insight stores independently at launch.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The journal now reloads from disk before contains/record/vacuum so separate store instances do not overwrite each other’s entries. That matters because the app creates profile, history, trophy, theme, calibration, and insight stores independently at launch."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:58:32.047Z",
+      "role": "assistant",
+      "text": "The mutation signatures are in place now, and I’ve added focused coverage for journal reload/vacuum/bounding plus retry behavior on history writes. I’m going to compile through the test runner next; first pass may surface Swift isolation or signature issues because this project has strict MainActor defaults.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The mutation signatures are in place now, and I’ve added focused coverage for journal reload/vacuum/bounding plus retry behavior on history writes. I’m going to compile through the test runner next; first pass may surface Swift isolation or signature issues because this project has strict MainActor defaults."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:58:45.784Z",
+      "role": "assistant",
+      "text": "First compile pass caught only a small Swift 5 style issue in the new journal: methods with multiple statements need explicit `return`. I’m patching that and rerunning the focused tests.",
+      "content": [
+        {
+          "type": "text",
+          "text": "First compile pass caught only a small Swift 5 style issue in the new journal: methods with multiple statements need explicit `return`. I’m patching that and rerunning the focused tests."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:59:46.835Z",
+      "role": "assistant",
+      "text": "The focused build now compiles through the app and test bundle. It’s in the simulator execution phase, so I’m waiting for the selected tests to finish rather than interrupting a good run.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused build now compiles through the app and test bundle. It’s in the simulator execution phase, so I’m waiting for the selected tests to finish rather than interrupting a good run."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:00:20.671Z",
+      "role": "assistant",
+      "text": "The focused test bundle compiled, but the simulator test host exited before XCTest connected (`signal term before establishing connection`). I’m going to inspect the xcresult and, if it’s an infrastructure boot issue rather than a code crash, still run a plain build separately to verify compilation.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused test bundle compiled, but the simulator test host exited before XCTest connected (`signal term before establishing connection`). I’m going to inspect the xcresult and, if it’s an infrastructure boot issue rather than a code crash, still run a plain build separately to verify compilation."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:00:36.277Z",
+      "role": "assistant",
+      "text": "The app build itself now succeeds. The selected test run failed before XCTest connected, which can be a simulator-host launch failure in this repo, so I’m retrying the focused tests once after the successful build warmed the destination.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The app build itself now succeeds. The selected test run failed before XCTest connected, which can be a simulator-host launch failure in this repo, so I’m retrying the focused tests once after the successful build warmed the destination."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:01:32.573Z",
+      "role": "assistant",
+      "text": "The focused retry-safety tests passed cleanly on the simulator after the retry. I’m doing a full workspace test pass now so the change is checked against the existing planning, trophies, stats, trends, recaps, and insight suites too.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused retry-safety tests passed cleanly on the simulator after the retry. I’m doing a full workspace test pass now so the change is checked against the existing planning, trophies, stats, trends, recaps, and insight suites too."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:03:50.945Z",
+      "role": "assistant",
+      "text": "Implemented local write idempotency. I read `README.md` and `DEBUG_LOG.md` first, then stayed inside the existing local persistence layer. No camera, MediaPipe, live analysis, rep counting, form feedback, exertion, or raw sensor/video paths were touched.\n\n**Changed Files**\n- Added [WriteOperation.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/WriteOperation.swift) and [LocalWriteJournal.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/LocalWriteJournal.swift)\n- Updated local stores: workout history, onboarding/profile, trophies, insights, calibration, and theme\n- Added/updated tests in [LocalWriteJournalTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/LocalWriteJournalTests.swift), [WorkoutHistoryStoreTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/WorkoutHistoryStoreTests.swift), and [SyncMetadataTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/SyncMetadataTests.swift)\n\n**Key Decisions**\n- Added a file-backed bounded journal next to local JSON stores. It records only `operationId`, `entityKind`, and `createdAt`, so no raw video, camera frames, pose timelines, face data, or secrets are introduced.\n- Store mutation methods now accept `operationId: UUID? = nil`, so existing call sites keep working unchanged.\n- Duplicate operation IDs become no-op successes. Different IDs still apply normally.\n- `SyncMetadata.pendingOperationId` is set for account-owned records that are pending sync. Local-only records keep existing local-only semantics.\n- Journal data is additive. Existing JSON continues to decode as before; missing journal files start empty.\n\n**Before / After**\nBefore, if a future Firebase retry called the same local mutation twice, the app could repeat local side effects. For example, an insight engagement retry could be counted again, or a workout/profile/theme/calibration write could be re-applied without a stable local idempotency marker.\n\nAfter, the retry passes the same `operationId`; Spotter sees it in the journal and treats the write as already completed. A real second edit still works because it gets a different operation ID.\n\n**Verification**\n- `xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` passed.\n- Focused idempotency tests passed.\n- Full `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` passed.\n- There was one transient simulator bootstrapping early-exit during iteration; rerun passed cleanly.\n\n**Known Follow-Up**\n`WriteEntityKind.plan` is ready, but I did not invent or refactor plan persistence. The deterministic local plan flow remains untouched until a real persisted plan write surface needs journal integration.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Implemented local write idempotency. I read `README.md` and `DEBUG_LOG.md` first, then stayed inside the existing local persistence layer. No camera, MediaPipe, live analysis, rep counting, form feedback, exertion, or raw sensor/video paths were touched.\n\n**Changed Files**\n- Added [WriteOperation.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/WriteOperation.swift) and [LocalWriteJournal.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/LocalWriteJournal.swift)\n- Updated local stores: workout history, onboarding/profile, trophies, insights, calibration, and theme\n- Added/updated tests in [LocalWriteJournalTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/LocalWriteJournalTests.swift), [WorkoutHistoryStoreTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/WorkoutHistoryStoreTests.swift), and [SyncMetadataTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/SyncMetadataTests.swift)\n\n**Key Decisions**\n- Added a file-backed bounded journal next to local JSON stores. It records only `operationId`, `entityKind`, and `createdAt`, so no raw video, camera frames, pose timelines, face data, or secrets are introduced.\n- Store mutation methods now accept `operationId: UUID? = nil`, so existing call sites keep working unchanged.\n- Duplicate operation IDs become no-op successes. Different IDs still apply normally.\n- `SyncMetadata.pendingOperationId` is set for account-owned records that are pending sync. Local-only records keep existing local-only semantics.\n- Journal data is additive. Existing JSON continues to decode as before; missing journal files start empty.\n\n**Before / After**\nBefore, if a future Firebase retry called the same local mutation twice, the app could repeat local side effects. For example, an insight engagement retry could be counted again, or a workout/profile/theme/calibration write could be re-applied without a stable local idempotency marker.\n\nAfter, the retry passes the same `operationId`; Spotter sees it in the journal and treats the write as already completed. A real second edit still works because it gets a different operation ID.\n\n**Verification**\n- `xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` passed.\n- Focused idempotency tests passed.\n- Full `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` passed.\n- There was one transient simulator bootstrapping early-exit during iteration; rerun passed cleanly.\n\n**Known Follow-Up**\n`WriteEntityKind.plan` is ready, but I did not invent or refactor plan persistence. The deterministic local plan flow remains untouched until a real persisted plan write surface needs journal integration."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,262 @@
+{
+  "id": "019e02e7-46cc-7912-aeee-937c85a93d24",
+  "title": "Add sample workout test data",
+  "createdAtLocal": "2026-05-07 20:16:11",
+  "updatedAtLocal": "2026-05-07 20:38:35",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/07/rollout-2026-05-07T20-16-11-019e02e7-46cc-7912-aeee-937c85a93d24.jsonl",
+  "gitBranch": "main",
+  "gitSha": "c32fc0cda34efde33218499124ae5c805e5b555c",
+  "firstUserMessage": "Can you add some sample data and insights and workout history in the local app for testing purposes? Not a lot. Just for UI testing.",
+  "preview": "Can you add some sample data and insights and workout history in the local app for testing purposes? Not a lot. Just for UI testing.",
+  "rawLineCount": 489,
+  "parseErrors": 0,
+  "visibleMessageCount": 22,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-07T14:46:49.110Z",
+      "role": "user",
+      "text": "Can you add some sample data and insights and workout history in the local app for testing purposes? Not a lot. Just for UI testing. \n",
+      "content": [
+        {
+          "type": "text",
+          "text": "Can you add some sample data and insights and workout history in the local app for testing purposes? Not a lot. Just for UI testing. \n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T14:46:58.962Z",
+      "role": "assistant",
+      "text": "I’ll take a quick look through the app’s data flow first, then I’ll seed the smallest useful set of mock workouts and insights in the place the UI already reads from.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll take a quick look through the app’s data flow first, then I’ll seed the smallest useful set of mock workouts and insights in the place the UI already reads from."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T14:47:08.008Z",
+      "role": "assistant",
+      "text": "There are already local changes in the repo, including the history and insight model files. I’ll work with those instead of trying to reset anything, and keep the sample seed scoped so it’s easy to remove later.",
+      "content": [
+        {
+          "type": "text",
+          "text": "There are already local changes in the repo, including the history and insight model files. I’ll work with those instead of trying to reset anything, and keep the sample seed scoped so it’s easy to remove later."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T14:47:23.078Z",
+      "role": "assistant",
+      "text": "The dashboard already builds recap cards and coach insights from persisted `WorkoutSessionSummary` records, so the clean route is likely a tiny debug/sample seeder that writes a few real summaries into the existing history store. I’m checking whether there’s already a debug hook or preview-data pattern to plug into.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The dashboard already builds recap cards and coach insights from persisted `WorkoutSessionSummary` records, so the clean route is likely a tiny debug/sample seeder that writes a few real summaries into the existing history store. I’m checking whether there’s already a debug hook or preview-data pattern to plug into."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T14:54:38.898Z",
+      "role": "assistant",
+      "text": "I found an existing Settings & Debug drawer in Profile, plus preview-only sample history. I’m going to turn that into a local debug seeding action: four persisted workouts and three persisted coach insights, using fixed IDs so re-running the seed updates the same samples instead of piling up duplicates.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I found an existing Settings & Debug drawer in Profile, plus preview-only sample history. I’m going to turn that into a local debug seeding action: four persisted workouts and three persisted coach insights, using fixed IDs so re-running the seed updates the same samples instead of piling up duplicates."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T14:57:02.785Z",
+      "role": "assistant",
+      "text": "The seeding path is now wired into Profile’s debug drawer. I’m doing a compile-oriented pass next because this app has a few domain enums where one wrong case name can break the whole target.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The seeding path is now wired into Profile’s debug drawer. I’m doing a compile-oriented pass next because this app has a few domain enums where one wrong case name can break the whole target."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T14:57:12.977Z",
+      "role": "assistant",
+      "text": "The workspace exposes a single app scheme, so I’m going to build that scheme against an iOS simulator destination now. If the installed simulator name differs, I’ll adjust rather than guessing in the final.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The workspace exposes a single app scheme, so I’m going to build that scheme against an iOS simulator destination now. If the installed simulator name differs, I’ll adjust rather than guessing in the final."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T14:57:38.602Z",
+      "role": "assistant",
+      "text": "The app target builds cleanly on the iPhone 17 simulator. I’m going to run the history/insight store tests too, since this touches both persistence paths.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The app target builds cleanly on the iPhone 17 simulator. I’m going to run the history/insight store tests too, since this touches both persistence paths."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T14:58:11.879Z",
+      "role": "assistant",
+      "text": "The focused tests are built and waiting on the simulator run now. No failure output so far; I’ll let it finish rather than interrupting it.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused tests are built and waiting on the simulator run now. No failure output so far; I’ll let it finish rather than interrupting it."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T14:58:58.934Z",
+      "role": "assistant",
+      "text": "One small polish: the debug action now reports insight persistence failures too, instead of cheerfully saying the seed loaded if only half of it saved. I’ll rerun the app build quickly after that tweak.",
+      "content": [
+        {
+          "type": "text",
+          "text": "One small polish: the debug action now reports insight persistence failures too, instead of cheerfully saying the seed loaded if only half of it saved. I’ll rerun the app build quickly after that tweak."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T14:59:45.785Z",
+      "role": "assistant",
+      "text": "Done. I added a manual local seed action in Profile:\n\n- Go to `Profile -> Settings & Debug -> Load sample data`\n- It writes 4 sample workouts and 3 coach insights for UI testing\n- Re-running it updates the same fixed sample records instead of duplicating them\n\nTouched:\n- [ProfileView.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/UI/ProfileView.swift:291>)\n- [InsightStore.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/InsightStore.swift:274>)\n\nVerified:\n- `xcodebuild ... build` succeeded\n- Focused `WorkoutHistoryStoreTests` and `InsightStoreTests` succeeded earlier in the pass.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Done. I added a manual local seed action in Profile:\n\n- Go to `Profile -> Settings & Debug -> Load sample data`\n- It writes 4 sample workouts and 3 coach insights for UI testing\n- Re-running it updates the same fixed sample records instead of duplicating them\n\nTouched:\n- [ProfileView.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/UI/ProfileView.swift:291>)\n- [InsightStore.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/InsightStore.swift:274>)\n\nVerified:\n- `xcodebuild ... build` succeeded\n- Focused `WorkoutHistoryStoreTests` and `InsightStoreTests` succeeded earlier in the pass."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T14:59:45.991Z",
+      "role": "user",
+      "text": "Ensure no other existing functionalities are changed with the data interjection. Be very careful in the process. Audit the above code deeply for sample data. Allow this data to be cleared from the debug profile and added back using a toggle in the debug section. \n",
+      "content": [
+        {
+          "type": "text",
+          "text": "Ensure no other existing functionalities are changed with the data interjection. Be very careful in the process. Audit the above code deeply for sample data. Allow this data to be cleared from the debug profile and added back using a toggle in the debug section. \n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T15:00:05.876Z",
+      "role": "assistant",
+      "text": "I’ll tighten this up so sample data has a clean on/off lifecycle, and I’ll audit for places where the seed might accidentally leak into non-debug behavior. First I’m rereading the touched store and profile paths, then I’ll make the smallest scoped changes.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll tighten this up so sample data has a clean on/off lifecycle, and I’ll audit for places where the seed might accidentally leak into non-debug behavior. First I’m rereading the touched store and profile paths, then I’ll make the smallest scoped changes."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T15:01:03.641Z",
+      "role": "assistant",
+      "text": "A couple of audit findings already: clearing needs to remove not just the explicit debug insight keys, but also any generated insights whose evidence points at the sample workout IDs. I’m also removing a tiny generic helper I added in the view file so this stays narrowly scoped.",
+      "content": [
+        {
+          "type": "text",
+          "text": "A couple of audit findings already: clearing needs to remove not just the explicit debug insight keys, but also any generated insights whose evidence points at the sample workout IDs. I’m also removing a tiny generic helper I added in the view file so this stays narrowly scoped."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T15:02:10.230Z",
+      "role": "assistant",
+      "text": "I’m going to add two narrow debug-store helpers now: one to physically remove only known sample workout IDs, and one to remove only known sample insight keys or insights whose evidence points at those sample workouts. This keeps normal delete/tombstone behavior untouched.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m going to add two narrow debug-store helpers now: one to physically remove only known sample workout IDs, and one to remove only known sample insight keys or insights whose evidence points at those sample workouts. This keeps normal delete/tombstone behavior untouched."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T15:03:12.792Z",
+      "role": "assistant",
+      "text": "The trophy audit found a less obvious leak: a sample workout can unlock derived trophies, and the trophy engine intentionally preserves unlocks. I’m adding a debug-only recalculation path used only when sample data is turned off, so sample-only trophy progress is retractable without changing normal trophy behavior.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The trophy audit found a less obvious leak: a sample workout can unlock derived trophies, and the trophy engine intentionally preserves unlocks. I’m adding a debug-only recalculation path used only when sample data is turned off, so sample-only trophy progress is retractable without changing normal trophy behavior."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T15:05:57.929Z",
+      "role": "assistant",
+      "text": "The toggle path is implemented now. I added focused tests around the debug-only removal and trophy recalculation paths; next I’m compiling and running those targeted tests to catch anything subtle.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The toggle path is implemented now. I added focused tests around the debug-only removal and trophy recalculation paths; next I’m compiling and running those targeted tests to catch anything subtle."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T15:07:32.230Z",
+      "role": "assistant",
+      "text": "I’m going to pick this back up by checking the focused test run that was in flight, then I’ll do one last targeted audit pass over the sample-data paths before I close it out.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m going to pick this back up by checking the focused test run that was in flight, then I’ll do one last targeted audit pass over the sample-data paths before I close it out."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T15:07:46.047Z",
+      "role": "assistant",
+      "text": "The focused tests passed, including the new debug-removal and trophy recalculation coverage. I’m doing the last “no surprises” sweep now: checking diff hygiene and searching for any stray sample-data hooks outside the intended debug path.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused tests passed, including the new debug-removal and trophy recalculation coverage. I’m doing the last “no surprises” sweep now: checking diff hygiene and searching for any stray sample-data hooks outside the intended debug path."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T15:08:00.809Z",
+      "role": "assistant",
+      "text": "The sweep came back clean: `git diff --check` had no whitespace/errors, and the sample-data identifiers are confined to Profile debug UI, the narrow debug helpers, and the focused tests. I’m reading the exact touched sections once more so the final summary can be precise.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The sweep came back clean: `git diff --check` had no whitespace/errors, and the sample-data identifiers are confined to Profile debug UI, the narrow debug helpers, and the focused tests. I’m reading the exact touched sections once more so the final summary can be precise."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T15:08:11.327Z",
+      "role": "assistant",
+      "text": "The last read confirms the toggle is wired through `SettingsDebugSection` only, and the underlying store helpers are ID/key-scoped with rollback on persistence failure. I’m running one clean app build after the warning fix so the verification is current.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The last read confirms the toggle is wired through `SettingsDebugSection` only, and the underlying store helpers are ID/key-scoped with rollback on persistence failure. I’m running one clean app build after the warning fix so the verification is current."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T15:08:34.866Z",
+      "role": "assistant",
+      "text": "Implemented the sample UI data toggle in the Profile debug section.\n\nWhat changed:\n- Added a `Sample UI Data` switch in [ProfileView.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/UI/ProfileView.swift:1295>).\n- Toggle on adds 4 lightweight sample workouts and 3 coach insights for UI testing.\n- Toggle off physically clears only those fixed sample workout IDs and debug insight keys, then recalculates trophies so sample-only unlocks are retracted.\n- Added narrow debug helpers in [WorkoutHistoryStore.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/WorkoutHistoryStore.swift:133>), [InsightStore.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/InsightStore.swift:275>), and [TrophyModels.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/TrophyModels.swift:1279>).\n\nI kept the data injection isolated: no automatic seeding, no changes to normal delete/tombstone behavior, and no change to the normal trophy preserve-earned path. The debug clear path uses fixed IDs/keys and rollback-on-persist-failure behavior.\n\nVerified:\n- `git diff --check` passed.\n- Focused tests passed for workout history, insights, and trophies.\n- App build passed with `xcodebuild -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17' build`.\n\nOne note: the repo already had a broader dirty worktree before this, so I left the unrelated existing changes alone.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Implemented the sample UI data toggle in the Profile debug section.\n\nWhat changed:\n- Added a `Sample UI Data` switch in [ProfileView.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/UI/ProfileView.swift:1295>).\n- Toggle on adds 4 lightweight sample workouts and 3 coach insights for UI testing.\n- Toggle off physically clears only those fixed sample workout IDs and debug insight keys, then recalculates trophies so sample-only unlocks are retracted.\n- Added narrow debug helpers in [WorkoutHistoryStore.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/WorkoutHistoryStore.swift:133>), [InsightStore.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/InsightStore.swift:275>), and [TrophyModels.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/TrophyModels.swift:1279>).\n\nI kept the data injection isolated: no automatic seeding, no changes to normal delete/tombstone behavior, and no change to the normal trophy preserve-earned path. The debug clear path uses fixed IDs/keys and rollback-on-persist-failure behavior.\n\nVerified:\n- `git diff --check` passed.\n- Focused tests passed for workout history, insights, and trophies.\n- App build passed with `xcodebuild -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17' build`.\n\nOne note: the repo already had a broader dirty worktree before this, so I left the unrelated existing changes alone."
+        }
+      ]
+    }
+  ]
+}

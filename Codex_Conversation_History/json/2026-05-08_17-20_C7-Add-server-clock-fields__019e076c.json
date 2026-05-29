@@ -1,0 +1,207 @@
+{
+  "id": "019e076c-7cae-7ac3-8500-2bf7b8fc96a8",
+  "title": "C7: Add server clock fields",
+  "createdAtLocal": "2026-05-08 17:20:10",
+  "updatedAtLocal": "2026-05-08 17:31:31",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/08/rollout-2026-05-08T17-20-10-019e076c-7cae-7ac3-8500-2bf7b8fc96a8.jsonl",
+  "gitBranch": "main",
+  "gitSha": "b7ee5b09ac035751d98b4831dd346bc5b3f38bff",
+  "firstUserMessage": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups.\n15. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \nGoal:\nPrepare trophies, streaks, workouts, and future PRs for server-authoritative time.\n\nCreate:\n- AppClock.swift\n\nprotocol AppClock {\n    func now() -> Date\n    func estimatedServerNow() -> Date\n}\n\nstruct LocalClock: AppClock {\n    func now() -> Date { Date() }\n    func estimatedServerNow() -> Date { Date() }\n}\n\nAdd fields:\n- WorkoutSessionSummary.serverEndedAt: Date?\n- TrophyUnlockEvent.serverEarnedAt: Date?\n- CalibrationRecord.serverCompletedAt: Date?\n- AIInsight.serverCreatedAt: Date? if useful\n\nRules:\n- Local mode sets server fields to nil or local estimate consistently.\n- Streak logic should prefer serverEndedAt when available, then endedAt.\n- Firebase repository later overwrites server fields with Firestore server timestamp after write acknowledgement.\n- Do not claim true server time in local mode.\n\nUpdate:\n- StatsEngine streak calculations\n- TrendEngine date windows\n- TrophyEngine unlock event creation\n- WorkoutHistoryStore summary creation path if needed\n\nTests:\n- old summaries without serverEndedAt decode\n- StatsEngine prefers serverEndedAt\n- streak tests remain stable with LocalClock\n- TrophyUnlockEvent can carry serverEarnedAt\n\nAcceptance:\n- Time-sensitive logic can later shift to server timestamps without model redesign.",
+  "preview": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups.\n15. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \nGoal:\nPrepare trophies, streaks, workouts, and future PRs for server-authoritative time.\n\nCreate:\n- AppClock.swift\n\nprotocol AppClock {\n    func now() -> Date\n    func estimatedServerNow() -> Date\n}\n\nstruct LocalClock: AppClock {\n    func now() -> Date { Date() }\n    func estimatedServerNow() -> Date { Date() }\n}\n\nAdd fields:\n- WorkoutSessionSummary.serverEndedAt: Date?\n- TrophyUnlockEvent.serverEarnedAt: Date?\n- CalibrationRecord.serverCompletedAt: Date?\n- AIInsight.serverCreatedAt: Date? if useful\n\nRules:\n- Local mode sets server fields to nil or local estimate consistently.\n- Streak logic should prefer serverEndedAt when available, then endedAt.\n- Firebase repository later overwrites server fields with Firestore server timestamp after write acknowledgement.\n- Do not claim true server time in local mode.\n\nUpdate:\n- StatsEngine streak calculations\n- TrendEngine date windows\n- TrophyEngine unlock event creation\n- WorkoutHistoryStore summary creation path if needed\n\nTests:\n- old summaries without serverEndedAt decode\n- StatsEngine prefers serverEndedAt\n- streak tests remain stable with LocalClock\n- TrophyUnlockEvent can carry serverEarnedAt\n\nAcceptance:\n- Time-sensitive logic can later shift to server timestamps without model redesign.",
+  "rawLineCount": 366,
+  "parseErrors": 0,
+  "visibleMessageCount": 17,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-08T11:50:28.220Z",
+      "role": "user",
+      "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups.\n15. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \nGoal:\nPrepare trophies, streaks, workouts, and future PRs for server-authoritative time.\n\nCreate:\n- AppClock.swift\n\nprotocol AppClock {\n    func now() -> Date\n    func estimatedServerNow() -> Date\n}\n\nstruct LocalClock: AppClock {\n    func now() -> Date { Date() }\n    func estimatedServerNow() -> Date { Date() }\n}\n\nAdd fields:\n- WorkoutSessionSummary.serverEndedAt: Date?\n- TrophyUnlockEvent.serverEarnedAt: Date?\n- CalibrationRecord.serverCompletedAt: Date?\n- AIInsight.serverCreatedAt: Date? if useful\n\nRules:\n- Local mode sets server fields to nil or local estimate consistently.\n- Streak logic should prefer serverEndedAt when available, then endedAt.\n- Firebase repository later overwrites server fields with Firestore server timestamp after write acknowledgement.\n- Do not claim true server time in local mode.\n\nUpdate:\n- StatsEngine streak calculations\n- TrendEngine date windows\n- TrophyEngine unlock event creation\n- WorkoutHistoryStore summary creation path if needed\n\nTests:\n- old summaries without serverEndedAt decode\n- StatsEngine prefers serverEndedAt\n- streak tests remain stable with LocalClock\n- TrophyUnlockEvent can carry serverEarnedAt\n\nAcceptance:\n- Time-sensitive logic can later shift to server timestamps without model redesign.\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups.\n15. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \nGoal:\nPrepare trophies, streaks, workouts, and future PRs for server-authoritative time.\n\nCreate:\n- AppClock.swift\n\nprotocol AppClock {\n    func now() -> Date\n    func estimatedServerNow() -> Date\n}\n\nstruct LocalClock: AppClock {\n    func now() -> Date { Date() }\n    func estimatedServerNow() -> Date { Date() }\n}\n\nAdd fields:\n- WorkoutSessionSummary.serverEndedAt: Date?\n- TrophyUnlockEvent.serverEarnedAt: Date?\n- CalibrationRecord.serverCompletedAt: Date?\n- AIInsight.serverCreatedAt: Date? if useful\n\nRules:\n- Local mode sets server fields to nil or local estimate consistently.\n- Streak logic should prefer serverEndedAt when available, then endedAt.\n- Firebase repository later overwrites server fields with Firestore server timestamp after write acknowledgement.\n- Do not claim true server time in local mode.\n\nUpdate:\n- StatsEngine streak calculations\n- TrendEngine date windows\n- TrophyEngine unlock event creation\n- WorkoutHistoryStore summary creation path if needed\n\nTests:\n- old summaries without serverEndedAt decode\n- StatsEngine prefers serverEndedAt\n- streak tests remain stable with LocalClock\n- TrophyUnlockEvent can carry serverEarnedAt\n\nAcceptance:\n- Time-sensitive logic can later shift to server timestamps without model redesign.\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:50:31.232Z",
+      "role": "assistant",
+      "text": "I’ll inspect the repo first and read the README plus debug log before touching anything. I’m going to trace where summaries, streaks, trends, trophies, calibration records, and insights are defined so the clock change lands in the existing shape rather than fighting it.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll inspect the repo first and read the README plus debug log before touching anything. I’m going to trace where summaries, streaks, trends, trophies, calibration records, and insights are defined so the clock change lands in the existing shape rather than fighting it."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:50:42.726Z",
+      "role": "assistant",
+      "text": "I’ve got the file map. Next I’m reading the repository notes and the engines/models that own dates; the important bit here is to add server-time readiness without disturbing the live pose/camera path or local-first behavior.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve got the file map. Next I’m reading the repository notes and the engines/models that own dates; the important bit here is to add server-time readiness without disturbing the live pose/camera path or local-first behavior."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:50:59.019Z",
+      "role": "assistant",
+      "text": "The repo notes confirm the target constraints: local deterministic coaching, two live flows sharing one camera stack, and no raw camera/pose persistence. I’m narrowing the edit to model timestamps plus date consumers, with tests around decoding and server-date preference.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The repo notes confirm the target constraints: local deterministic coaching, two live flows sharing one camera stack, and no raw camera/pose persistence. I’m narrowing the edit to model timestamps plus date consumers, with tests around decoding and server-date preference."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:53:05.610Z",
+      "role": "assistant",
+      "text": "I’ve got enough of the shape now. I’m going to make the server timestamp fields optional and nil in local mode, add a tiny clock abstraction, then route date-sensitive engines through `serverEndedAt ?? endedAt`; that gives Firebase a landing place later without pretending local time is server time today.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve got enough of the shape now. I’m going to make the server timestamp fields optional and nil in local mode, add a tiny clock abstraction, then route date-sensitive engines through `serverEndedAt ?? endedAt`; that gives Firebase a landing place later without pretending local time is server time today."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:53:08.137Z",
+      "role": "assistant",
+      "text": "First edit pass is model-only: new clock file, optional server fields, and copy/Codable plumbing. I’m keeping local constructors on nil server timestamps so the app is honest until a backend write acknowledgement supplies a real server value.",
+      "content": [
+        {
+          "type": "text",
+          "text": "First edit pass is model-only: new clock file, optional server fields, and copy/Codable plumbing. I’m keeping local constructors on nil server timestamps so the app is honest until a backend write acknowledgement supplies a real server value."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:54:05.597Z",
+      "role": "assistant",
+      "text": "Now I’m moving the date consumers. This is deliberately a fallback, not a rewrite: if a summary has `serverEndedAt`, streaks/windows use it; older and local-only summaries keep behaving exactly as before via `endedAt`.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Now I’m moving the date consumers. This is deliberately a fallback, not a rewrite: if a summary has `serverEndedAt`, streaks/windows use it; older and local-only summaries keep behaving exactly as before via `endedAt`."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:56:00.804Z",
+      "role": "assistant",
+      "text": "Test edits next. I’m adding assertions for legacy JSON, a targeted server-date streak case, and a trophy event roundtrip so the optional fields are proven to be additive rather than migration-breaking.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Test edits next. I’m adding assertions for legacy JSON, a targeted server-date streak case, and a trophy event roundtrip so the optional fields are proven to be additive rather than migration-breaking."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:57:22.623Z",
+      "role": "assistant",
+      "text": "The main wiring is in place. I’m doing a quick self-review now for accidental `endedAt` leftovers in the date-window paths and for Codable/copy omissions, then I’ll run focused tests before the broader build/test command.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The main wiring is in place. I’m doing a quick self-review now for accidental `endedAt` leftovers in the date-window paths and for Codable/copy omissions, then I’ll run focused tests before the broader build/test command."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:57:34.994Z",
+      "role": "assistant",
+      "text": "The diff looks scoped: no camera, pose, rep counter, form engine, or live-session pipeline changes. I’m starting with the focused model/engine tests that cover these timestamp paths, then I’ll run the broader command if the simulator cooperates.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The diff looks scoped: no camera, pose, rep counter, form engine, or live-session pipeline changes. I’m starting with the focused model/engine tests that cover these timestamp paths, then I’ll run the broader command if the simulator cooperates."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:57:50.179Z",
+      "role": "assistant",
+      "text": "The focused run reached compile and found one model plumbing miss in `CalibrationRecord`: I copied the new field through a static factory without giving that factory a parameter. I’ll patch that now and rerun.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused run reached compile and found one model plumbing miss in `CalibrationRecord`: I copied the new field through a static factory without giving that factory a parameter. I’ll patch that now and rerun."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:59:02.270Z",
+      "role": "assistant",
+      "text": "The focused suite is past compilation now and into simulator test execution. I’m waiting it out; if it passes, I’ll use the same workspace/simulator path for the broader verification.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused suite is past compilation now and into simulator test execution. I’m waiting it out; if it passes, I’ll use the same workspace/simulator path for the broader verification."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T11:59:30.463Z",
+      "role": "assistant",
+      "text": "Focused verification passed. I’m running the full workspace test command now; after that I’ll run a plain simulator build so we have both test and compile evidence for this phase.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Focused verification passed. I’m running the full workspace test command now; after that I’ll run a plain simulator build so we have both test and compile evidence for this phase."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T12:00:13.930Z",
+      "role": "assistant",
+      "text": "The full test run has built the app and is in the test phase. No new compile issues have surfaced; I’m letting the simulator finish the suite.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The full test run has built the app and is in the test phase. No new compile issues have surfaced; I’m letting the simulator finish the suite."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T12:00:31.882Z",
+      "role": "assistant",
+      "text": "Full tests passed. One more plain `xcodebuild build` now, mostly to prove the app target compiles outside the test harness too.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Full tests passed. One more plain `xcodebuild build` now, mostly to prove the app target compiles outside the test harness too."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T12:00:48.885Z",
+      "role": "assistant",
+      "text": "Both verification passes succeeded: full tests and a plain app build. I’m doing the final review pass now: status, changed files, and the exact migration behavior to report back cleanly.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Both verification passes succeeded: full tests and a plain app build. I’m doing the final review pass now: status, changed files, and the exact migration behavior to report back cleanly."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T12:01:31.291Z",
+      "role": "assistant",
+      "text": "Implemented the server-time readiness pass. I kept it local-first: local mode leaves new server timestamp fields as `nil`, so the app does not pretend it has true server time before Firebase exists.\n\nChanged files:\n- Added [AppClock.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/AppClock.swift:1)\n- Updated timestamp models in [WorkoutSessionSummary.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/WorkoutSessionSummary.swift:218), [TrophyModels.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/TrophyModels.swift:287), [CalibrationRecord.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/CalibrationRecord.swift:34), and [AIInsightModels.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/AIInsightModels.swift:148)\n- Updated server-time fallback logic in [StatsEngine.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/StatsEngine.swift:57), [TrendEngine.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/TrendEngine.swift:78), [TrendWindowPolicy.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/TrendWindowPolicy.swift:18), and [WorkoutHistoryStore.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/WorkoutHistoryStore.swift:215)\n- Added/updated tests in `StatsEngineTests`, `TrendEngineTests`, `TrophyEngineTests`, `WorkoutHistoryStoreTests`, and `SyncMetadataTests`\n\nKey behavior:\n- `WorkoutSessionSummary.serverEndedAt`, `TrophyUnlockEvent.serverEarnedAt`, `CalibrationRecord.serverCompletedAt`, and `AIInsight.serverCreatedAt` are optional and backward-compatible.\n- Streaks, trend windows, history sorting/stats, and trophy workout-day logic now prefer `serverEndedAt`, falling back to `endedAt`.\n- Trophy unlock events are created with `serverEarnedAt: nil` in local mode.\n- Old JSON without the new fields decodes cleanly with nil server timestamps.\n\nPractical before/after:\nBefore, if a user’s phone clock was wrong or offline data later synced, streaks and trends were locked to the device’s `endedAt`. After this, the same workout can later receive `serverEndedAt` from Firestore; for example, a workout that the phone thought ended yesterday can count toward today’s streak once the backend confirms the real server completion time. Offline/local workouts still behave exactly as they do today.\n\nVerification passed:\n- Focused timestamp/model tests passed.\n- Full `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` passed.\n- `xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` passed.\n- `git diff --check` passed.\n\nKnown follow-ups: when Firebase begins, repositories should overwrite these server fields after Firestore server timestamp acknowledgement. If time-of-day trophies need true server-authoritative start time later, add a separate `serverStartedAt` rather than overloading `endedAt`.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Implemented the server-time readiness pass. I kept it local-first: local mode leaves new server timestamp fields as `nil`, so the app does not pretend it has true server time before Firebase exists.\n\nChanged files:\n- Added [AppClock.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/AppClock.swift:1)\n- Updated timestamp models in [WorkoutSessionSummary.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/WorkoutSessionSummary.swift:218), [TrophyModels.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/TrophyModels.swift:287), [CalibrationRecord.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/CalibrationRecord.swift:34), and [AIInsightModels.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/AIInsightModels.swift:148)\n- Updated server-time fallback logic in [StatsEngine.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/StatsEngine.swift:57), [TrendEngine.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/TrendEngine.swift:78), [TrendWindowPolicy.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/TrendWindowPolicy.swift:18), and [WorkoutHistoryStore.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/WorkoutHistoryStore.swift:215)\n- Added/updated tests in `StatsEngineTests`, `TrendEngineTests`, `TrophyEngineTests`, `WorkoutHistoryStoreTests`, and `SyncMetadataTests`\n\nKey behavior:\n- `WorkoutSessionSummary.serverEndedAt`, `TrophyUnlockEvent.serverEarnedAt`, `CalibrationRecord.serverCompletedAt`, and `AIInsight.serverCreatedAt` are optional and backward-compatible.\n- Streaks, trend windows, history sorting/stats, and trophy workout-day logic now prefer `serverEndedAt`, falling back to `endedAt`.\n- Trophy unlock events are created with `serverEarnedAt: nil` in local mode.\n- Old JSON without the new fields decodes cleanly with nil server timestamps.\n\nPractical before/after:\nBefore, if a user’s phone clock was wrong or offline data later synced, streaks and trends were locked to the device’s `endedAt`. After this, the same workout can later receive `serverEndedAt` from Firestore; for example, a workout that the phone thought ended yesterday can count toward today’s streak once the backend confirms the real server completion time. Offline/local workouts still behave exactly as they do today.\n\nVerification passed:\n- Focused timestamp/model tests passed.\n- Full `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` passed.\n- `xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` passed.\n- `git diff --check` passed.\n\nKnown follow-ups: when Firebase begins, repositories should overwrite these server fields after Firestore server timestamp acknowledgement. If time-of-day trophies need true server-authoritative start time later, add a separate `serverStartedAt` rather than overloading `endedAt`."
+        }
+      ]
+    }
+  ]
+}

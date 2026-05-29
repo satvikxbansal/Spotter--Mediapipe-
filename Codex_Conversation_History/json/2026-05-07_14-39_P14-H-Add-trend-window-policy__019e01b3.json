@@ -1,0 +1,152 @@
+{
+  "id": "019e01b3-3265-7a22-9f98-e0cd33733c12",
+  "title": "P14_H: Add trend window policy",
+  "createdAtLocal": "2026-05-07 14:39:41",
+  "updatedAtLocal": "2026-05-07 15:19:35",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/07/rollout-2026-05-07T14-39-41-019e01b3-3265-7a22-9f98-e0cd33733c12.jsonl",
+  "gitBranch": "main",
+  "gitSha": "a8305d617f2abab60b3b8df7bd7426bfdc252375",
+  "firstUserMessage": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done. In simple words explain what we have fixed with real life examples if possible to understand. better (before - after)\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \n\nTASK\nTrendEngine.mostRepeatedCue, cameraFrictionCount, ExerciseTrendSummary.cueCounts, and\nseveral SignalExtractor counts use the entire history with no time decay. Once a user\nfixes a problem, the signal keeps re-firing because old events dominate the count.\n\nGOAL\nIntroduce a `TrendWindowPolicy` that, by default, restricts cue counts and friction\ncounts to the most recent N sessions OR most recent K days, whichever is shorter:\n- mostRepeatedCue: last 7 sessions.\n- cameraFrictionCount: last 14 days.\n- ExerciseTrendSummary.cueCounts: last 5 sessions of that exercise type.\n- repeatedCue evidenceRefs: only count cue events whose timestamp is within the window.\n\nDESIGN\n- Add `TrendWindowPolicy` struct with named static defaults\n  (.recentCues, .recentSetup, .recentExerciseFriction). Make them tunable via\n  init parameters so tests can pin the window.\n- TrendEngine, SignalExtractor: thread the policy through; existing call sites use\n  defaults so behavior changes uniformly.\n\nCONSTRAINTS\n- Must preserve the existing interfaces externally (default windows applied if not\n  supplied).\n- Persisted snapshot need not change.\n\nACCEPTANCE\n- New tests: a user with 3 cue-X events in summaries 12 sessions ago and 1 cue-Y event\n  this week → mostRepeatedCue == \"Y\" with default window.\n- cameraFrictionCount > 0 only if events occurred within last 14 days.\n- All existing TrendEngineTests pass (or are updated to pass appropriate windows where\n  intentional).",
+  "preview": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done. In simple words explain what we have fixed with real life examples if possible to understand. better (before - after)\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \n\nTASK\nTrendEngine.mostRepeatedCue, cameraFrictionCount, ExerciseTrendSummary.cueCounts, and\nseveral SignalExtractor counts use the entire history with no time decay. Once a user\nfixes a problem, the signal keeps re-firing because old events dominate the count.\n\nGOAL\nIntroduce a `TrendWindowPolicy` that, by default, restricts cue counts and friction\ncounts to the most recent N sessions OR most recent K days, whichever is shorter:\n- mostRepeatedCue: last 7 sessions.\n- cameraFrictionCount: last 14 days.\n- ExerciseTrendSummary.cueCounts: last 5 sessions of that exercise type.\n- repeatedCue evidenceRefs: only count cue events whose timestamp is within the window.\n\nDESIGN\n- Add `TrendWindowPolicy` struct with named static defaults\n  (.recentCues, .recentSetup, .recentExerciseFriction). Make them tunable via\n  init parameters so tests can pin the window.\n- TrendEngine, SignalExtractor: thread the policy through; existing call sites use\n  defaults so behavior changes uniformly.\n\nCONSTRAINTS\n- Must preserve the existing interfaces externally (default windows applied if not\n  supplied).\n- Persisted snapshot need not change.\n\nACCEPTANCE\n- New tests: a user with 3 cue-X events in summaries 12 sessions ago and 1 cue-Y event\n  this week → mostRepeatedCue == \"Y\" with default window.\n- cameraFrictionCount > 0 only if events occurred within last 14 days.\n- All existing TrendEngineTests pass (or are updated to pass appropriate windows where\n  intentional).",
+  "rawLineCount": 342,
+  "parseErrors": 0,
+  "visibleMessageCount": 12,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-07T09:09:44.244Z",
+      "role": "user",
+      "text": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done. In simple words explain what we have fixed with real life examples if possible to understand. better (before - after)\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \n\nTASK\nTrendEngine.mostRepeatedCue, cameraFrictionCount, ExerciseTrendSummary.cueCounts, and\nseveral SignalExtractor counts use the entire history with no time decay. Once a user\nfixes a problem, the signal keeps re-firing because old events dominate the count.\n\nGOAL\nIntroduce a `TrendWindowPolicy` that, by default, restricts cue counts and friction\ncounts to the most recent N sessions OR most recent K days, whichever is shorter:\n- mostRepeatedCue: last 7 sessions.\n- cameraFrictionCount: last 14 days.\n- ExerciseTrendSummary.cueCounts: last 5 sessions of that exercise type.\n- repeatedCue evidenceRefs: only count cue events whose timestamp is within the window.\n\nDESIGN\n- Add `TrendWindowPolicy` struct with named static defaults\n  (.recentCues, .recentSetup, .recentExerciseFriction). Make them tunable via\n  init parameters so tests can pin the window.\n- TrendEngine, SignalExtractor: thread the policy through; existing call sites use\n  defaults so behavior changes uniformly.\n\nCONSTRAINTS\n- Must preserve the existing interfaces externally (default windows applied if not\n  supplied).\n- Persisted snapshot need not change.\n\nACCEPTANCE\n- New tests: a user with 3 cue-X events in summaries 12 sessions ago and 1 cue-Y event\n  this week → mostRepeatedCue == \"Y\" with default window.\n- cameraFrictionCount > 0 only if events occurred within last 14 days.\n- All existing TrendEngineTests pass (or are updated to pass appropriate windows where\n  intentional).\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done. In simple words explain what we have fixed with real life examples if possible to understand. better (before - after)\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \n\nTASK\nTrendEngine.mostRepeatedCue, cameraFrictionCount, ExerciseTrendSummary.cueCounts, and\nseveral SignalExtractor counts use the entire history with no time decay. Once a user\nfixes a problem, the signal keeps re-firing because old events dominate the count.\n\nGOAL\nIntroduce a `TrendWindowPolicy` that, by default, restricts cue counts and friction\ncounts to the most recent N sessions OR most recent K days, whichever is shorter:\n- mostRepeatedCue: last 7 sessions.\n- cameraFrictionCount: last 14 days.\n- ExerciseTrendSummary.cueCounts: last 5 sessions of that exercise type.\n- repeatedCue evidenceRefs: only count cue events whose timestamp is within the window.\n\nDESIGN\n- Add `TrendWindowPolicy` struct with named static defaults\n  (.recentCues, .recentSetup, .recentExerciseFriction). Make them tunable via\n  init parameters so tests can pin the window.\n- TrendEngine, SignalExtractor: thread the policy through; existing call sites use\n  defaults so behavior changes uniformly.\n\nCONSTRAINTS\n- Must preserve the existing interfaces externally (default windows applied if not\n  supplied).\n- Persisted snapshot need not change.\n\nACCEPTANCE\n- New tests: a user with 3 cue-X events in summaries 12 sessions ago and 1 cue-Y event\n  this week → mostRepeatedCue == \"Y\" with default window.\n- cameraFrictionCount > 0 only if events occurred within last 14 days.\n- All existing TrendEngineTests pass (or are updated to pass appropriate windows where\n  intentional).\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T09:09:51.860Z",
+      "role": "assistant",
+      "text": "I’ll start by mapping the project and reading the trend-related code paths before touching anything. I’ll keep the live camera stack out of scope unless the dependency graph unexpectedly forces us there.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll start by mapping the project and reading the trend-related code paths before touching anything. I’ll keep the live camera stack out of scope unless the dependency graph unexpectedly forces us there."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T09:10:03.588Z",
+      "role": "assistant",
+      "text": "The repo is already carrying a set of modified and untracked files, including the trend and insight areas we’ll touch. I’ll treat those as existing work, read around them carefully, and keep the patch narrowly layered on top.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The repo is already carrying a set of modified and untracked files, including the trend and insight areas we’ll touch. I’ll treat those as existing work, read around them carefully, and keep the patch narrowly layered on top."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T09:10:21.865Z",
+      "role": "assistant",
+      "text": "The trend engine is already nicely separated from SwiftUI, which is good news. The stale-signal problem sits in count aggregation and evidence selection, so the smallest good fix is a shared window policy used at those aggregation boundaries.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The trend engine is already nicely separated from SwiftUI, which is good news. The stale-signal problem sits in count aggregation and evidence selection, so the smallest good fix is a shared window policy used at those aggregation boundaries."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T09:13:29.723Z",
+      "role": "assistant",
+      "text": "I’m going to add the policy as a small model-level value type, then thread it through `TrendEngine` by defaulted initializer parameters. The key engineering choice is to window at the aggregation/evidence boundaries, not inside the camera/pose/live pipeline, so the raw session data remains local and unchanged while stale coaching signals age out.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m going to add the policy as a small model-level value type, then thread it through `TrendEngine` by defaulted initializer parameters. The key engineering choice is to window at the aggregation/evidence boundaries, not inside the camera/pose/live pipeline, so the raw session data remains local and unchanged while stale coaching signals age out."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T09:16:08.280Z",
+      "role": "assistant",
+      "text": "The extractor is now using the same policies for repeated-cue evidence, camera-friction evidence, and related cue-cluster evidence. I also windowed exercise-level friction counters so an old rough patch stops keeping an exercise marked as “struggling” after the recent sessions are clean.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The extractor is now using the same policies for repeated-cue evidence, camera-friction evidence, and related cue-cluster evidence. I also windowed exercise-level friction counters so an old rough patch stops keeping an exercise marked as “struggling” after the recent sessions are clean."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T09:17:06.969Z",
+      "role": "assistant",
+      "text": "The regression tests now cover the exact failure mode: old cue X can be louder in lifetime history but newer cue Y wins inside the default window; camera setup cues expire after 14 days; exercise cue/friction counts only use recent exercise exposures; repeated-cue evidence no longer pulls old events back into the signal. Next I’m going to let Xcode tell us what I missed.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The regression tests now cover the exact failure mode: old cue X can be louder in lifetime history but newer cue Y wins inside the default window; camera setup cues expire after 14 days; exercise cue/friction counts only use recent exercise exposures; repeated-cue evidence no longer pulls old events back into the signal. Next I’m going to let Xcode tell us what I missed."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T09:18:09.260Z",
+      "role": "assistant",
+      "text": "The targeted `TrendEngineTests` build has compiled and is in the simulator test phase now. No compile error has surfaced so far, so we’re past the riskiest part of adding the new source file and initializer threading.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The targeted `TrendEngineTests` build has compiled and is in the simulator test phase now. No compile error has surfaced so far, so we’re past the riskiest part of adding the new source file and initializer threading."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T09:18:18.443Z",
+      "role": "assistant",
+      "text": "Targeted trend tests passed. I’m going to run the full app test suite now because the trend snapshot feeds several insight paths, and I want to catch any unintended change in downstream coaching signals.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Targeted trend tests passed. I’m going to run the full app test suite now because the trend snapshot feeds several insight paths, and I want to catch any unintended change in downstream coaching signals."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T09:19:05.611Z",
+      "role": "assistant",
+      "text": "Full-suite test is still running through the simulator with no failure output yet. Since the targeted suite already passed, this is mostly checking collateral impact in insight, dashboard, and plan tests.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Full-suite test is still running through the simulator with no failure output yet. Since the targeted suite already passed, this is mostly checking collateral impact in insight, dashboard, and plan tests."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T09:19:19.911Z",
+      "role": "assistant",
+      "text": "Full suite passed too. I’m doing one quick local review pass over the diff now, looking specifically for policy leaks, stale evidence edge cases, and accidental UI/live-pipeline touch points.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Full suite passed too. I’m doing one quick local review pass over the diff now, looking specifically for policy leaks, stale evidence edge cases, and accidental UI/live-pipeline touch points."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T09:20:03.289Z",
+      "role": "assistant",
+      "text": "Implemented the trend-window fix and kept it out of the live camera/MediaPipe path.\n\n**Changed**\n- Added [TrendWindowPolicy.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/TrendWindowPolicy.swift:3>) with tunable `maxSessions` / `maxDays` and defaults:\n  `recentCues = 7 sessions`, `recentSetup = 14 days`, `recentExerciseFriction = 5 exercise sessions`.\n- Updated [TrendEngine.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/TrendEngine.swift:3>) so `mostRepeatedCue`, camera friction count, exercise cue counts, and exercise friction counters use those windows.\n- Updated [SignalExtractor.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/SignalExtractor.swift:496>) so repeated-cue, camera-friction, and cue-cluster evidence only come from the active window.\n- Added regression coverage in [TrendEngineTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/TrendEngineTests.swift:198>).\n\n**Before / After**\nBefore: if someone got “knee caves in” three times 12 sessions ago, then fixed it, that old cue could still beat a newer current cue.  \nAfter: the coach now looks at the recent window, so a newer cue like “keep your chest tall” wins if that is what is happening now.\n\nBefore: a camera setup issue from 15 days ago could still count as setup friction.  \nAfter: camera friction only counts if the setup cue happened in the last 14 days.\n\n**Tests**\n- Passed: `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' -only-testing:VirtualTrainerTests/TrendEngineTests`\n- Passed: `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2'`\n\n**Manual Test Plan**\n1. Do several clean recent workouts after older bad-form sessions. Confirm dashboard/profile insight stops repeating the old cue.\n2. Save a workout with a camera cue, then simulate/seed it older than 14 days. Confirm camera-friction insight does not appear.\n3. Run both flows:\n   - Camera tab free analysis: save summary, confirm trends/insights still generate.\n   - Planned workout session: complete a plan, confirm recap and trends still generate.\n4. Repeat one cue in two recent sessions. Confirm repeated-cue insight shows only recent evidence refs.\n\n**Post-Build Review**\nThe highest-leverage extra I implemented was extending the same windowing to cue-cluster evidence and exercise-level friction counters, because those can also keep stale coaching alive. Good next steps: add “resolved cue” signals, severity-weighted decay, and per-user adaptive windows once there is enough history.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Implemented the trend-window fix and kept it out of the live camera/MediaPipe path.\n\n**Changed**\n- Added [TrendWindowPolicy.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/TrendWindowPolicy.swift:3>) with tunable `maxSessions` / `maxDays` and defaults:\n  `recentCues = 7 sessions`, `recentSetup = 14 days`, `recentExerciseFriction = 5 exercise sessions`.\n- Updated [TrendEngine.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/TrendEngine.swift:3>) so `mostRepeatedCue`, camera friction count, exercise cue counts, and exercise friction counters use those windows.\n- Updated [SignalExtractor.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/SignalExtractor.swift:496>) so repeated-cue, camera-friction, and cue-cluster evidence only come from the active window.\n- Added regression coverage in [TrendEngineTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/TrendEngineTests.swift:198>).\n\n**Before / After**\nBefore: if someone got “knee caves in” three times 12 sessions ago, then fixed it, that old cue could still beat a newer current cue.  \nAfter: the coach now looks at the recent window, so a newer cue like “keep your chest tall” wins if that is what is happening now.\n\nBefore: a camera setup issue from 15 days ago could still count as setup friction.  \nAfter: camera friction only counts if the setup cue happened in the last 14 days.\n\n**Tests**\n- Passed: `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' -only-testing:VirtualTrainerTests/TrendEngineTests`\n- Passed: `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2'`\n\n**Manual Test Plan**\n1. Do several clean recent workouts after older bad-form sessions. Confirm dashboard/profile insight stops repeating the old cue.\n2. Save a workout with a camera cue, then simulate/seed it older than 14 days. Confirm camera-friction insight does not appear.\n3. Run both flows:\n   - Camera tab free analysis: save summary, confirm trends/insights still generate.\n   - Planned workout session: complete a plan, confirm recap and trends still generate.\n4. Repeat one cue in two recent sessions. Confirm repeated-cue insight shows only recent evidence refs.\n\n**Post-Build Review**\nThe highest-leverage extra I implemented was extending the same windowing to cue-cluster evidence and exercise-level friction counters, because those can also keep stale coaching alive. Good next steps: add “resolved cue” signals, severity-weighted decay, and per-user adaptive windows once there is enough history."
+        }
+      ]
+    }
+  ]
+}

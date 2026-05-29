@@ -1,0 +1,218 @@
+{
+  "id": "019dfdce-3785-7771-bcdf-f8d79a3a6b22",
+  "title": "Audit codebase crashes",
+  "createdAtLocal": "2026-05-06 20:30:43",
+  "updatedAtLocal": "2026-05-06 20:49:45",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/06/rollout-2026-05-06T20-30-43-019dfdce-3785-7771-bcdf-f8d79a3a6b22.jsonl",
+  "gitBranch": "main",
+  "gitSha": "834fc960d63922573b4a5678d14e3a57497825ff",
+  "firstUserMessage": "Do another in-depth deep audit of the entire codebase and check if there are any unwired code or dependencies or app crashes [ app crashes prevention are important] or bugs - evaluate and resolve them. ALso look for possible incomplete codes, logics, and ways to improve / strengthen existing - evaluate them deeply and only implement the highest confidence and priority ones. review all the code changes and the older code deeply and check for errors, crashes or new bugs. \n\nPost the above, share an end to end manual testing plan for the features in this chat. think deeply and use highest level of reasoning. be very detailed and in depth and evaluate the code with the highest possible technical lens for bugs, etc - code quality can be skipped, we will improve that later. looking for funtiomnal bugs, crashes, suspicious screens - for parts that are sus and might require a round of manual review - call them out and mention in the end to end testing plan so i can verify those too. Post this we will proceed to phase 13.\n\nUnderstand each and every exercise and implications of recent changes on them. Understand evry training signal, trend and insight. Evaluate if there is anything to be fixed or improved there and implement the high priority ones. We need the code to be tight and error free. Do not increase the strictness of any exercises or achievements.\n\nBe very detailed and comprehensive in your evaluation.  \n\nIMPORTANT: IF YOU DO NOT FIND ANYTHING PRESSING WORTH FIXING OR IMPROVING - CALL THAT OUT AND DO NOT DO ANYTHING. YOU DON'T HAVE TO MANDATORILY FIND STUFF TO IMPROVE. USE HIGHEST LEVEL OF REASONING AND THINKING.",
+  "preview": "Do another in-depth deep audit of the entire codebase and check if there are any unwired code or dependencies or app crashes [ app crashes prevention are important] or bugs - evaluate and resolve them. ALso look for possible incomplete codes, logics, and ways to improve / strengthen existing - evaluate them deeply and only implement the highest confidence and priority ones. review all the code changes and the older code deeply and check for errors, crashes or new bugs. \n\nPost the above, share an end to end manual testing plan for the features in this chat. think deeply and use highest level of reasoning. be very detailed and in depth and evaluate the code with the highest possible technical lens for bugs, etc - code quality can be skipped, we will improve that later. looking for funtiomnal bugs, crashes, suspicious screens - for parts that are sus and might require a round of manual review - call them out and mention in the end to end testing plan so i can verify those too. Post this we will proceed to phase 13.\n\nUnderstand each and every exercise and implications of recent changes on them. Understand evry training signal, trend and insight. Evaluate if there is anything to be fixed or improved there and implement the high priority ones. We need the code to be tight and error free. Do not increase the strictness of any exercises or achievements.\n\nBe very detailed and comprehensive in your evaluation.  \n\nIMPORTANT: IF YOU DO NOT FIND ANYTHING PRESSING WORTH FIXING OR IMPROVING - CALL THAT OUT AND DO NOT DO ANYTHING. YOU DON'T HAVE TO MANDATORILY FIND STUFF TO IMPROVE. USE HIGHEST LEVEL OF REASONING AND THINKING.",
+  "rawLineCount": 817,
+  "parseErrors": 0,
+  "visibleMessageCount": 18,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-06T15:02:46.795Z",
+      "role": "user",
+      "text": "Do another in-depth deep audit of the entire codebase and check if there are any unwired code or dependencies or app crashes [ app crashes prevention are important] or bugs - evaluate and resolve them. ALso look for possible incomplete codes, logics, and ways to improve / strengthen existing - evaluate them deeply and only implement the highest confidence and priority ones. review all the code changes and the older code deeply and check for errors, crashes or new bugs. \n\nPost the above, share an end to end manual testing plan for the features in this chat. think deeply and use highest level of reasoning. be very detailed and in depth and evaluate the code with the highest possible technical lens for bugs, etc - code quality can be skipped, we will improve that later. looking for funtiomnal bugs, crashes, suspicious screens - for parts that are sus and might require a round of manual review - call them out and mention in the end to end testing plan so i can verify those too. Post this we will proceed to phase 13.\n\nUnderstand each and every exercise and implications of recent changes on them. Understand evry training signal, trend and insight. Evaluate if there is anything to be fixed or improved there and implement the high priority ones. We need the code to be tight and error free. Do not increase the strictness of any exercises or achievements.\n\nBe very detailed and comprehensive in your evaluation.  \n\nIMPORTANT: IF YOU DO NOT FIND ANYTHING PRESSING WORTH FIXING OR IMPROVING - CALL THAT OUT AND DO NOT DO ANYTHING. YOU DON'T HAVE TO MANDATORILY FIND STUFF TO IMPROVE. USE HIGHEST LEVEL OF REASONING AND THINKING. \n",
+      "content": [
+        {
+          "type": "text",
+          "text": "Do another in-depth deep audit of the entire codebase and check if there are any unwired code or dependencies or app crashes [ app crashes prevention are important] or bugs - evaluate and resolve them. ALso look for possible incomplete codes, logics, and ways to improve / strengthen existing - evaluate them deeply and only implement the highest confidence and priority ones. review all the code changes and the older code deeply and check for errors, crashes or new bugs. \n\nPost the above, share an end to end manual testing plan for the features in this chat. think deeply and use highest level of reasoning. be very detailed and in depth and evaluate the code with the highest possible technical lens for bugs, etc - code quality can be skipped, we will improve that later. looking for funtiomnal bugs, crashes, suspicious screens - for parts that are sus and might require a round of manual review - call them out and mention in the end to end testing plan so i can verify those too. Post this we will proceed to phase 13.\n\nUnderstand each and every exercise and implications of recent changes on them. Understand evry training signal, trend and insight. Evaluate if there is anything to be fixed or improved there and implement the high priority ones. We need the code to be tight and error free. Do not increase the strictness of any exercises or achievements.\n\nBe very detailed and comprehensive in your evaluation.  \n\nIMPORTANT: IF YOU DO NOT FIND ANYTHING PRESSING WORTH FIXING OR IMPROVING - CALL THAT OUT AND DO NOT DO ANYTHING. YOU DON'T HAVE TO MANDATORILY FIND STUFF TO IMPROVE. USE HIGHEST LEVEL OF REASONING AND THINKING. \n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:02:54.001Z",
+      "role": "assistant",
+      "text": "I’ll do this as a real audit pass rather than a treasure hunt: first map the app and recent changes, then run static/runtime checks, then inspect exercise logic, signals, trends, achievements, and wiring before deciding whether any fixes are truly justified.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll do this as a real audit pass rather than a treasure hunt: first map the app and recent changes, then run static/runtime checks, then inspect exercise logic, signals, trends, achievements, and wiring before deciding whether any fixes are truly justified."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:03:14.501Z",
+      "role": "assistant",
+      "text": "The repo is a native Swift/iOS app with a clean git status, plus a legacy/reference `FitCount-main` folder and design exports. I’m narrowing the audit onto the shipped `VirtualTrainer` target and tests first, then I’ll check references only where they affect wiring or copied exercise logic.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The repo is a native Swift/iOS app with a clean git status, plus a legacy/reference `FitCount-main` folder and design exports. I’m narrowing the audit onto the shipped `VirtualTrainer` target and tests first, then I’ll check references only where they affect wiring or copied exercise logic."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:03:28.169Z",
+      "role": "assistant",
+      "text": "The current branch already includes Phase 13 and a later coach-engine robustness commit, so I’m treating signals/trends/insights as first-class code rather than future work. Next I’m going to build/test against the actual Xcode scheme, then trace failures back into the app logic instead of patching blindly.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The current branch already includes Phase 13 and a later coach-engine robustness commit, so I’m treating signals/trends/insights as first-class code rather than future work. Next I’m going to build/test against the actual Xcode scheme, then trace failures back into the app logic instead of patching blindly."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:03:44.505Z",
+      "role": "assistant",
+      "text": "A couple of the suspicious scans are already useful: no committed secrets, all four MediaPipe task files are present, and the “placeholder” mentions are mostly known/deferred product surfaces. I did find a few index/array-access hotspots in insight/gesture code, so those are now on the crash-audit list while the full test suite runs.",
+      "content": [
+        {
+          "type": "text",
+          "text": "A couple of the suspicious scans are already useful: no committed secrets, all four MediaPipe task files are present, and the “placeholder” mentions are mostly known/deferred product surfaces. I did find a few index/array-access hotspots in insight/gesture code, so those are now on the crash-audit list while the full test suite runs."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:05:46.424Z",
+      "role": "assistant",
+      "text": "The live training path has most of the crash-prevention scaffolding I’d want to see: async frame reservation, timeouts for pose/hand/face, nil-safe model fallback, mask bounds checks, and no obvious force unwraps in the camera loop. I’m now tracing the Phase 13/14 signal pipeline because that is where stale/incomplete logic is more likely to create misleading insights rather than immediate build failures.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The live training path has most of the crash-prevention scaffolding I’d want to see: async frame reservation, timeouts for pose/hand/face, nil-safe model fallback, mask bounds checks, and no obvious force unwraps in the camera loop. I’m now tracing the Phase 13/14 signal pipeline because that is where stale/incomplete logic is more likely to create misleading insights rather than immediate build failures."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:11:31.447Z",
+      "role": "user",
+      "text": "restart\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "restart\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:11:47.002Z",
+      "role": "assistant",
+      "text": "Restarting from a clean baseline. I’ll re-check the worktree, rebuild the mental map of the shipped target, then only patch anything that is both high-confidence and functional/crash-preventive.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Restarting from a clean baseline. I’ll re-check the worktree, rebuild the mental map of the shipped target, then only patch anything that is both high-confidence and functional/crash-preventive."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:11:59.352Z",
+      "role": "assistant",
+      "text": "The repo is still clean on `main`, and the current shipped source surface is the native Swift target plus tests. I’m checking the project metadata and then I’ll run the app-level verification passes against the workspace.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The repo is still clean on `main`, and the current shipped source surface is the native Swift target plus tests. I’m checking the project metadata and then I’ll run the app-level verification passes against the workspace."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:12:31.926Z",
+      "role": "assistant",
+      "text": "The dependency surface is small and locked: MediaPipeTasksVision 0.10.33 plus its common package, with all four `.task` models present in source. The main crash-pattern scan is narrow; the one suspicious shipped-data crash risk is duplicate trophy progress collapsing through `Dictionary(uniqueKeysWithValues:)`, so I’m reading that path before deciding whether to patch it.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The dependency surface is small and locked: MediaPipeTasksVision 0.10.33 plus its common package, with all four `.task` models present in source. The main crash-pattern scan is narrow; the one suspicious shipped-data crash risk is duplicate trophy progress collapsing through `Dictionary(uniqueKeysWithValues:)`, so I’m reading that path before deciding whether to patch it."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:12:37.325Z",
+      "role": "assistant",
+      "text": "The live-session cue trimming and voice prefetch paths are bounded before removal/dictionary creation, so they look safe. The trophy snapshot path is different because it can decode persisted user data, which makes duplicate IDs a realistic crash-prevention concern rather than just a static-code concern.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The live-session cue trimming and voice prefetch paths are bounded before removal/dictionary creation, so they look safe. The trophy snapshot path is different because it can decode persisted user data, which makes duplicate IDs a realistic crash-prevention concern rather than just a static-code concern."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:14:03.806Z",
+      "role": "assistant",
+      "text": "The full simulator test suite is green on iPhone 17 / iOS 26.2 before any edit. I’m continuing the source audit around the recent signal/insight work and the screens that consume it, then I’ll apply the trophy hardening if nothing higher priority appears.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The full simulator test suite is green on iPhone 17 / iOS 26.2 before any edit. I’m continuing the source audit around the recent signal/insight work and the screens that consume it, then I’ll apply the trophy hardening if nothing higher priority appears."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:15:10.192Z",
+      "role": "assistant",
+      "text": "I’m going to patch the trophy snapshot dictionary collapse now. This is intentionally small: no achievement thresholds, no rules, no exercise strictness, just making persisted duplicate trophy rows non-fatal and adding regression coverage.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m going to patch the trophy snapshot dictionary collapse now. This is intentionally small: no achievement thresholds, no rules, no exercise strictness, just making persisted duplicate trophy rows non-fatal and adding regression coverage."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:15:47.828Z",
+      "role": "assistant",
+      "text": "The fix is in place, with tests for both duplicate-progress lookup and preserving an already-earned trophy when duplicate persisted rows disagree. I’m running the trophy suite first, then I’ll rerun broader verification.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The fix is in place, with tests for both duplicate-progress lookup and preserving an already-earned trophy when duplicate persisted rows disagree. I’m running the trophy suite first, then I’ll rerun broader verification."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:16:42.440Z",
+      "role": "assistant",
+      "text": "The focused trophy test build is taking longer than usual after simulator handoff, but it is still running rather than failing. I’m giving it a little more room before deciding whether the test runner itself is wedged.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused trophy test build is taking longer than usual after simulator handoff, but it is still running rather than failing. I’m giving it a little more room before deciding whether the test runner itself is wedged."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:16:50.857Z",
+      "role": "assistant",
+      "text": "Focused trophy regression tests are green. I’m doing the full simulator suite again now because the fix touches a shared persisted snapshot used by dashboard/profile/trophies.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Focused trophy regression tests are green. I’m doing the full simulator suite again now because the fix touches a shared persisted snapshot used by dashboard/profile/trophies."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:17:46.948Z",
+      "role": "assistant",
+      "text": "Full tests are green after the patch, including the exercise invariants, trend/signal/insight tests, planned workout flow, preview editing, calibration, trophies, and persistence. I’m doing one Release simulator build plus bundle resource checks so the shipped app path gets a last pass.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Full tests are green after the patch, including the exercise invariants, trend/signal/insight tests, planned workout flow, preview editing, calibration, trophies, and persistence. I’m doing one Release simulator build plus bundle resource checks so the shipped app path gets a last pass."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T15:19:45.455Z",
+      "role": "assistant",
+      "text": "Restarted the audit from a clean baseline and found one pressing, high-confidence crash-prevention fix. I hardened trophy progress lookup so a corrupted/migrated `TrophyProgress.json` with duplicate trophy IDs no longer crashes through `Dictionary(uniqueKeysWithValues:)`, while preserving earned trophies and earliest earned date. No exercise thresholds, achievement strictness, plan rules, or unlock criteria were tightened.\n\nChanged:\n- [TrophyModels.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/TrophyModels.swift:232): duplicate-safe `progressByTrophyId`.\n- [TrophyEngineTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/TrophyEngineTests.swift:335): regression tests for duplicate persisted progress, earned trophy preservation, and unique trophy definition IDs.\n\n**Audit Result**\n- Exercise system: all 47 exercises have definitions, selectable category wiring, metadata, required joints, primary angle keys, thresholds, and free-analysis mappings covered by tests.\n- Rep/form/vision path: no pressing crash pattern found in live pose, hand, face, angle, visibility, frame mask, cue, or rep-counter code. Array/index hotspots I found were guarded.\n- Training signals/trends/insights: Phase 13/14 paths are wired into Dashboard, Preview, Profile, and planned Workout Summary. Evidence gating is strong; no unsupported weight-loss/calorie/heart-rate claims are generated.\n- Dependencies/resources: MediaPipeTasksVision 0.10.33 is locked; all four model files are bundled in the Release app. Camera privacy string is present. ElevenLabs remains dormant behind missing-key handling; local AVSpeech is the active voice path.\n- Unwired/low-priority cleanup: `ContentView.swift` is still the old starter view and compiles, but it is not routed by `VirtualTrainerApp`. I left it alone because it is not functional risk. Running Analysis is intentionally disabled/Coming Soon.\n\n**Verification**\n- `xcodebuild test ... -only-testing:VirtualTrainerTests/TrophyEngineTests` succeeded.\n- Full `xcodebuild test ...` succeeded.\n- Release simulator build succeeded.\n- `git diff --check` clean.\n- Release bundle contains `pose_landmarker_full.task`, `hand_landmarker.task`, `gesture_recognizer.task`, and `face_landmarker.task`.\n- Only benign build warning: AppIntents metadata skipped because the app has no AppIntents dependency.\n\n**Manual Testing Plan**\n1. Fresh install: launch, complete onboarding with each main goal, coach, theme, session length, equipment/no-equipment, and limitation profile. Relaunch and confirm Dashboard/Profile retain choices.\n2. Calibration: allow camera, deny camera, retry permission path, thumbs-up countdown, thumbs-down retry, body lost during countdown, successful 3-rep completion, skip/fail state, relaunch persistence, Calibrated trophy.\n3. Dashboard/Preview: verify Smart Start swap wraps, Daily Plan opens, Running Analysis is disabled, Trophies opens, plan insight appears only with evidence, coach switch does not save default until tapped, target editing clamps safely, open targets remain non-editable.\n4. Planned session: complete reps, hold, timed, AMRAP seconds, AMRAP open, and mixed front/side plans. Verify set advancement waits for rest continue, extend/skip rest records correctly, cancel exits without save, completion saves exactly once, summary insight appears, trophies update once.\n5. Free Analysis: from Camera and Dashboard, test readiness, start, Done, save-to-history, duplicate save prevention, detail sheet, trophy update, and history/profile trend refresh. Manual review: free-analysis summary currently has trophies/history but no AI coach insight card.\n6. Exercise smoke: for every exercise, confirm setup text, required body visibility, camera orientation, rep/hold counting, cue behavior, summary save, and no unexpected strictness increase. Lower: Squat, Sumo Squat, Lunge, Side Lunge, Glute Bridge, Hip Abduction, Leg Raise, Wall Sit, Deadlift, Calf Raise, Romanian Deadlift, Chair Sit-to-Stand, Hip Thrust, Reverse Lunge, Step Up, Donkey Kick. Upper: Bicep Curl, Push-up, Lateral Raise, Front Raise, Overhead Press, Cobra Wings, Overarm Reach, Hammer Curl, Shoulder Press, Tricep Dip, Incline Push-up. Full: Jumping Jack, Knee Raise, Sit-up, V-Up, Plank, High Knees, Mountain Climber, Reverse Crunch, Russian Twist, Bird Dog, Side Plank. Yoga: Downward Dog, Warrior, Chair Pose, Tree Pose, Triangle Pose, Warrior One, Warrior Three, Cobra Pose, Mountain Pose.\n7. Trends/signals/insights: create histories for streak, weekly target, form improvement/drop, volume up/down, repeated cue, camera friction, fatigue/rest extension, rest response, quality PR, progression readiness, target too aggressive, reacquisition after 14+ days, exercise preference, movement balance, and trophy near-miss. Verify insights cite real evidence and do not appear on empty history.\n8. Trophies: verify The Spark, Calibrated, unique-day trophies, weekend, morning/night, rep-volume, form-quality, mobility, capstones, and Coming Soon states. Also manually corrupt `TrophyProgress.json` with duplicate trophy IDs and verify app/profile/trophy/dashboard paths do not crash.\n9. Crash/resilience: deny camera, background/foreground during readiness and live workout, rotate device, rapidly dismiss sheets/full-screen covers, kill/relaunch after session completion, corrupt history/calibration/insight JSON, and run one real-device long session for MediaPipe memory/performance.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Restarted the audit from a clean baseline and found one pressing, high-confidence crash-prevention fix. I hardened trophy progress lookup so a corrupted/migrated `TrophyProgress.json` with duplicate trophy IDs no longer crashes through `Dictionary(uniqueKeysWithValues:)`, while preserving earned trophies and earliest earned date. No exercise thresholds, achievement strictness, plan rules, or unlock criteria were tightened.\n\nChanged:\n- [TrophyModels.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/TrophyModels.swift:232): duplicate-safe `progressByTrophyId`.\n- [TrophyEngineTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/TrophyEngineTests.swift:335): regression tests for duplicate persisted progress, earned trophy preservation, and unique trophy definition IDs.\n\n**Audit Result**\n- Exercise system: all 47 exercises have definitions, selectable category wiring, metadata, required joints, primary angle keys, thresholds, and free-analysis mappings covered by tests.\n- Rep/form/vision path: no pressing crash pattern found in live pose, hand, face, angle, visibility, frame mask, cue, or rep-counter code. Array/index hotspots I found were guarded.\n- Training signals/trends/insights: Phase 13/14 paths are wired into Dashboard, Preview, Profile, and planned Workout Summary. Evidence gating is strong; no unsupported weight-loss/calorie/heart-rate claims are generated.\n- Dependencies/resources: MediaPipeTasksVision 0.10.33 is locked; all four model files are bundled in the Release app. Camera privacy string is present. ElevenLabs remains dormant behind missing-key handling; local AVSpeech is the active voice path.\n- Unwired/low-priority cleanup: `ContentView.swift` is still the old starter view and compiles, but it is not routed by `VirtualTrainerApp`. I left it alone because it is not functional risk. Running Analysis is intentionally disabled/Coming Soon.\n\n**Verification**\n- `xcodebuild test ... -only-testing:VirtualTrainerTests/TrophyEngineTests` succeeded.\n- Full `xcodebuild test ...` succeeded.\n- Release simulator build succeeded.\n- `git diff --check` clean.\n- Release bundle contains `pose_landmarker_full.task`, `hand_landmarker.task`, `gesture_recognizer.task`, and `face_landmarker.task`.\n- Only benign build warning: AppIntents metadata skipped because the app has no AppIntents dependency.\n\n**Manual Testing Plan**\n1. Fresh install: launch, complete onboarding with each main goal, coach, theme, session length, equipment/no-equipment, and limitation profile. Relaunch and confirm Dashboard/Profile retain choices.\n2. Calibration: allow camera, deny camera, retry permission path, thumbs-up countdown, thumbs-down retry, body lost during countdown, successful 3-rep completion, skip/fail state, relaunch persistence, Calibrated trophy.\n3. Dashboard/Preview: verify Smart Start swap wraps, Daily Plan opens, Running Analysis is disabled, Trophies opens, plan insight appears only with evidence, coach switch does not save default until tapped, target editing clamps safely, open targets remain non-editable.\n4. Planned session: complete reps, hold, timed, AMRAP seconds, AMRAP open, and mixed front/side plans. Verify set advancement waits for rest continue, extend/skip rest records correctly, cancel exits without save, completion saves exactly once, summary insight appears, trophies update once.\n5. Free Analysis: from Camera and Dashboard, test readiness, start, Done, save-to-history, duplicate save prevention, detail sheet, trophy update, and history/profile trend refresh. Manual review: free-analysis summary currently has trophies/history but no AI coach insight card.\n6. Exercise smoke: for every exercise, confirm setup text, required body visibility, camera orientation, rep/hold counting, cue behavior, summary save, and no unexpected strictness increase. Lower: Squat, Sumo Squat, Lunge, Side Lunge, Glute Bridge, Hip Abduction, Leg Raise, Wall Sit, Deadlift, Calf Raise, Romanian Deadlift, Chair Sit-to-Stand, Hip Thrust, Reverse Lunge, Step Up, Donkey Kick. Upper: Bicep Curl, Push-up, Lateral Raise, Front Raise, Overhead Press, Cobra Wings, Overarm Reach, Hammer Curl, Shoulder Press, Tricep Dip, Incline Push-up. Full: Jumping Jack, Knee Raise, Sit-up, V-Up, Plank, High Knees, Mountain Climber, Reverse Crunch, Russian Twist, Bird Dog, Side Plank. Yoga: Downward Dog, Warrior, Chair Pose, Tree Pose, Triangle Pose, Warrior One, Warrior Three, Cobra Pose, Mountain Pose.\n7. Trends/signals/insights: create histories for streak, weekly target, form improvement/drop, volume up/down, repeated cue, camera friction, fatigue/rest extension, rest response, quality PR, progression readiness, target too aggressive, reacquisition after 14+ days, exercise preference, movement balance, and trophy near-miss. Verify insights cite real evidence and do not appear on empty history.\n8. Trophies: verify The Spark, Calibrated, unique-day trophies, weekend, morning/night, rep-volume, form-quality, mobility, capstones, and Coming Soon states. Also manually corrupt `TrophyProgress.json` with duplicate trophy IDs and verify app/profile/trophy/dashboard paths do not crash.\n9. Crash/resilience: deny camera, background/foreground during readiness and live workout, rotate device, rapidly dismiss sheets/full-screen covers, kill/relaunch after session completion, corrupt history/calibration/insight JSON, and run one real-device long session for MediaPipe memory/performance."
+        }
+      ]
+    }
+  ]
+}

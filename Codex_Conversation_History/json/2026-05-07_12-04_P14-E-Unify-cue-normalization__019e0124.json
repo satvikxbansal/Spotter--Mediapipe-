@@ -1,0 +1,174 @@
+{
+  "id": "019e0124-f441-76b3-9d35-189133b358f1",
+  "title": "P14_E: Unify cue normalization",
+  "createdAtLocal": "2026-05-07 12:04:19",
+  "updatedAtLocal": "2026-05-07 12:20:17",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/07/rollout-2026-05-07T12-04-19-019e0124-f441-76b3-9d35-189133b358f1.jsonl",
+  "gitBranch": "main",
+  "gitSha": "a8305d617f2abab60b3b8df7bd7426bfdc252375",
+  "firstUserMessage": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \n\nTASK\nCue normalization is forked across SignalExtractor, InsightCandidateBuilder, and\nTrendEngine. TrendEngine.cueCounts is case-sensitive. This makes mostRepeatedCue,\nrepeatedCue signals, and cueCluster signals undercount real repetition.\n\nGOAL\n1. Create `Services/CueNormalizer.swift` with one canonical normalizer:\n     static func normalize(_ cue: String) -> String\n   Steps: trim, lowercase, collapse internal whitespace, strip trailing punctuation,\n   strip leading \"the/a/an/your/keep/lock/drive\". Return the canonical key.\n\n2. Create `Services/CueClusterTaxonomy.swift` with a single source of truth for cue\n   families. Replace InsightCandidateBuilder + SignalExtractor inline cluster maps with:\n     enum CueCluster: String, CaseIterable {\n        case kneeTracking, hipHinge, trunkBrace, shoulderStack, elbowAlign,\n             wristNeutral, depthRange, tempoControl, balanceStability,\n             headNeck, footPlacement, breathing, other\n     }\n     static func cluster(for normalized: String) -> CueCluster\n\n   Differentiate `shoulder/elbow/wrist` (currently merged into \"upper-stack\").\n   Differentiate `depth` (squat depth) from `range of motion` from `lower` (verb).\n   Add `breathing`, `head/neck`, `foot placement` clusters since the exercise library\n   includes those cues.\n\n3. Refactor TrendEngine.cueCounts, SignalExtractor.cueCounts and cueCluster, and\n   InsightCandidateBuilder.normalizedCue and grouped-cue logic to use CueNormalizer\n   and CueClusterTaxonomy.\n\nCONSTRAINTS\n- Behavior: cues that already produced the same `mostRepeatedCue` must still group;\n  cues that previously failed to group due to case/whitespace must now group.\n- No test should regress. Update existing tests to assert the new normalization.\n\nACCEPTANCE\n- New CueNormalizerTests: 20+ pairs of input → normalized key, including\n  punctuation/casing.\n- New CueClusterTaxonomyTests: 20+ inputs → cluster, including the wrist/elbow/shoulder\n  separation.\n- Existing TrendEngineTests, SignalExtractorTests, InsightEngineTests pass.",
+  "preview": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \n\nTASK\nCue normalization is forked across SignalExtractor, InsightCandidateBuilder, and\nTrendEngine. TrendEngine.cueCounts is case-sensitive. This makes mostRepeatedCue,\nrepeatedCue signals, and cueCluster signals undercount real repetition.\n\nGOAL\n1. Create `Services/CueNormalizer.swift` with one canonical normalizer:\n     static func normalize(_ cue: String) -> String\n   Steps: trim, lowercase, collapse internal whitespace, strip trailing punctuation,\n   strip leading \"the/a/an/your/keep/lock/drive\". Return the canonical key.\n\n2. Create `Services/CueClusterTaxonomy.swift` with a single source of truth for cue\n   families. Replace InsightCandidateBuilder + SignalExtractor inline cluster maps with:\n     enum CueCluster: String, CaseIterable {\n        case kneeTracking, hipHinge, trunkBrace, shoulderStack, elbowAlign,\n             wristNeutral, depthRange, tempoControl, balanceStability,\n             headNeck, footPlacement, breathing, other\n     }\n     static func cluster(for normalized: String) -> CueCluster\n\n   Differentiate `shoulder/elbow/wrist` (currently merged into \"upper-stack\").\n   Differentiate `depth` (squat depth) from `range of motion` from `lower` (verb).\n   Add `breathing`, `head/neck`, `foot placement` clusters since the exercise library\n   includes those cues.\n\n3. Refactor TrendEngine.cueCounts, SignalExtractor.cueCounts and cueCluster, and\n   InsightCandidateBuilder.normalizedCue and grouped-cue logic to use CueNormalizer\n   and CueClusterTaxonomy.\n\nCONSTRAINTS\n- Behavior: cues that already produced the same `mostRepeatedCue` must still group;\n  cues that previously failed to group due to case/whitespace must now group.\n- No test should regress. Update existing tests to assert the new normalization.\n\nACCEPTANCE\n- New CueNormalizerTests: 20+ pairs of input → normalized key, including\n  punctuation/casing.\n- New CueClusterTaxonomyTests: 20+ inputs → cluster, including the wrist/elbow/shoulder\n  separation.\n- Existing TrendEngineTests, SignalExtractorTests, InsightEngineTests pass.",
+  "rawLineCount": 374,
+  "parseErrors": 0,
+  "visibleMessageCount": 14,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-07T06:34:24.708Z",
+      "role": "user",
+      "text": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \n\nTASK\nCue normalization is forked across SignalExtractor, InsightCandidateBuilder, and\nTrendEngine. TrendEngine.cueCounts is case-sensitive. This makes mostRepeatedCue,\nrepeatedCue signals, and cueCluster signals undercount real repetition.\n\nGOAL\n1. Create `Services/CueNormalizer.swift` with one canonical normalizer:\n     static func normalize(_ cue: String) -> String\n   Steps: trim, lowercase, collapse internal whitespace, strip trailing punctuation,\n   strip leading \"the/a/an/your/keep/lock/drive\". Return the canonical key.\n\n2. Create `Services/CueClusterTaxonomy.swift` with a single source of truth for cue\n   families. Replace InsightCandidateBuilder + SignalExtractor inline cluster maps with:\n     enum CueCluster: String, CaseIterable {\n        case kneeTracking, hipHinge, trunkBrace, shoulderStack, elbowAlign,\n             wristNeutral, depthRange, tempoControl, balanceStability,\n             headNeck, footPlacement, breathing, other\n     }\n     static func cluster(for normalized: String) -> CueCluster\n\n   Differentiate `shoulder/elbow/wrist` (currently merged into \"upper-stack\").\n   Differentiate `depth` (squat depth) from `range of motion` from `lower` (verb).\n   Add `breathing`, `head/neck`, `foot placement` clusters since the exercise library\n   includes those cues.\n\n3. Refactor TrendEngine.cueCounts, SignalExtractor.cueCounts and cueCluster, and\n   InsightCandidateBuilder.normalizedCue and grouped-cue logic to use CueNormalizer\n   and CueClusterTaxonomy.\n\nCONSTRAINTS\n- Behavior: cues that already produced the same `mostRepeatedCue` must still group;\n  cues that previously failed to group due to case/whitespace must now group.\n- No test should regress. Update existing tests to assert the new normalization.\n\nACCEPTANCE\n- New CueNormalizerTests: 20+ pairs of input → normalized key, including\n  punctuation/casing.\n- New CueClusterTaxonomyTests: 20+ inputs → cluster, including the wrist/elbow/shoulder\n  separation.\n- Existing TrendEngineTests, SignalExtractorTests, InsightEngineTests pass.\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \n\nTASK\nCue normalization is forked across SignalExtractor, InsightCandidateBuilder, and\nTrendEngine. TrendEngine.cueCounts is case-sensitive. This makes mostRepeatedCue,\nrepeatedCue signals, and cueCluster signals undercount real repetition.\n\nGOAL\n1. Create `Services/CueNormalizer.swift` with one canonical normalizer:\n     static func normalize(_ cue: String) -> String\n   Steps: trim, lowercase, collapse internal whitespace, strip trailing punctuation,\n   strip leading \"the/a/an/your/keep/lock/drive\". Return the canonical key.\n\n2. Create `Services/CueClusterTaxonomy.swift` with a single source of truth for cue\n   families. Replace InsightCandidateBuilder + SignalExtractor inline cluster maps with:\n     enum CueCluster: String, CaseIterable {\n        case kneeTracking, hipHinge, trunkBrace, shoulderStack, elbowAlign,\n             wristNeutral, depthRange, tempoControl, balanceStability,\n             headNeck, footPlacement, breathing, other\n     }\n     static func cluster(for normalized: String) -> CueCluster\n\n   Differentiate `shoulder/elbow/wrist` (currently merged into \"upper-stack\").\n   Differentiate `depth` (squat depth) from `range of motion` from `lower` (verb).\n   Add `breathing`, `head/neck`, `foot placement` clusters since the exercise library\n   includes those cues.\n\n3. Refactor TrendEngine.cueCounts, SignalExtractor.cueCounts and cueCluster, and\n   InsightCandidateBuilder.normalizedCue and grouped-cue logic to use CueNormalizer\n   and CueClusterTaxonomy.\n\nCONSTRAINTS\n- Behavior: cues that already produced the same `mostRepeatedCue` must still group;\n  cues that previously failed to group due to case/whitespace must now group.\n- No test should regress. Update existing tests to assert the new normalization.\n\nACCEPTANCE\n- New CueNormalizerTests: 20+ pairs of input → normalized key, including\n  punctuation/casing.\n- New CueClusterTaxonomyTests: 20+ inputs → cluster, including the wrist/elbow/shoulder\n  separation.\n- Existing TrendEngineTests, SignalExtractorTests, InsightEngineTests pass.\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:34:32.002Z",
+      "role": "assistant",
+      "text": "I’ll inspect the repo first and trace the existing cue logic before touching anything. I’ll keep the live camera pieces out of scope and focus on the services/tests around cue normalization, clustering, and insight trends.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll inspect the repo first and trace the existing cue logic before touching anything. I’ll keep the live camera pieces out of scope and focus on the services/tests around cue normalization, clustering, and insight trends."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:34:44.073Z",
+      "role": "assistant",
+      "text": "I found a regular Xcode project with service-heavy app code and a dirty worktree already in place. Some existing modified files overlap the insight area, so I’ll read them carefully and make the cue changes without reverting or trampling those edits.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I found a regular Xcode project with service-heavy app code and a dirty worktree already in place. Some existing modified files overlap the insight area, so I’ll read them carefully and make the cue changes without reverting or trampling those edits."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:35:16.609Z",
+      "role": "assistant",
+      "text": "The cue logic is indeed split three ways: `TrendEngine` trims only, `SignalExtractor` has an inline cluster map and lightweight lowercase grouping, and `InsightCandidateBuilder` has its own whitespace-only normalizer. I’m going to add one service-level normalizer and taxonomy, then wire all three call sites through it.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The cue logic is indeed split three ways: `TrendEngine` trims only, `SignalExtractor` has an inline cluster map and lightweight lowercase grouping, and `InsightCandidateBuilder` has its own whitespace-only normalizer. I’m going to add one service-level normalizer and taxonomy, then wire all three call sites through it."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:37:58.139Z",
+      "role": "assistant",
+      "text": "I’m making the new services now. One deliberate choice: normalization will define the grouping key, while trend and insight outputs will keep a representative human-readable cue so existing coaching copy does not suddenly become clipped or lowercase.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m making the new services now. One deliberate choice: normalization will define the grouping key, while trend and insight outputs will keep a representative human-readable cue so existing coaching copy does not suddenly become clipped or lowercase."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:41:19.341Z",
+      "role": "assistant",
+      "text": "The refactor is wired through the core services now. I’m adding focused tests next: direct normalizer coverage, direct taxonomy coverage, and a couple of regression checks through the trend/signal/insight paths so the app behavior is protected end to end.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The refactor is wired through the core services now. I’m adding focused tests next: direct normalizer coverage, direct taxonomy coverage, and a couple of regression checks through the trend/signal/insight paths so the app behavior is protected end to end."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:43:20.954Z",
+      "role": "assistant",
+      "text": "Xcode sees a single `VirtualTrainer` scheme with synchronized folders, so the new Swift files should be picked up without project-file surgery. I’m going to run the test build next; first I’m checking available simulator destinations so I don’t waste a cycle on a device name this machine doesn’t have.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Xcode sees a single `VirtualTrainer` scheme with synchronized folders, so the new Swift files should be picked up without project-file surgery. I’m going to run the test build next; first I’m checking available simulator destinations so I don’t waste a cycle on a device name this machine doesn’t have."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:43:48.032Z",
+      "role": "assistant",
+      "text": "The project build failed before reaching our code because `MediaPipeTasksVision` was not found when building the raw `.xcodeproj`. That usually means the CocoaPods workspace needs to drive the build, so I’m switching to the workspace path next.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The project build failed before reaching our code because `MediaPipeTasksVision` was not found when building the raw `.xcodeproj`. That usually means the CocoaPods workspace needs to drive the build, so I’m switching to the workspace path next."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:44:45.350Z",
+      "role": "assistant",
+      "text": "The workspace build is through compilation and codesigning; the simulator test runner is still working. No source compile errors surfaced in that pass, which is the key signal I wanted before letting the full suite run.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The workspace build is through compilation and codesigning; the simulator test runner is still working. No source compile errors surfaced in that pass, which is the key signal I wanted before letting the full suite run."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:44:52.866Z",
+      "role": "assistant",
+      "text": "Targeted tests passed through the workspace: the new normalizer/taxonomy tests, `TrendEngineTests`, and `InsightEngineTests` are green. I’m running the full test suite now to catch any side effects outside the cue path.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Targeted tests passed through the workspace: the new normalizer/taxonomy tests, `TrendEngineTests`, and `InsightEngineTests` are green. I’m running the full test suite now to catch any side effects outside the cue path."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:46:25.804Z",
+      "role": "assistant",
+      "text": "Full workspace test suite passed. I’m doing a final implementation review now: looking for accidental scope creep, duplicated normalization paths, and any cue-family edge cases that are cheap to harden without disturbing the live camera pipeline.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Full workspace test suite passed. I’m doing a final implementation review now: looking for accidental scope creep, duplicated normalization paths, and any cue-family edge cases that are cheap to harden without disturbing the live camera pipeline."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:47:11.239Z",
+      "role": "assistant",
+      "text": "One small hardening fell out of the review: cues like “raise to shoulder height” are range cues, not shoulder-stack cues, and “lock it out” loses “lock” by design during normalization. I tightened those taxonomy edges and added tests before the final verification pass.",
+      "content": [
+        {
+          "type": "text",
+          "text": "One small hardening fell out of the review: cues like “raise to shoulder height” are range cues, not shoulder-stack cues, and “lock it out” loses “lock” by design during normalization. I tightened those taxonomy edges and added tests before the final verification pass."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:48:13.380Z",
+      "role": "assistant",
+      "text": "The hardened taxonomy pass is green for the cue and insight/trend tests. I’m doing one last full-suite run after that small change so the final status is clean and current.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The hardened taxonomy pass is green for the cue and insight/trend tests. I’m doing one last full-suite run after that small change so the final status is clean and current."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:50:17.604Z",
+      "role": "assistant",
+      "text": "Implemented the cue normalization/taxonomy phase and kept it away from MediaPipe, camera, rep counting, and the live camera pipeline.\n\n**What Changed**\n- Added [CueNormalizer.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/CueNormalizer.swift:3>) with the canonical trim/lowercase/whitespace/punctuation/leading-token normalization.\n- Added [CueClusterTaxonomy.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/CueClusterTaxonomy.swift:3>) as the single cue-family source of truth, including separate shoulder, elbow, wrist, breathing, head/neck, and foot placement clusters.\n- Refactored [TrendEngine.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/TrendEngine.swift:727>) to count cues by normalized key while preserving a readable representative cue for UI/insight copy.\n- Refactored [SignalExtractor.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/SignalExtractor.swift:1081>) so repeated-cue evidence and cue-cluster evidence match normalized variants.\n- Refactored [InsightCandidateBuilder.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/InsightCandidateBuilder.swift:1072>) to use the canonical normalizer for dedupe/grouping.\n- Also normalized the discovered set-level cue counter in [WorkoutEvidenceModels.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/WorkoutEvidenceModels.swift:119>), which was the highest-leverage extra hardening after review.\n\n**Tests**\n- Added [CueNormalizerTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/CueNormalizerTests.swift:4>) with 20+ normalization cases.\n- Added [CueClusterTaxonomyTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/CueClusterTaxonomyTests.swift:4>) with 20+ taxonomy cases, including wrist/elbow/shoulder separation.\n- Added regression coverage in [TrendEngineTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/TrendEngineTests.swift:156>) and [InsightEngineTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/InsightEngineTests.swift:91>).\n\nVerification:\n- Raw `.xcodeproj` test attempt failed because CocoaPods modules were not resolved (`MediaPipeTasksVision` missing).\n- Correct workspace command passed:\n  `xcodebuild test -scheme VirtualTrainer -workspace VirtualTrainer.xcworkspace -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2'`\n- Final full test suite: `TEST SUCCEEDED`.\n\n**Key Decisions**\n- I kept `mostRepeatedCue` user-facing text readable instead of returning lowercase canonical keys. The normalized key drives grouping; the display cue remains the best representative original cue.\n- I did not touch MediaPipe, `CameraManager`, `PoseEstimator`, `UniversalRepCounter`, live camera flows, or raw camera/biometric data handling.\n- I hardened taxonomy for coaching language like “shoulder height” and “lock it out,” which are range cues rather than shoulder-stack cues.\n\n**Manual Test Plan**\n1. Launch the app and run Camera tab free analysis for a movement that can trigger form cues, then save the workout summary.\n2. Run a planned workout session from preview through completion, including at least one cue-producing set.\n3. Complete a second session with a similar cue phrased differently by casing/punctuation/coach wording; verify dashboard/profile repeated-cue insights group it.\n4. Trigger shoulder, elbow, and wrist cues separately in upper-body exercises and verify they do not collapse into one generic upper-body family.\n5. Check workout history/local summaries only contain cue text and metrics, not raw frames, raw video, face images, raw pose streams, or biometric face data.\n\n**Follow-Ups**\n- Extract the display-preserving cue count helper if another cue counter appears.\n- Add exercise-context-aware taxonomy scoring so “shoulder height” vs “shoulders stacked” can keep improving.\n- Map cue clusters to specific corrective drills and progression gates, making the coaching engine deeper than “focus this cue.”",
+      "content": [
+        {
+          "type": "text",
+          "text": "Implemented the cue normalization/taxonomy phase and kept it away from MediaPipe, camera, rep counting, and the live camera pipeline.\n\n**What Changed**\n- Added [CueNormalizer.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/CueNormalizer.swift:3>) with the canonical trim/lowercase/whitespace/punctuation/leading-token normalization.\n- Added [CueClusterTaxonomy.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/CueClusterTaxonomy.swift:3>) as the single cue-family source of truth, including separate shoulder, elbow, wrist, breathing, head/neck, and foot placement clusters.\n- Refactored [TrendEngine.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/TrendEngine.swift:727>) to count cues by normalized key while preserving a readable representative cue for UI/insight copy.\n- Refactored [SignalExtractor.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/SignalExtractor.swift:1081>) so repeated-cue evidence and cue-cluster evidence match normalized variants.\n- Refactored [InsightCandidateBuilder.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Services/InsightCandidateBuilder.swift:1072>) to use the canonical normalizer for dedupe/grouping.\n- Also normalized the discovered set-level cue counter in [WorkoutEvidenceModels.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/WorkoutEvidenceModels.swift:119>), which was the highest-leverage extra hardening after review.\n\n**Tests**\n- Added [CueNormalizerTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/CueNormalizerTests.swift:4>) with 20+ normalization cases.\n- Added [CueClusterTaxonomyTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/CueClusterTaxonomyTests.swift:4>) with 20+ taxonomy cases, including wrist/elbow/shoulder separation.\n- Added regression coverage in [TrendEngineTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/TrendEngineTests.swift:156>) and [InsightEngineTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/InsightEngineTests.swift:91>).\n\nVerification:\n- Raw `.xcodeproj` test attempt failed because CocoaPods modules were not resolved (`MediaPipeTasksVision` missing).\n- Correct workspace command passed:\n  `xcodebuild test -scheme VirtualTrainer -workspace VirtualTrainer.xcworkspace -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2'`\n- Final full test suite: `TEST SUCCEEDED`.\n\n**Key Decisions**\n- I kept `mostRepeatedCue` user-facing text readable instead of returning lowercase canonical keys. The normalized key drives grouping; the display cue remains the best representative original cue.\n- I did not touch MediaPipe, `CameraManager`, `PoseEstimator`, `UniversalRepCounter`, live camera flows, or raw camera/biometric data handling.\n- I hardened taxonomy for coaching language like “shoulder height” and “lock it out,” which are range cues rather than shoulder-stack cues.\n\n**Manual Test Plan**\n1. Launch the app and run Camera tab free analysis for a movement that can trigger form cues, then save the workout summary.\n2. Run a planned workout session from preview through completion, including at least one cue-producing set.\n3. Complete a second session with a similar cue phrased differently by casing/punctuation/coach wording; verify dashboard/profile repeated-cue insights group it.\n4. Trigger shoulder, elbow, and wrist cues separately in upper-body exercises and verify they do not collapse into one generic upper-body family.\n5. Check workout history/local summaries only contain cue text and metrics, not raw frames, raw video, face images, raw pose streams, or biometric face data.\n\n**Follow-Ups**\n- Extract the display-preserving cue count helper if another cue counter appears.\n- Add exercise-context-aware taxonomy scoring so “shoulder height” vs “shoulders stacked” can keep improving.\n- Map cue clusters to specific corrective drills and progression gates, making the coaching engine deeper than “focus this cue.”"
+        }
+      ]
+    }
+  ]
+}

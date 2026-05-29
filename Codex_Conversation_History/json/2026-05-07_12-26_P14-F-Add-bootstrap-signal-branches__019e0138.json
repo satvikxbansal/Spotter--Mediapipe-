@@ -1,0 +1,108 @@
+{
+  "id": "019e0138-f0c6-78b1-ba4b-36774d5d1e37",
+  "title": "P14_F: Add bootstrap signal branches",
+  "createdAtLocal": "2026-05-07 12:26:09",
+  "updatedAtLocal": "2026-05-07 12:46:42",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/07/rollout-2026-05-07T12-26-09-019e0138-f0c6-78b1-ba4b-36774d5d1e37.jsonl",
+  "gitBranch": "main",
+  "gitSha": "a8305d617f2abab60b3b8df7bd7426bfdc252375",
+  "firstUserMessage": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done. In simple words explain what we have fixed with real life examples if possible to understand. better (before - after)\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \n\nTASK\nToday, formImprovement / formDropOff / volumeIncrease / volumeDrop / qualityPR /\nprogressionReadiness / targetFit signals all require ≥6 sessions in history. New users\n(the cohort with the fragilest retention) get silence on the most useful signals.\n\nGOAL\nAdd bootstrap branches in SignalExtractor that produce informative signals for sessions\n1–5 using single-session evidence:\n- After session 1: `firstSession` consistency signal + `setupQuality` signal driven by\n  cameraFrictionCueCount and bodyVisibility events. Also a `repCleanlinessIntro` signal:\n  \"75% of your reps were good-form on your first set\" (uses qualitySummary.goodFormReps).\n- After session 2 with at least one repeated exercise: `repeatExerciseProgress` signal\n  comparing the two sessions' set-1 form averages on that exercise.\n- After session 3: enable the existing trend signals using `count = 1` window\n  (latest-vs-previous) instead of `count = 3` when totalWorkouts < 6.\n- After any session: `personalBaseline` signal showing the user's running median form\n  score for their dominant exercise so far.\n\nDESIGN\n- Add a new `SignalGenerationContext` struct passed to SignalExtractor that includes\n  `historySessionCount`. Branch into a \"warmup mode\" inside extractSignals() when\n  `historySessionCount < 6`.\n- Bootstrap signals must still produce `evidenceRefs` and a confidence — keep them at\n  `.medium` (never `.high`) to communicate \"we're early\".\n- Cap bootstrap signals at 2 per surface to avoid drowning the real signals once\n  history grows.\n\nCONSTRAINTS\n- Do not change any thresholds inside form rules or cue severity.\n- All new signals must have unique TrainingSignalType raw values; extend the enum\n  conservatively (`firstSession`, `setupQuality`, `repeatExerciseProgress`,\n  `personalBaseline`).\n- Update InsightCandidateBuilder.mappedInsight to map every new signal to a sensible\n  InsightAction (mostly `.continuePlan` and `.focusCue`).\n\nACCEPTANCE\n- New tests cover: history of 1, 2, 3, 5, 6 sessions and assert the right signals\n  surface.\n- Manually run the engine with 1 session and confirm the dashboard shows a relevant\n  bootstrap insight (no longer empty).",
+  "preview": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done. In simple words explain what we have fixed with real life examples if possible to understand. better (before - after)\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \n\nTASK\nToday, formImprovement / formDropOff / volumeIncrease / volumeDrop / qualityPR /\nprogressionReadiness / targetFit signals all require ≥6 sessions in history. New users\n(the cohort with the fragilest retention) get silence on the most useful signals.\n\nGOAL\nAdd bootstrap branches in SignalExtractor that produce informative signals for sessions\n1–5 using single-session evidence:\n- After session 1: `firstSession` consistency signal + `setupQuality` signal driven by\n  cameraFrictionCueCount and bodyVisibility events. Also a `repCleanlinessIntro` signal:\n  \"75% of your reps were good-form on your first set\" (uses qualitySummary.goodFormReps).\n- After session 2 with at least one repeated exercise: `repeatExerciseProgress` signal\n  comparing the two sessions' set-1 form averages on that exercise.\n- After session 3: enable the existing trend signals using `count = 1` window\n  (latest-vs-previous) instead of `count = 3` when totalWorkouts < 6.\n- After any session: `personalBaseline` signal showing the user's running median form\n  score for their dominant exercise so far.\n\nDESIGN\n- Add a new `SignalGenerationContext` struct passed to SignalExtractor that includes\n  `historySessionCount`. Branch into a \"warmup mode\" inside extractSignals() when\n  `historySessionCount < 6`.\n- Bootstrap signals must still produce `evidenceRefs` and a confidence — keep them at\n  `.medium` (never `.high`) to communicate \"we're early\".\n- Cap bootstrap signals at 2 per surface to avoid drowning the real signals once\n  history grows.\n\nCONSTRAINTS\n- Do not change any thresholds inside form rules or cue severity.\n- All new signals must have unique TrainingSignalType raw values; extend the enum\n  conservatively (`firstSession`, `setupQuality`, `repeatExerciseProgress`,\n  `personalBaseline`).\n- Update InsightCandidateBuilder.mappedInsight to map every new signal to a sensible\n  InsightAction (mostly `.continuePlan` and `.focusCue`).\n\nACCEPTANCE\n- New tests cover: history of 1, 2, 3, 5, 6 sessions and assert the right signals\n  surface.\n- Manually run the engine with 1 session and confirm the dashboard shows a relevant\n  bootstrap insight (no longer empty).",
+  "rawLineCount": 356,
+  "parseErrors": 0,
+  "visibleMessageCount": 8,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-07T06:56:11.790Z",
+      "role": "user",
+      "text": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done. In simple words explain what we have fixed with real life examples if possible to understand. better (before - after)\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \n\nTASK\nToday, formImprovement / formDropOff / volumeIncrease / volumeDrop / qualityPR /\nprogressionReadiness / targetFit signals all require ≥6 sessions in history. New users\n(the cohort with the fragilest retention) get silence on the most useful signals.\n\nGOAL\nAdd bootstrap branches in SignalExtractor that produce informative signals for sessions\n1–5 using single-session evidence:\n- After session 1: `firstSession` consistency signal + `setupQuality` signal driven by\n  cameraFrictionCueCount and bodyVisibility events. Also a `repCleanlinessIntro` signal:\n  \"75% of your reps were good-form on your first set\" (uses qualitySummary.goodFormReps).\n- After session 2 with at least one repeated exercise: `repeatExerciseProgress` signal\n  comparing the two sessions' set-1 form averages on that exercise.\n- After session 3: enable the existing trend signals using `count = 1` window\n  (latest-vs-previous) instead of `count = 3` when totalWorkouts < 6.\n- After any session: `personalBaseline` signal showing the user's running median form\n  score for their dominant exercise so far.\n\nDESIGN\n- Add a new `SignalGenerationContext` struct passed to SignalExtractor that includes\n  `historySessionCount`. Branch into a \"warmup mode\" inside extractSignals() when\n  `historySessionCount < 6`.\n- Bootstrap signals must still produce `evidenceRefs` and a confidence — keep them at\n  `.medium` (never `.high`) to communicate \"we're early\".\n- Cap bootstrap signals at 2 per surface to avoid drowning the real signals once\n  history grows.\n\nCONSTRAINTS\n- Do not change any thresholds inside form rules or cue severity.\n- All new signals must have unique TrainingSignalType raw values; extend the enum\n  conservatively (`firstSession`, `setupQuality`, `repeatExerciseProgress`,\n  `personalBaseline`).\n- Update InsightCandidateBuilder.mappedInsight to map every new signal to a sensible\n  InsightAction (mostly `.continuePlan` and `.focusCue`).\n\nACCEPTANCE\n- New tests cover: history of 1, 2, 3, 5, 6 sessions and assert the right signals\n  surface.\n- Manually run the engine with 1 session and confirm the dashboard shows a relevant\n  bootstrap insight (no longer empty).\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done. In simple words explain what we have fixed with real life examples if possible to understand. better (before - after)\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \n\nTASK\nToday, formImprovement / formDropOff / volumeIncrease / volumeDrop / qualityPR /\nprogressionReadiness / targetFit signals all require ≥6 sessions in history. New users\n(the cohort with the fragilest retention) get silence on the most useful signals.\n\nGOAL\nAdd bootstrap branches in SignalExtractor that produce informative signals for sessions\n1–5 using single-session evidence:\n- After session 1: `firstSession` consistency signal + `setupQuality` signal driven by\n  cameraFrictionCueCount and bodyVisibility events. Also a `repCleanlinessIntro` signal:\n  \"75% of your reps were good-form on your first set\" (uses qualitySummary.goodFormReps).\n- After session 2 with at least one repeated exercise: `repeatExerciseProgress` signal\n  comparing the two sessions' set-1 form averages on that exercise.\n- After session 3: enable the existing trend signals using `count = 1` window\n  (latest-vs-previous) instead of `count = 3` when totalWorkouts < 6.\n- After any session: `personalBaseline` signal showing the user's running median form\n  score for their dominant exercise so far.\n\nDESIGN\n- Add a new `SignalGenerationContext` struct passed to SignalExtractor that includes\n  `historySessionCount`. Branch into a \"warmup mode\" inside extractSignals() when\n  `historySessionCount < 6`.\n- Bootstrap signals must still produce `evidenceRefs` and a confidence — keep them at\n  `.medium` (never `.high`) to communicate \"we're early\".\n- Cap bootstrap signals at 2 per surface to avoid drowning the real signals once\n  history grows.\n\nCONSTRAINTS\n- Do not change any thresholds inside form rules or cue severity.\n- All new signals must have unique TrainingSignalType raw values; extend the enum\n  conservatively (`firstSession`, `setupQuality`, `repeatExerciseProgress`,\n  `personalBaseline`).\n- Update InsightCandidateBuilder.mappedInsight to map every new signal to a sensible\n  InsightAction (mostly `.continuePlan` and `.focusCue`).\n\nACCEPTANCE\n- New tests cover: history of 1, 2, 3, 5, 6 sessions and assert the right signals\n  surface.\n- Manually run the engine with 1 session and confirm the dashboard shows a relevant\n  bootstrap insight (no longer empty).\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:56:19.195Z",
+      "role": "assistant",
+      "text": "I’ll start by mapping the repo and reading the signal/insight code plus existing tests, then I’ll make the smallest stable change that fits the current architecture. I’ll keep an eye on the live camera boundaries you called out and avoid touching that pipeline unless the code leaves no other route.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll start by mapping the repo and reading the signal/insight code plus existing tests, then I’ll make the smallest stable change that fits the current architecture. I’ll keep an eye on the live camera boundaries you called out and avoid touching that pipeline unless the code leaves no other route."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:56:38.757Z",
+      "role": "assistant",
+      "text": "The worktree is already fairly active: the core insight/signal files and tests have uncommitted edits, plus a few new service/test files. I’m going to read those changed areas as they stand and treat them as user-owned context, so my patch layers onto the current state instead of flattening it.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The worktree is already fairly active: the core insight/signal files and tests have uncommitted edits, plus a few new service/test files. I’m going to read those changed areas as they stand and treat them as user-owned context, so my patch layers onto the current state instead of flattening it."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:57:45.832Z",
+      "role": "assistant",
+      "text": "I’ve got the main shape now: `SignalExtractor` already has a clean observation layer and derived signal helpers, so the best fit is to add bootstrap logic there using those observations instead of touching MediaPipe/camera/live-session code. I’m checking the existing diffs next so the new context struct and tests land around the current uncommitted work cleanly.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve got the main shape now: `SignalExtractor` already has a clean observation layer and derived signal helpers, so the best fit is to add bootstrap logic there using those observations instead of touching MediaPipe/camera/live-session code. I’m checking the existing diffs next so the new context struct and tests land around the current uncommitted work cleanly."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T07:08:16.345Z",
+      "role": "assistant",
+      "text": "I’m going to make the signal-context change first, then wire the new signal types through candidate mapping and the one UI switch that renders signal icons. The notable engineering choice is to keep the actual camera/pose pipeline untouched and derive setup quality only from already-saved cue/event summaries, so we stay local-first and avoid storing any raw frame or pose stream.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m going to make the signal-context change first, then wire the new signal types through candidate mapping and the one UI switch that renders signal icons. The notable engineering choice is to keep the actual camera/pose pipeline untouched and derive setup quality only from already-saved cue/event summaries, so we stay local-first and avoid storing any raw frame or pose stream."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T07:11:00.221Z",
+      "role": "user",
+      "text": "resume?\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "resume?\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T07:11:24.343Z",
+      "role": "assistant",
+      "text": "Resuming. I’ve added the model/context entry point and the first half of the extractor logic; next I’m filling the helper functions, then I’ll wire the new signal types through insight mapping and run the build/tests.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Resuming. I’ve added the model/context entry point and the first half of the extractor logic; next I’m filling the helper functions, then I’ll wire the new signal types through insight mapping and run the build/tests."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T07:12:25.094Z",
+      "role": "assistant",
+      "text": "Small hiccup: the patch tool accepted the absolute-path edit but the file on disk did not change, so I’m reapplying with repo-relative paths. Nothing architectural changes here, just making sure the edits actually land in this workspace.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Small hiccup: the patch tool accepted the absolute-path edit but the file on disk did not change, so I’m reapplying with repo-relative paths. Nothing architectural changes here, just making sure the edits actually land in this workspace."
+        }
+      ]
+    }
+  ]
+}

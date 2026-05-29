@@ -1,0 +1,174 @@
+{
+  "id": "019e0231-acb1-7660-ab93-2e14f23185d3",
+  "title": "P14_K: Add insight rewrite seam",
+  "createdAtLocal": "2026-05-07 16:57:50",
+  "updatedAtLocal": "2026-05-07 17:09:16",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/07/rollout-2026-05-07T16-57-50-019e0231-acb1-7660-ab93-2e14f23185d3.jsonl",
+  "gitBranch": "main",
+  "gitSha": "a8305d617f2abab60b3b8df7bd7426bfdc252375",
+  "firstUserMessage": "TASK\nThe plan doc envisions an LLM rewrite pass once deterministic insights are good. Today\nthere is no clean seam, so retrofitting later will be expensive.\n\nGOAL\nAdd the seam without enabling any LLM call. Behavior is unchanged unless a feature\nflag is on.\n\nDESIGN\n1. Add `func toLLMContext() -> InsightLLMContext` on AIInsight, returning a Codable\n   struct with: dedupeKey, type, severity, action, exerciseDisplayName,\n   evidenceRefsJSON, deterministicHeadline, deterministicMessage,\n   coachPersonality, profileGoal, profileLimitations, sanitizationBlocklist.\n2. Add protocol `InsightRewriter`:\n     func rewrite(_ context: InsightLLMContext) async throws -> RewriteResult?\n   Default impl is `NoopInsightRewriter` (returns nil). Wire `InsightEngine` to\n   optionally take an `InsightRewriter`. If a rewrite returns non-nil, validate it\n   through `sanitize()` and fields-must-still-cover-evidence guard before adopting.\n3. Add `FeatureFlag.coachInsightLLMRewrite` (default off). When off, the\n   NoopInsightRewriter is used and no behavior changes.\n\nCONSTRAINTS\n- Zero network calls in the default build.\n- Add a `RewriteValidator` that rejects any rewrite that omits the exercise mention,\n  the recommended action verb, or the evidence-anchored fact.\n\nACCEPTANCE\n- All existing InsightEngineTests pass.\n- A new test plugs in a stub rewriter that returns a sanitized headline, validates the\n  insight is rewritten when the flag is on.\n- A test asserting the noop path is byte-identical to current behavior.",
+  "preview": "TASK\nThe plan doc envisions an LLM rewrite pass once deterministic insights are good. Today\nthere is no clean seam, so retrofitting later will be expensive.\n\nGOAL\nAdd the seam without enabling any LLM call. Behavior is unchanged unless a feature\nflag is on.\n\nDESIGN\n1. Add `func toLLMContext() -> InsightLLMContext` on AIInsight, returning a Codable\n   struct with: dedupeKey, type, severity, action, exerciseDisplayName,\n   evidenceRefsJSON, deterministicHeadline, deterministicMessage,\n   coachPersonality, profileGoal, profileLimitations, sanitizationBlocklist.\n2. Add protocol `InsightRewriter`:\n     func rewrite(_ context: InsightLLMContext) async throws -> RewriteResult?\n   Default impl is `NoopInsightRewriter` (returns nil). Wire `InsightEngine` to\n   optionally take an `InsightRewriter`. If a rewrite returns non-nil, validate it\n   through `sanitize()` and fields-must-still-cover-evidence guard before adopting.\n3. Add `FeatureFlag.coachInsightLLMRewrite` (default off). When off, the\n   NoopInsightRewriter is used and no behavior changes.\n\nCONSTRAINTS\n- Zero network calls in the default build.\n- Add a `RewriteValidator` that rejects any rewrite that omits the exercise mention,\n  the recommended action verb, or the evidence-anchored fact.\n\nACCEPTANCE\n- All existing InsightEngineTests pass.\n- A new test plugs in a stub rewriter that returns a sanitized headline, validates the\n  insight is rewritten when the flag is on.\n- A test asserting the noop path is byte-identical to current behavior.",
+  "rawLineCount": 337,
+  "parseErrors": 0,
+  "visibleMessageCount": 14,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-07T11:27:59.397Z",
+      "role": "user",
+      "text": "TASK\nThe plan doc envisions an LLM rewrite pass once deterministic insights are good. Today\nthere is no clean seam, so retrofitting later will be expensive.\n\nGOAL\nAdd the seam without enabling any LLM call. Behavior is unchanged unless a feature\nflag is on.\n\nDESIGN\n1. Add `func toLLMContext() -> InsightLLMContext` on AIInsight, returning a Codable\n   struct with: dedupeKey, type, severity, action, exerciseDisplayName,\n   evidenceRefsJSON, deterministicHeadline, deterministicMessage,\n   coachPersonality, profileGoal, profileLimitations, sanitizationBlocklist.\n2. Add protocol `InsightRewriter`:\n     func rewrite(_ context: InsightLLMContext) async throws -> RewriteResult?\n   Default impl is `NoopInsightRewriter` (returns nil). Wire `InsightEngine` to\n   optionally take an `InsightRewriter`. If a rewrite returns non-nil, validate it\n   through `sanitize()` and fields-must-still-cover-evidence guard before adopting.\n3. Add `FeatureFlag.coachInsightLLMRewrite` (default off). When off, the\n   NoopInsightRewriter is used and no behavior changes.\n\nCONSTRAINTS\n- Zero network calls in the default build.\n- Add a `RewriteValidator` that rejects any rewrite that omits the exercise mention,\n  the recommended action verb, or the evidence-anchored fact.\n\nACCEPTANCE\n- All existing InsightEngineTests pass.\n- A new test plugs in a stub rewriter that returns a sanitized headline, validates the\n  insight is rewritten when the flag is on.\n- A test asserting the noop path is byte-identical to current behavior.\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "TASK\nThe plan doc envisions an LLM rewrite pass once deterministic insights are good. Today\nthere is no clean seam, so retrofitting later will be expensive.\n\nGOAL\nAdd the seam without enabling any LLM call. Behavior is unchanged unless a feature\nflag is on.\n\nDESIGN\n1. Add `func toLLMContext() -> InsightLLMContext` on AIInsight, returning a Codable\n   struct with: dedupeKey, type, severity, action, exerciseDisplayName,\n   evidenceRefsJSON, deterministicHeadline, deterministicMessage,\n   coachPersonality, profileGoal, profileLimitations, sanitizationBlocklist.\n2. Add protocol `InsightRewriter`:\n     func rewrite(_ context: InsightLLMContext) async throws -> RewriteResult?\n   Default impl is `NoopInsightRewriter` (returns nil). Wire `InsightEngine` to\n   optionally take an `InsightRewriter`. If a rewrite returns non-nil, validate it\n   through `sanitize()` and fields-must-still-cover-evidence guard before adopting.\n3. Add `FeatureFlag.coachInsightLLMRewrite` (default off). When off, the\n   NoopInsightRewriter is used and no behavior changes.\n\nCONSTRAINTS\n- Zero network calls in the default build.\n- Add a `RewriteValidator` that rejects any rewrite that omits the exercise mention,\n  the recommended action verb, or the evidence-anchored fact.\n\nACCEPTANCE\n- All existing InsightEngineTests pass.\n- A new test plugs in a stub rewriter that returns a sanitized headline, validates the\n  insight is rewritten when the flag is on.\n- A test asserting the noop path is byte-identical to current behavior.\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T11:28:06.616Z",
+      "role": "assistant",
+      "text": "I’ll map the insight pipeline and tests first, then make the seam as narrow as possible around the existing output path. After that I’ll run the relevant test target so we can catch any behavioral drift.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll map the insight pipeline and tests first, then make the seam as narrow as possible around the existing output path. After that I’ll run the relevant test target so we can catch any behavioral drift."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T11:28:15.932Z",
+      "role": "assistant",
+      "text": "The main insight models and narrative builder are where the seam belongs; I’m checking the engine signatures now because the async rewrite protocol has to fit without turning the whole app upside down.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The main insight models and narrative builder are where the seam belongs; I’m checking the engine signatures now because the async rewrite protocol has to fit without turning the whole app upside down."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T11:28:40.103Z",
+      "role": "assistant",
+      "text": "There isn’t an existing feature flag type, so this change needs a tiny local flag surface too. I’m also checking whether the Xcode project requires explicit file registration before adding new Swift files.",
+      "content": [
+        {
+          "type": "text",
+          "text": "There isn’t an existing feature flag type, so this change needs a tiny local flag surface too. I’m also checking whether the Xcode project requires explicit file registration before adding new Swift files."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T11:32:05.448Z",
+      "role": "assistant",
+      "text": "I’ve got the shape now: keep today’s synchronous insight API intact, and add async overloads on the same engine methods for the future rewrite path. That gives the LLM seam a real place to plug in without forcing UI behavior to change while the flag is off.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve got the shape now: keep today’s synchronous insight API intact, and add async overloads on the same engine methods for the future rewrite path. That gives the LLM seam a real place to plug in without forcing UI behavior to change while the flag is off."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T11:33:10.929Z",
+      "role": "assistant",
+      "text": "Next I’m wiring the async rewrite overloads into `InsightEngine`. The synchronous methods stay as today’s deterministic path; the async overloads generate the same insights first, then try the rewrite pass only through the configured flag/rewriter pair.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Next I’m wiring the async rewrite overloads into `InsightEngine`. The synchronous methods stay as today’s deterministic path; the async overloads generate the same insights first, then try the rewrite pass only through the configured flag/rewriter pair."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T11:34:40.960Z",
+      "role": "assistant",
+      "text": "I’m adding the acceptance tests now: one proves the flag-on stub can rewrite through the sanitizer/validator, and one compares encoded insight output with the flag-off path so we know the no-op route is byte-identical.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m adding the acceptance tests now: one proves the flag-on stub can rewrite through the sanitizer/validator, and one compares encoded insight output with the flag-off path so we know the no-op route is byte-identical."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T11:35:19.565Z",
+      "role": "assistant",
+      "text": "The code is in place; I’m going to let Xcode compile it now, then run the insight test suite. If simulator selection gets picky, I’ll adjust to an available destination rather than guessing.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The code is in place; I’m going to let Xcode compile it now, then run the insight test suite. If simulator selection gets picky, I’ll adjust to an available destination rather than guessing."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T11:35:50.039Z",
+      "role": "assistant",
+      "text": "The app target compiled; the first failure is in the new tests where Swift picked the async overload in a couple of places that were meant to be deterministic sync calls. I’m tightening those call sites so the compiler has no ambiguity.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The app target compiled; the first failure is in the new tests where Swift picked the async overload in a couple of places that were meant to be deterministic sync calls. I’m tightening those call sites so the compiler has no ambiguity."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T11:36:51.084Z",
+      "role": "assistant",
+      "text": "The build has moved past compilation and is sitting in the simulator test run now. No failures have surfaced in the latest output; I’m waiting for the test runner to flush the actual results.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The build has moved past compilation and is sitting in the simulator test run now. No failures have surfaced in the latest output; I’m waiting for the test runner to flush the actual results."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T11:37:14.385Z",
+      "role": "assistant",
+      "text": "`InsightEngineTests` are green, including the new rewrite tests. I’m doing one last diff pass now to make sure the files read cleanly and there aren’t accidental broad edits.",
+      "content": [
+        {
+          "type": "text",
+          "text": "`InsightEngineTests` are green, including the new rewrite tests. I’m doing one last diff pass now to make sure the files read cleanly and there aren’t accidental broad edits."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T11:37:44.754Z",
+      "role": "assistant",
+      "text": "I made one small cleanup after the green run: removed a stored flag copy that was only needed during initialization. I’m rerunning the same test slice once more so the final state is verified.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I made one small cleanup after the green run: removed a stored flag copy that was only needed during initialization. I’m rerunning the same test slice once more so the final state is verified."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T11:38:26.116Z",
+      "role": "assistant",
+      "text": "The rerun is again past build and waiting on the simulator. It’s quiet in the usual slightly unnerving Xcode way, but still active.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The rerun is again past build and waiting on the simulator. It’s quiet in the usual slightly unnerving Xcode way, but still active."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T11:39:15.953Z",
+      "role": "assistant",
+      "text": "Implemented the rewrite hook with default no-op behavior.\n\nWhat changed:\n- Added `InsightLLMContext` and `AIInsight.toLLMContext()` in [AIInsightModels.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/AIInsightModels.swift:216).\n- Added `FeatureFlag.coachInsightLLMRewrite`, default off, in [FeatureFlags.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/FeatureFlags.swift:3).\n- Added `InsightRewriter`, `NoopInsightRewriter`, `RewriteResult`, and `RewriteValidator` in [InsightRewriter.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/InsightRewriter.swift:19).\n- Wired async `InsightEngine` overloads to attempt rewrite only through the flag-controlled rewriter, with sanitizer plus evidence/action/exercise validation before adopting in [InsightEngine.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/InsightEngine.swift:10).\n- Added tests for flag-on rewrite, byte-identical no-op behavior, and rejection when evidence is omitted in [InsightEngineTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/InsightEngineTests.swift:834).\n\nVerification:\n`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' -only-testing:VirtualTrainerTests/InsightEngineTests`\n\nResult: passed. No network calls were added; default build uses `NoopInsightRewriter`.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Implemented the rewrite hook with default no-op behavior.\n\nWhat changed:\n- Added `InsightLLMContext` and `AIInsight.toLLMContext()` in [AIInsightModels.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/AIInsightModels.swift:216).\n- Added `FeatureFlag.coachInsightLLMRewrite`, default off, in [FeatureFlags.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/FeatureFlags.swift:3).\n- Added `InsightRewriter`, `NoopInsightRewriter`, `RewriteResult`, and `RewriteValidator` in [InsightRewriter.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/InsightRewriter.swift:19).\n- Wired async `InsightEngine` overloads to attempt rewrite only through the flag-controlled rewriter, with sanitizer plus evidence/action/exercise validation before adopting in [InsightEngine.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/InsightEngine.swift:10).\n- Added tests for flag-on rewrite, byte-identical no-op behavior, and rejection when evidence is omitted in [InsightEngineTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/InsightEngineTests.swift:834).\n\nVerification:\n`xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' -only-testing:VirtualTrainerTests/InsightEngineTests`\n\nResult: passed. No network calls were added; default build uses `NoopInsightRewriter`."
+        }
+      ]
+    }
+  ]
+}

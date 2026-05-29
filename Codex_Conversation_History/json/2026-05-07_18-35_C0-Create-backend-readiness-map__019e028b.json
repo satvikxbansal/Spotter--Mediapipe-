@@ -1,0 +1,141 @@
+{
+  "id": "019e028b-696c-72b2-8566-e65c5621f391",
+  "title": "C0: Create backend readiness map",
+  "createdAtLocal": "2026-05-07 18:35:51",
+  "updatedAtLocal": "2026-05-07 18:44:09",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/07/rollout-2026-05-07T18-35-51-019e028b-696c-72b2-8566-e65c5621f391.jsonl",
+  "gitBranch": "main",
+  "gitSha": "c32fc0cda34efde33218499124ae5c805e5b555c",
+  "firstUserMessage": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups. \n\n\nGoal:\nCreate an exact backend-readiness map of the current Spotter codebase before changing sync models.\n\nTasks:\n1. Inspect:\n   - UserProfile.swift\n   - WorkoutSessionSummary.swift\n   - WorkoutHistoryStore.swift\n   - TrophyModels.swift\n   - TrophyStore / TrophyEngine if stored in TrophyModels.swift\n   - AIInsightModels.swift\n   - InsightStore.swift\n   - CalibrationRecord.swift\n   - CalibrationStore.swift\n   - ThemeStore.swift\n   - OnboardingStore.swift\n   - ShareCardRenderer.swift\n   - ProfileView.swift\n   - WorkoutDetailSheetView.swift\n   - TrophiesView.swift\n   - README.md\n   - DEBUG_LOG.md\n   - all current tests\n\n2. Produce a markdown file:\n   Documentation/BackendReadinessMap.md\n\nInclude:\n- all locally persisted files and their file paths\n- all syncable models\n- current schema versions\n- which models need accountId\n- which models need deletedAt\n- which models need SyncMetadata\n- which writes need operationId\n- current store methods and missing methods\n- privacy boundary summary\n- proposed Firestore collections\n- open decisions before Firebase\n\n3. Do not add Firebase, repositories, or model fields in this prompt.\n4. Add tests only if needed for current documentation helpers.\n\nAcceptance criteria:\n- Documentation/BackendReadinessMap.md exists.\n- It reflects the current repo accurately.\n- No product behavior changes.\n- Existing tests still pass.",
+  "preview": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups. \n\n\nGoal:\nCreate an exact backend-readiness map of the current Spotter codebase before changing sync models.\n\nTasks:\n1. Inspect:\n   - UserProfile.swift\n   - WorkoutSessionSummary.swift\n   - WorkoutHistoryStore.swift\n   - TrophyModels.swift\n   - TrophyStore / TrophyEngine if stored in TrophyModels.swift\n   - AIInsightModels.swift\n   - InsightStore.swift\n   - CalibrationRecord.swift\n   - CalibrationStore.swift\n   - ThemeStore.swift\n   - OnboardingStore.swift\n   - ShareCardRenderer.swift\n   - ProfileView.swift\n   - WorkoutDetailSheetView.swift\n   - TrophiesView.swift\n   - README.md\n   - DEBUG_LOG.md\n   - all current tests\n\n2. Produce a markdown file:\n   Documentation/BackendReadinessMap.md\n\nInclude:\n- all locally persisted files and their file paths\n- all syncable models\n- current schema versions\n- which models need accountId\n- which models need deletedAt\n- which models need SyncMetadata\n- which writes need operationId\n- current store methods and missing methods\n- privacy boundary summary\n- proposed Firestore collections\n- open decisions before Firebase\n\n3. Do not add Firebase, repositories, or model fields in this prompt.\n4. Add tests only if needed for current documentation helpers.\n\nAcceptance criteria:\n- Documentation/BackendReadinessMap.md exists.\n- It reflects the current repo accurately.\n- No product behavior changes.\n- Existing tests still pass.",
+  "rawLineCount": 410,
+  "parseErrors": 0,
+  "visibleMessageCount": 11,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-07T13:06:15.060Z",
+      "role": "user",
+      "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups. \n\n\nGoal:\nCreate an exact backend-readiness map of the current Spotter codebase before changing sync models.\n\nTasks:\n1. Inspect:\n   - UserProfile.swift\n   - WorkoutSessionSummary.swift\n   - WorkoutHistoryStore.swift\n   - TrophyModels.swift\n   - TrophyStore / TrophyEngine if stored in TrophyModels.swift\n   - AIInsightModels.swift\n   - InsightStore.swift\n   - CalibrationRecord.swift\n   - CalibrationStore.swift\n   - ThemeStore.swift\n   - OnboardingStore.swift\n   - ShareCardRenderer.swift\n   - ProfileView.swift\n   - WorkoutDetailSheetView.swift\n   - TrophiesView.swift\n   - README.md\n   - DEBUG_LOG.md\n   - all current tests\n\n2. Produce a markdown file:\n   Documentation/BackendReadinessMap.md\n\nInclude:\n- all locally persisted files and their file paths\n- all syncable models\n- current schema versions\n- which models need accountId\n- which models need deletedAt\n- which models need SyncMetadata\n- which writes need operationId\n- current store methods and missing methods\n- privacy boundary summary\n- proposed Firestore collections\n- open decisions before Firebase\n\n3. Do not add Firebase, repositories, or model fields in this prompt.\n4. Add tests only if needed for current documentation helpers.\n\nAcceptance criteria:\n- Documentation/BackendReadinessMap.md exists.\n- It reflects the current repo accurately.\n- No product behavior changes.\n- Existing tests still pass.\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups. \n\n\nGoal:\nCreate an exact backend-readiness map of the current Spotter codebase before changing sync models.\n\nTasks:\n1. Inspect:\n   - UserProfile.swift\n   - WorkoutSessionSummary.swift\n   - WorkoutHistoryStore.swift\n   - TrophyModels.swift\n   - TrophyStore / TrophyEngine if stored in TrophyModels.swift\n   - AIInsightModels.swift\n   - InsightStore.swift\n   - CalibrationRecord.swift\n   - CalibrationStore.swift\n   - ThemeStore.swift\n   - OnboardingStore.swift\n   - ShareCardRenderer.swift\n   - ProfileView.swift\n   - WorkoutDetailSheetView.swift\n   - TrophiesView.swift\n   - README.md\n   - DEBUG_LOG.md\n   - all current tests\n\n2. Produce a markdown file:\n   Documentation/BackendReadinessMap.md\n\nInclude:\n- all locally persisted files and their file paths\n- all syncable models\n- current schema versions\n- which models need accountId\n- which models need deletedAt\n- which models need SyncMetadata\n- which writes need operationId\n- current store methods and missing methods\n- privacy boundary summary\n- proposed Firestore collections\n- open decisions before Firebase\n\n3. Do not add Firebase, repositories, or model fields in this prompt.\n4. Add tests only if needed for current documentation helpers.\n\nAcceptance criteria:\n- Documentation/BackendReadinessMap.md exists.\n- It reflects the current repo accurately.\n- No product behavior changes.\n- Existing tests still pass.\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T13:06:23.051Z",
+      "role": "assistant",
+      "text": "I’ll start by mapping the repo and reading the requested docs and model/store files before touching anything. This phase sounds documentation-only, so I’ll keep code behavior still and only add the readiness map unless the repo reveals a tiny helper/test need.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll start by mapping the repo and reading the requested docs and model/store files before touching anything. This phase sounds documentation-only, so I’ll keep code behavior still and only add the readiness map unless the repo reveals a tiny helper/test need."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T13:06:38.912Z",
+      "role": "assistant",
+      "text": "The tree is modest and there’s one pre-existing untracked file, `Spotter_Pre_Backend_Readiness.md`; I’ll leave that alone. Next I’m reading the requested model/store/view files and the two docs in parallel so the map reflects the code that is actually here.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The tree is modest and there’s one pre-existing untracked file, `Spotter_Pre_Backend_Readiness.md`; I’ll leave that alone. Next I’m reading the requested model/store/view files and the two docs in parallel so the map reflects the code that is actually here."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T13:07:04.072Z",
+      "role": "assistant",
+      "text": "A few important shape details are already visible: persisted JSON is local app-support based, profile and workout summaries carry explicit schema versions, and summary decoding still defaults newer evidence fields. I’m widening the search now for every actual persistence point so the map doesn’t miss local files outside the initial list.",
+      "content": [
+        {
+          "type": "text",
+          "text": "A few important shape details are already visible: persisted JSON is local app-support based, profile and workout summaries carry explicit schema versions, and summary decoding still defaults newer evidence fields. I’m widening the search now for every actual persistence point so the map doesn’t miss local files outside the initial list."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T13:08:37.292Z",
+      "role": "assistant",
+      "text": "The write paths are now clear: free analysis and planned sessions both append `WorkoutSessionSummary` into `WorkoutHistoryStore`, then trophies and insights are recomputed/persisted from derived evidence. I’m reading the test surface next, with extra attention on Codable/backward-compat persistence tests.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The write paths are now clear: free analysis and planned sessions both append `WorkoutSessionSummary` into `WorkoutHistoryStore`, then trophies and insights are recomputed/persisted from derived evidence. I’m reading the test surface next, with extra attention on Codable/backward-compat persistence tests."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T13:10:36.599Z",
+      "role": "assistant",
+      "text": "I’ve got the backend map shape now. I’m going to add a new documentation file only, keeping the implementation untouched; it will call out current behavior versus recommended Firebase-phase decisions so we don’t accidentally smuggle model changes into this phase.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve got the backend map shape now. I’m going to add a new documentation file only, keeping the implementation untouched; it will call out current behavior versus recommended Firebase-phase decisions so we don’t accidentally smuggle model changes into this phase."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T13:12:30.848Z",
+      "role": "assistant",
+      "text": "The map is now in place under `Documentation/BackendReadinessMap.md`. I’m doing a quick review pass on the generated doc and then I’ll run the available Xcode test/build commands from the workspace.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The map is now in place under `Documentation/BackendReadinessMap.md`. I’m doing a quick review pass on the generated doc and then I’ll run the available Xcode test/build commands from the workspace."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T13:12:41.046Z",
+      "role": "assistant",
+      "text": "Only the new `Documentation/` directory is my change; the pre-existing `Spotter_Pre_Backend_Readiness.md` remains untouched. I’m starting with the README’s workspace test command on the `VirtualTrainer` scheme and iPhone 17 simulator destination.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Only the new `Documentation/` directory is my change; the pre-existing `Spotter_Pre_Backend_Readiness.md` remains untouched. I’m starting with the README’s workspace test command on the `VirtualTrainer` scheme and iPhone 17 simulator destination."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T13:13:19.071Z",
+      "role": "assistant",
+      "text": "The test build has compiled and installed the test bundle; now it’s in the simulator execution phase. So far this is behaving like a normal full workspace run rather than a destination/configuration failure.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The test build has compiled and installed the test bundle; now it’s in the simulator execution phase. So far this is behaving like a normal full workspace run rather than a destination/configuration failure."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T13:13:42.784Z",
+      "role": "assistant",
+      "text": "Full tests passed. I’m running the matching workspace build command now as a separate compile check, since the acceptance criteria asked for available tests/build commands.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Full tests passed. I’m running the matching workspace build command now as a separate compile check, since the acceptance criteria asked for available tests/build commands."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T13:14:09.320Z",
+      "role": "assistant",
+      "text": "Implemented the backend-readiness map as a documentation-only change:\n\n[BackendReadinessMap.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/BackendReadinessMap.md)\n\nIt covers local persisted JSON paths, syncable models, schema versions, account/delete/sync metadata needs, operation-id write paths, current store APIs and gaps, privacy boundaries, proposed Firestore collections, migration behavior, and open Firebase decisions.\n\nKey decision: I did not blindly recommend `deletedAt` everywhere. For derived trophy state and transient insight records, the map calls out safer backend choices like event logs, TTL, invalidation, or recompute policies.\n\nVerification passed:\n\n```sh\nxcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'\n# TEST SUCCEEDED\n\nxcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'\n# BUILD SUCCEEDED\n```\n\nNo product behavior changes, no Firebase/repository/model fields added, and no tests were added because this phase only creates documentation. The pre-existing untracked `Spotter_Pre_Backend_Readiness.md` is still untouched.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Implemented the backend-readiness map as a documentation-only change:\n\n[BackendReadinessMap.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/BackendReadinessMap.md)\n\nIt covers local persisted JSON paths, syncable models, schema versions, account/delete/sync metadata needs, operation-id write paths, current store APIs and gaps, privacy boundaries, proposed Firestore collections, migration behavior, and open Firebase decisions.\n\nKey decision: I did not blindly recommend `deletedAt` everywhere. For derived trophy state and transient insight records, the map calls out safer backend choices like event logs, TTL, invalidation, or recompute policies.\n\nVerification passed:\n\n```sh\nxcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'\n# TEST SUCCEEDED\n\nxcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'\n# BUILD SUCCEEDED\n```\n\nNo product behavior changes, no Firebase/repository/model fields added, and no tests were added because this phase only creates documentation. The pre-existing untracked `Spotter_Pre_Backend_Readiness.md` is still untouched."
+        }
+      ]
+    }
+  ]
+}

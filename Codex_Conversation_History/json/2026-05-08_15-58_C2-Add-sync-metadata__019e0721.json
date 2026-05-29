@@ -1,0 +1,174 @@
+{
+  "id": "019e0721-ed38-75e0-a342-d462c36806ad",
+  "title": "C2: Add sync metadata",
+  "createdAtLocal": "2026-05-08 15:58:44",
+  "updatedAtLocal": "2026-05-08 16:13:22",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/08/rollout-2026-05-08T15-58-44-019e0721-ed38-75e0-a342-d462c36806ad.jsonl",
+  "gitBranch": "main",
+  "gitSha": "f8950e317f945531e56e159a459d7551b4b6581f",
+  "firstUserMessage": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups.\n15. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \nUse the common Spotter Codex preflight block.\n\nGoal:\nAdd sync metadata to every future-syncable entity before repository protocols exist.\n\nCreate:\n- SyncMetadata.swift\n\nModels:\nenum SyncState: String, Codable {\n    case localOnly\n    case pendingUpload\n    case synced\n    case conflict\n}\n\nstruct SyncMetadata: Codable, Equatable {\n    var localUpdatedAt: Date\n    var lastSyncedAt: Date?\n    var serverVersion: String?\n    var syncState: SyncState\n    var pendingOperationId: UUID?\n\n    static func initialLocalOnly(now: Date = Date()) -> SyncMetadata\n    static func initialPendingUpload(operationId: UUID?, now: Date = Date()) -> SyncMetadata\n}\n\nAdd syncMetadata to:\n- UserProfile\n- WorkoutSessionSummary\n- TrophyProgress\n- TrophyUnlockEvent\n- AIInsight\n- InsightDeliveryRecord\n- InsightEngagementRecord\n- CalibrationRecord\n- Theme envelope if persisted independently\n\nRules:\n- Missing syncMetadata decodes to .initialLocalOnly.\n- In local-only mode, new records can remain .localOnly.\n- When accountId exists or a repository save occurs, local mutations should mark .pendingUpload.\n- A server repository will later set .synced with lastSyncedAt and serverVersion.\n- Conflicts should be marked .conflict, not silently overwritten.\n\nAdd:\nDocumentation/SyncConflictResolution.md\n\nDocument:\n- UserProfile: last-write-wins by localUpdatedAt, but preserve createdAt and onboardingCompletedAt.\n- WorkoutSessionSummary: immutable after sync except tombstone delete.\n- TrophyProgress: derived; canonical unlocks come from TrophyUnlockEvent log.\n- TrophyUnlockEvent: append-only, earliest server timestamp wins.\n- AIInsight: latest sourcePolicyVersion wins by dedupeKey; tombstoned evidence invalidates.\n- InsightDeliveryRecord: merge by max lastPresentedAt per surface and sum count where appropriate.\n- InsightEngagementRecord: merge counts and max last engagement date.\n- CalibrationRecord: completed beats skipped/failed; otherwise latest wins.\n- Theme: last-write-wins.\n\nTests:\n- missing syncMetadata decodes\n- mutation marks pendingUpload when accountId exists\n- localOnly records remain localOnly in no-account mode\n- conflict policy doc exists\n- SyncMetadata Codable roundtrip\n\nAcceptance:\n- Sync state exists before repositories.\n- Conflict rules are explicit.",
+  "preview": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups.\n15. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \nUse the common Spotter Codex preflight block.\n\nGoal:\nAdd sync metadata to every future-syncable entity before repository protocols exist.\n\nCreate:\n- SyncMetadata.swift\n\nModels:\nenum SyncState: String, Codable {\n    case localOnly\n    case pendingUpload\n    case synced\n    case conflict\n}\n\nstruct SyncMetadata: Codable, Equatable {\n    var localUpdatedAt: Date\n    var lastSyncedAt: Date?\n    var serverVersion: String?\n    var syncState: SyncState\n    var pendingOperationId: UUID?\n\n    static func initialLocalOnly(now: Date = Date()) -> SyncMetadata\n    static func initialPendingUpload(operationId: UUID?, now: Date = Date()) -> SyncMetadata\n}\n\nAdd syncMetadata to:\n- UserProfile\n- WorkoutSessionSummary\n- TrophyProgress\n- TrophyUnlockEvent\n- AIInsight\n- InsightDeliveryRecord\n- InsightEngagementRecord\n- CalibrationRecord\n- Theme envelope if persisted independently\n\nRules:\n- Missing syncMetadata decodes to .initialLocalOnly.\n- In local-only mode, new records can remain .localOnly.\n- When accountId exists or a repository save occurs, local mutations should mark .pendingUpload.\n- A server repository will later set .synced with lastSyncedAt and serverVersion.\n- Conflicts should be marked .conflict, not silently overwritten.\n\nAdd:\nDocumentation/SyncConflictResolution.md\n\nDocument:\n- UserProfile: last-write-wins by localUpdatedAt, but preserve createdAt and onboardingCompletedAt.\n- WorkoutSessionSummary: immutable after sync except tombstone delete.\n- TrophyProgress: derived; canonical unlocks come from TrophyUnlockEvent log.\n- TrophyUnlockEvent: append-only, earliest server timestamp wins.\n- AIInsight: latest sourcePolicyVersion wins by dedupeKey; tombstoned evidence invalidates.\n- InsightDeliveryRecord: merge by max lastPresentedAt per surface and sum count where appropriate.\n- InsightEngagementRecord: merge counts and max last engagement date.\n- CalibrationRecord: completed beats skipped/failed; otherwise latest wins.\n- Theme: last-write-wins.\n\nTests:\n- missing syncMetadata decodes\n- mutation marks pendingUpload when accountId exists\n- localOnly records remain localOnly in no-account mode\n- conflict policy doc exists\n- SyncMetadata Codable roundtrip\n\nAcceptance:\n- Sync state exists before repositories.\n- Conflict rules are explicit.",
+  "rawLineCount": 322,
+  "parseErrors": 0,
+  "visibleMessageCount": 14,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-08T10:29:06.953Z",
+      "role": "user",
+      "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups.\n15. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \nUse the common Spotter Codex preflight block.\n\nGoal:\nAdd sync metadata to every future-syncable entity before repository protocols exist.\n\nCreate:\n- SyncMetadata.swift\n\nModels:\nenum SyncState: String, Codable {\n    case localOnly\n    case pendingUpload\n    case synced\n    case conflict\n}\n\nstruct SyncMetadata: Codable, Equatable {\n    var localUpdatedAt: Date\n    var lastSyncedAt: Date?\n    var serverVersion: String?\n    var syncState: SyncState\n    var pendingOperationId: UUID?\n\n    static func initialLocalOnly(now: Date = Date()) -> SyncMetadata\n    static func initialPendingUpload(operationId: UUID?, now: Date = Date()) -> SyncMetadata\n}\n\nAdd syncMetadata to:\n- UserProfile\n- WorkoutSessionSummary\n- TrophyProgress\n- TrophyUnlockEvent\n- AIInsight\n- InsightDeliveryRecord\n- InsightEngagementRecord\n- CalibrationRecord\n- Theme envelope if persisted independently\n\nRules:\n- Missing syncMetadata decodes to .initialLocalOnly.\n- In local-only mode, new records can remain .localOnly.\n- When accountId exists or a repository save occurs, local mutations should mark .pendingUpload.\n- A server repository will later set .synced with lastSyncedAt and serverVersion.\n- Conflicts should be marked .conflict, not silently overwritten.\n\nAdd:\nDocumentation/SyncConflictResolution.md\n\nDocument:\n- UserProfile: last-write-wins by localUpdatedAt, but preserve createdAt and onboardingCompletedAt.\n- WorkoutSessionSummary: immutable after sync except tombstone delete.\n- TrophyProgress: derived; canonical unlocks come from TrophyUnlockEvent log.\n- TrophyUnlockEvent: append-only, earliest server timestamp wins.\n- AIInsight: latest sourcePolicyVersion wins by dedupeKey; tombstoned evidence invalidates.\n- InsightDeliveryRecord: merge by max lastPresentedAt per surface and sum count where appropriate.\n- InsightEngagementRecord: merge counts and max last engagement date.\n- CalibrationRecord: completed beats skipped/failed; otherwise latest wins.\n- Theme: last-write-wins.\n\nTests:\n- missing syncMetadata decodes\n- mutation marks pendingUpload when accountId exists\n- localOnly records remain localOnly in no-account mode\n- conflict policy doc exists\n- SyncMetadata Codable roundtrip\n\nAcceptance:\n- Sync state exists before repositories.\n- Conflict rules are explicit.\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repository.\n2. Read the current README and DEBUG_LOG.md.\n3. Read relevant files before editing.\n4. Treat this prompt as implementation guidance, not a blind spec. If the current code reveals a safer approach, choose it and explain why.\n5. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n6. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n7. Preserve deterministic local plan generation, trophies, stats, trends, recaps, and AI insights.\n8. Keep backend work local-first until the Firebase phase explicitly begins.\n9. Do not store or upload raw video, camera frames, face images, raw pose streams, raw biometric face data, or raw pose timelines.\n10. Do not print or expose secret values.\n11. Maintain backwards-compatible Codable decoding for existing local JSON.\n12. Keep the app compiling after this phase.\n13. Run available tests/build commands and summarize results.\n14. Summarize changed files, key decisions, migration behavior, and known follow-ups.\n15. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \nUse the common Spotter Codex preflight block.\n\nGoal:\nAdd sync metadata to every future-syncable entity before repository protocols exist.\n\nCreate:\n- SyncMetadata.swift\n\nModels:\nenum SyncState: String, Codable {\n    case localOnly\n    case pendingUpload\n    case synced\n    case conflict\n}\n\nstruct SyncMetadata: Codable, Equatable {\n    var localUpdatedAt: Date\n    var lastSyncedAt: Date?\n    var serverVersion: String?\n    var syncState: SyncState\n    var pendingOperationId: UUID?\n\n    static func initialLocalOnly(now: Date = Date()) -> SyncMetadata\n    static func initialPendingUpload(operationId: UUID?, now: Date = Date()) -> SyncMetadata\n}\n\nAdd syncMetadata to:\n- UserProfile\n- WorkoutSessionSummary\n- TrophyProgress\n- TrophyUnlockEvent\n- AIInsight\n- InsightDeliveryRecord\n- InsightEngagementRecord\n- CalibrationRecord\n- Theme envelope if persisted independently\n\nRules:\n- Missing syncMetadata decodes to .initialLocalOnly.\n- In local-only mode, new records can remain .localOnly.\n- When accountId exists or a repository save occurs, local mutations should mark .pendingUpload.\n- A server repository will later set .synced with lastSyncedAt and serverVersion.\n- Conflicts should be marked .conflict, not silently overwritten.\n\nAdd:\nDocumentation/SyncConflictResolution.md\n\nDocument:\n- UserProfile: last-write-wins by localUpdatedAt, but preserve createdAt and onboardingCompletedAt.\n- WorkoutSessionSummary: immutable after sync except tombstone delete.\n- TrophyProgress: derived; canonical unlocks come from TrophyUnlockEvent log.\n- TrophyUnlockEvent: append-only, earliest server timestamp wins.\n- AIInsight: latest sourcePolicyVersion wins by dedupeKey; tombstoned evidence invalidates.\n- InsightDeliveryRecord: merge by max lastPresentedAt per surface and sum count where appropriate.\n- InsightEngagementRecord: merge counts and max last engagement date.\n- CalibrationRecord: completed beats skipped/failed; otherwise latest wins.\n- Theme: last-write-wins.\n\nTests:\n- missing syncMetadata decodes\n- mutation marks pendingUpload when accountId exists\n- localOnly records remain localOnly in no-account mode\n- conflict policy doc exists\n- SyncMetadata Codable roundtrip\n\nAcceptance:\n- Sync state exists before repositories.\n- Conflict rules are explicit.\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:29:17.658Z",
+      "role": "assistant",
+      "text": "I’ll start with the Spotter preflight: map the repo, read the README and debug log, then trace the model/persistence paths that touch these entities before making any edits. After that I’ll implement the smallest compatible metadata layer and verify it with the available build/tests.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll start with the Spotter preflight: map the repo, read the README and debug log, then trace the model/persistence paths that touch these entities before making any edits. After that I’ll implement the smallest compatible metadata layer and verify it with the available build/tests."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:29:26.409Z",
+      "role": "assistant",
+      "text": "The worktree is clean, and this is a compact iOS repo with the syncable entities mostly under `VirtualTrainer/Models`. I’m going to read the project notes plus search for any existing “preflight” wording and account-save patterns so the sync flags land where the app already persists state.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The worktree is clean, and this is a compact iOS repo with the syncable entities mostly under `VirtualTrainer/Models`. I’m going to read the project notes plus search for any existing “preflight” wording and account-save patterns so the sync flags land where the app already persists state."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:29:57.548Z",
+      "role": "assistant",
+      "text": "The readiness map is directly relevant here: the repo already has account ownership and tombstones, but intentionally had no `SyncMetadata` yet. That means the safest path is to extend the existing local JSON models and store save points, not introduce repository abstractions or touch the camera/tracking stack.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The readiness map is directly relevant here: the repo already has account ownership and tombstones, but intentionally had no `SyncMetadata` yet. That means the safest path is to extend the existing local JSON models and store save points, not introduce repository abstractions or touch the camera/tracking stack."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:32:13.849Z",
+      "role": "assistant",
+      "text": "I’ve got the shape now. Plan is: add a tiny sync metadata model and helper, thread it through the syncable Codable entities with legacy defaults, stamp pending state only at local mutation/save points where an account is present, add the conflict-resolution doc, then cover the behavior with focused XCTest cases before running the workspace tests/build.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve got the shape now. Plan is: add a tiny sync metadata model and helper, thread it through the syncable Codable entities with legacy defaults, stamp pending state only at local mutation/save points where an account is present, add the conflict-resolution doc, then cover the behavior with focused XCTest cases before running the workspace tests/build."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:32:29.108Z",
+      "role": "assistant",
+      "text": "I’m going to make the metadata helper preserve explicit `.conflict` states once they exist. That’s a small guardrail now, but it matters later: normal save paths shouldn’t accidentally turn a conflict into a pending upload without a resolver choosing a side.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m going to make the metadata helper preserve explicit `.conflict` states once they exist. That’s a small guardrail now, but it matters later: normal save paths shouldn’t accidentally turn a conflict into a pending upload without a resolver choosing a side."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:37:53.186Z",
+      "role": "assistant",
+      "text": "The model layer is wired now. I’m adding focused tests that use the real stores where the behavior matters, plus direct Codable round trips so legacy JSON without `syncMetadata` stays safe.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The model layer is wired now. I’m adding focused tests that use the real stores where the behavior matters, plus direct Codable round trips so legacy JSON without `syncMetadata` stays safe."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:39:21.897Z",
+      "role": "assistant",
+      "text": "The tests are in place. I’m going to run the focused XCTest class first because the Codable synthesis around these value types is the likeliest place for Swift to object; after that I’ll run the broader workspace test/build path.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The tests are in place. I’m going to run the focused XCTest class first because the Codable synthesis around these value types is the likeliest place for Swift to object; after that I’ll run the broader workspace test/build path."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:39:45.790Z",
+      "role": "assistant",
+      "text": "Focused build found one straightforward Swift issue: `InsightEngagementRecord.withAccountId` now has a local binding, so it needs an explicit `return`. I’m fixing that and rerunning the focused test.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Focused build found one straightforward Swift issue: `InsightEngagementRecord.withAccountId` now has a local binding, so it needs an explicit `return`. I’m fixing that and rerunning the focused test."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:40:41.755Z",
+      "role": "assistant",
+      "text": "The focused test build is past the compile fixes and into simulator execution now. I’m waiting on the test runner result rather than interrupting it.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused test build is past the compile fixes and into simulator execution now. I’m waiting on the test runner result rather than interrupting it."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:41:15.719Z",
+      "role": "assistant",
+      "text": "Focused sync tests pass. I’m moving to the full workspace test suite now; that’s the real check that the metadata defaults didn’t disturb history, trophies, insights, onboarding, or the planned/free-analysis save paths.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Focused sync tests pass. I’m moving to the full workspace test suite now; that’s the real check that the metadata defaults didn’t disturb history, trophies, insights, onboarding, or the planned/free-analysis save paths."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:41:50.748Z",
+      "role": "assistant",
+      "text": "Full tests are running on the simulator. The build phase is clean so far; now I’m watching the actual XCTest run for any behavioral fallout in older persistence tests.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Full tests are running on the simulator. The build phase is clean so far; now I’m watching the actual XCTest run for any behavioral fallout in older persistence tests."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:42:15.160Z",
+      "role": "assistant",
+      "text": "Full tests passed. I’m doing a plain simulator build next, which catches app target packaging issues that tests can sometimes mask.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Full tests passed. I’m doing a plain simulator build next, which catches app target packaging issues that tests can sometimes mask."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T10:43:22.616Z",
+      "role": "assistant",
+      "text": "Implemented the sync-metadata prep, local-first and without touching MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n\n**What Changed**\n- Added [SyncMetadata.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/SyncMetadata.swift:3>) with `SyncState`, local-only and pending-upload initializers, mutation stamping, and conflict-preserving merge preference.\n- Added `syncMetadata` with backward-compatible decoding to:\n  [UserProfile.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/UserProfile.swift:276>),\n  [WorkoutSessionSummary.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/WorkoutSessionSummary.swift:247>),\n  [TrophyModels.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/TrophyModels.swift:192>),\n  [AIInsightModels.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/AIInsightModels.swift:155>),\n  [InsightStore.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/InsightStore.swift:8>),\n  [CalibrationRecord.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/CalibrationRecord.swift:41>), and the persisted theme envelope in [ThemeStore.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/ThemeStore.swift:158>).\n- Store saves now mark account-owned local mutations as `.pendingUpload`; no-account/local-only saves remain `.localOnly`.\n- `WorkoutHistoryStore.fetchDirtyOrDeletedSummaries()` now includes pending/conflict sync records as well as tombstones.\n- Added [SyncConflictResolution.md](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/Documentation/SyncConflictResolution.md:1>) with explicit merge/conflict rules.\n- Added [SyncMetadataTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/SyncMetadataTests.swift:9>) covering Codable roundtrip, legacy missing metadata, pending upload stamping, local-only behavior, and the conflict doc.\n\n**Practical Before/After**\nBefore: if a signed-in user saved a workout or changed their goal, the local JSON had ownership but no way for a future sync layer to know “this needs upload.”  \nAfter: that same profile/workout/insight/theme/calibration/trophy state is marked `.pendingUpload`. A no-account user doing Free Analysis still saves local history as `.localOnly`, so local-first behavior stays quiet and offline.\n\n**Migration**\nExisting JSON without `syncMetadata` decodes as `.initialLocalOnly`, even if it already has `accountId`. That keeps old local files safe and avoids pretending legacy data is dirty.\n\n**Verification**\n- `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:VirtualTrainerTests/SyncMetadataTests` succeeded.\n- `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` succeeded.\n- `xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` succeeded.\n- `git diff --check` clean.\n\nKnown follow-ups: operation IDs are still nil until the idempotency/write-journal phase, and server repositories still need to set `.synced`, `lastSyncedAt`, and `serverVersion` later.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Implemented the sync-metadata prep, local-first and without touching MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the live camera pipeline.\n\n**What Changed**\n- Added [SyncMetadata.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/SyncMetadata.swift:3>) with `SyncState`, local-only and pending-upload initializers, mutation stamping, and conflict-preserving merge preference.\n- Added `syncMetadata` with backward-compatible decoding to:\n  [UserProfile.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/UserProfile.swift:276>),\n  [WorkoutSessionSummary.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/WorkoutSessionSummary.swift:247>),\n  [TrophyModels.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/TrophyModels.swift:192>),\n  [AIInsightModels.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/AIInsightModels.swift:155>),\n  [InsightStore.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/InsightStore.swift:8>),\n  [CalibrationRecord.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/CalibrationRecord.swift:41>), and the persisted theme envelope in [ThemeStore.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainer/Models/ThemeStore.swift:158>).\n- Store saves now mark account-owned local mutations as `.pendingUpload`; no-account/local-only saves remain `.localOnly`.\n- `WorkoutHistoryStore.fetchDirtyOrDeletedSummaries()` now includes pending/conflict sync records as well as tombstones.\n- Added [SyncConflictResolution.md](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/Documentation/SyncConflictResolution.md:1>) with explicit merge/conflict rules.\n- Added [SyncMetadataTests.swift](</Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe/VirtualTrainerTests/SyncMetadataTests.swift:9>) covering Codable roundtrip, legacy missing metadata, pending upload stamping, local-only behavior, and the conflict doc.\n\n**Practical Before/After**\nBefore: if a signed-in user saved a workout or changed their goal, the local JSON had ownership but no way for a future sync layer to know “this needs upload.”  \nAfter: that same profile/workout/insight/theme/calibration/trophy state is marked `.pendingUpload`. A no-account user doing Free Analysis still saves local history as `.localOnly`, so local-first behavior stays quiet and offline.\n\n**Migration**\nExisting JSON without `syncMetadata` decodes as `.initialLocalOnly`, even if it already has `accountId`. That keeps old local files safe and avoids pretending legacy data is dirty.\n\n**Verification**\n- `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:VirtualTrainerTests/SyncMetadataTests` succeeded.\n- `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` succeeded.\n- `xcodebuild build -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17'` succeeded.\n- `git diff --check` clean.\n\nKnown follow-ups: operation IDs are still nil until the idempotency/write-journal phase, and server repositories still need to set `.synced`, `lastSyncedAt`, and `serverVersion` later."
+        }
+      ]
+    }
+  ]
+}

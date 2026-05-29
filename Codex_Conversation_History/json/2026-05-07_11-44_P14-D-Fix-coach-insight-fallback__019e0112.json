@@ -1,0 +1,218 @@
+{
+  "id": "019e0112-5a65-7710-8a80-7501ae31f6c9",
+  "title": "P14_D: Fix coach insight fallback",
+  "createdAtLocal": "2026-05-07 11:44:00",
+  "updatedAtLocal": "2026-05-07 12:04:04",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/07/rollout-2026-05-07T11-44-00-019e0112-5a65-7710-8a80-7501ae31f6c9.jsonl",
+  "gitBranch": "main",
+  "gitSha": "a8305d617f2abab60b3b8df7bd7426bfdc252375",
+  "firstUserMessage": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \nTASK\nAfter every workout, the WorkoutSummaryView's coach insight card currently falls back to\nthe literal placeholder string \"Coach insight will use form, cue, rest, and completion\ntrends once workout history is live.\" That fallback ships to users who do have history.\n\nGOAL\nReplace the placeholder with a deterministic, evidence-driven 1-liner computed from the\nWorkoutSessionSummary itself, so the card always says something specific even when\nInsightEngine yields nothing.\n\nNEW MODULE\nCreate `Services/WorkoutRecapBuilder.swift` (`nonisolated struct WorkoutRecapBuilder`)\nwith `func build(summary: WorkoutSessionSummary) -> WorkoutRecap`, where:\n\n  struct WorkoutRecap {\n      let headline: String          // e.g. \"Squat day held the line.\"\n      let bodyMessage: String       // 1–2 sentences of evidence-derived narrative\n      let highlightStat: String?    // e.g. \"Best set: rep 8 hit 92%\"\n      let nextStep: String?         // single forward-looking nudge\n  }\n\nLOGIC (deterministic, no LLM)\n- Pick the dominant exercise of the session (most achievedReps + holdSeconds).\n- Pull `qualitySummary.firstHalfAverageFormScore` vs `secondHalfAverageFormScore` and\n  describe the trajectory: \"form held\", \"form climbed\", \"form faded\".\n- Mention the breakdownRepIndex if present and within the dominant exercise's set.\n- Mention completionPercent if not nil.\n- Forward step prefers (in order): `qualityTrend == .faded` → \"lock the cue early next time\";\n  `excellentFormReps >= 3` → \"earn a small rep bump\";\n  `restExtended` → \"give yourself 15s more rest next set\";\n  default → \"keep the same target, deepen quality\".\n\nWIRING\n- Update `WorkoutSummaryBuilder.placeholderInsight` so it is never used as a fallback;\n  instead `WorkoutSummaryView` should always have a `WorkoutRecap` (passed in alongside\n  the optional AIInsight).\n- The AIInsight, when present, sits BELOW the recap, not in place of it.\n\nCONSTRAINTS\n- Recap must always render (zero-evidence path returns generic-but-honest fallback like\n  \"Logged a session. Save a few more to unlock specific coaching.\")\n- Use the existing `sanitize()` blocklist defensively when injecting `summary.goal`.\n\nACCEPTANCE\n- New WorkoutRecapBuilderTests cover: clean session, faded set, partial completion,\n  free-analysis save, zero-rep hold-only set.\n- WorkoutSummaryView preview shows a real recap with no placeholder text.",
+  "preview": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \nTASK\nAfter every workout, the WorkoutSummaryView's coach insight card currently falls back to\nthe literal placeholder string \"Coach insight will use form, cue, rest, and completion\ntrends once workout history is live.\" That fallback ships to users who do have history.\n\nGOAL\nReplace the placeholder with a deterministic, evidence-driven 1-liner computed from the\nWorkoutSessionSummary itself, so the card always says something specific even when\nInsightEngine yields nothing.\n\nNEW MODULE\nCreate `Services/WorkoutRecapBuilder.swift` (`nonisolated struct WorkoutRecapBuilder`)\nwith `func build(summary: WorkoutSessionSummary) -> WorkoutRecap`, where:\n\n  struct WorkoutRecap {\n      let headline: String          // e.g. \"Squat day held the line.\"\n      let bodyMessage: String       // 1–2 sentences of evidence-derived narrative\n      let highlightStat: String?    // e.g. \"Best set: rep 8 hit 92%\"\n      let nextStep: String?         // single forward-looking nudge\n  }\n\nLOGIC (deterministic, no LLM)\n- Pick the dominant exercise of the session (most achievedReps + holdSeconds).\n- Pull `qualitySummary.firstHalfAverageFormScore` vs `secondHalfAverageFormScore` and\n  describe the trajectory: \"form held\", \"form climbed\", \"form faded\".\n- Mention the breakdownRepIndex if present and within the dominant exercise's set.\n- Mention completionPercent if not nil.\n- Forward step prefers (in order): `qualityTrend == .faded` → \"lock the cue early next time\";\n  `excellentFormReps >= 3` → \"earn a small rep bump\";\n  `restExtended` → \"give yourself 15s more rest next set\";\n  default → \"keep the same target, deepen quality\".\n\nWIRING\n- Update `WorkoutSummaryBuilder.placeholderInsight` so it is never used as a fallback;\n  instead `WorkoutSummaryView` should always have a `WorkoutRecap` (passed in alongside\n  the optional AIInsight).\n- The AIInsight, when present, sits BELOW the recap, not in place of it.\n\nCONSTRAINTS\n- Recap must always render (zero-evidence path returns generic-but-honest fallback like\n  \"Logged a session. Save a few more to unlock specific coaching.\")\n- Use the existing `sanitize()` blocklist defensively when injecting `summary.goal`.\n\nACCEPTANCE\n- New WorkoutRecapBuilderTests cover: clean session, faded set, partial completion,\n  free-analysis save, zero-rep hold-only set.\n- WorkoutSummaryView preview shows a real recap with no placeholder text.",
+  "rawLineCount": 544,
+  "parseErrors": 0,
+  "visibleMessageCount": 18,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-07T06:14:14.260Z",
+      "role": "user",
+      "text": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \nTASK\nAfter every workout, the WorkoutSummaryView's coach insight card currently falls back to\nthe literal placeholder string \"Coach insight will use form, cue, rest, and completion\ntrends once workout history is live.\" That fallback ships to users who do have history.\n\nGOAL\nReplace the placeholder with a deterministic, evidence-driven 1-liner computed from the\nWorkoutSessionSummary itself, so the card always says something specific even when\nInsightEngine yields nothing.\n\nNEW MODULE\nCreate `Services/WorkoutRecapBuilder.swift` (`nonisolated struct WorkoutRecapBuilder`)\nwith `func build(summary: WorkoutSessionSummary) -> WorkoutRecap`, where:\n\n  struct WorkoutRecap {\n      let headline: String          // e.g. \"Squat day held the line.\"\n      let bodyMessage: String       // 1–2 sentences of evidence-derived narrative\n      let highlightStat: String?    // e.g. \"Best set: rep 8 hit 92%\"\n      let nextStep: String?         // single forward-looking nudge\n  }\n\nLOGIC (deterministic, no LLM)\n- Pick the dominant exercise of the session (most achievedReps + holdSeconds).\n- Pull `qualitySummary.firstHalfAverageFormScore` vs `secondHalfAverageFormScore` and\n  describe the trajectory: \"form held\", \"form climbed\", \"form faded\".\n- Mention the breakdownRepIndex if present and within the dominant exercise's set.\n- Mention completionPercent if not nil.\n- Forward step prefers (in order): `qualityTrend == .faded` → \"lock the cue early next time\";\n  `excellentFormReps >= 3` → \"earn a small rep bump\";\n  `restExtended` → \"give yourself 15s more rest next set\";\n  default → \"keep the same target, deepen quality\".\n\nWIRING\n- Update `WorkoutSummaryBuilder.placeholderInsight` so it is never used as a fallback;\n  instead `WorkoutSummaryView` should always have a `WorkoutRecap` (passed in alongside\n  the optional AIInsight).\n- The AIInsight, when present, sits BELOW the recap, not in place of it.\n\nCONSTRAINTS\n- Recap must always render (zero-evidence path returns generic-but-honest fallback like\n  \"Logged a session. Save a few more to unlock specific coaching.\")\n- Use the existing `sanitize()` blocklist defensively when injecting `summary.goal`.\n\nACCEPTANCE\n- New WorkoutRecapBuilderTests cover: clean session, faded set, partial completion,\n  free-analysis save, zero-rep hold-only set.\n- WorkoutSummaryView preview shows a real recap with no placeholder text.\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "Before changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Share an end to end manual testing plan of the changes done\n15. Post building, Review the implementation and suggest ways to expand and deepen this coaching engine. Implement the highest leverage ones ensuring the code is stable and does not break existing functionalities. \nTASK\nAfter every workout, the WorkoutSummaryView's coach insight card currently falls back to\nthe literal placeholder string \"Coach insight will use form, cue, rest, and completion\ntrends once workout history is live.\" That fallback ships to users who do have history.\n\nGOAL\nReplace the placeholder with a deterministic, evidence-driven 1-liner computed from the\nWorkoutSessionSummary itself, so the card always says something specific even when\nInsightEngine yields nothing.\n\nNEW MODULE\nCreate `Services/WorkoutRecapBuilder.swift` (`nonisolated struct WorkoutRecapBuilder`)\nwith `func build(summary: WorkoutSessionSummary) -> WorkoutRecap`, where:\n\n  struct WorkoutRecap {\n      let headline: String          // e.g. \"Squat day held the line.\"\n      let bodyMessage: String       // 1–2 sentences of evidence-derived narrative\n      let highlightStat: String?    // e.g. \"Best set: rep 8 hit 92%\"\n      let nextStep: String?         // single forward-looking nudge\n  }\n\nLOGIC (deterministic, no LLM)\n- Pick the dominant exercise of the session (most achievedReps + holdSeconds).\n- Pull `qualitySummary.firstHalfAverageFormScore` vs `secondHalfAverageFormScore` and\n  describe the trajectory: \"form held\", \"form climbed\", \"form faded\".\n- Mention the breakdownRepIndex if present and within the dominant exercise's set.\n- Mention completionPercent if not nil.\n- Forward step prefers (in order): `qualityTrend == .faded` → \"lock the cue early next time\";\n  `excellentFormReps >= 3` → \"earn a small rep bump\";\n  `restExtended` → \"give yourself 15s more rest next set\";\n  default → \"keep the same target, deepen quality\".\n\nWIRING\n- Update `WorkoutSummaryBuilder.placeholderInsight` so it is never used as a fallback;\n  instead `WorkoutSummaryView` should always have a `WorkoutRecap` (passed in alongside\n  the optional AIInsight).\n- The AIInsight, when present, sits BELOW the recap, not in place of it.\n\nCONSTRAINTS\n- Recap must always render (zero-evidence path returns generic-but-honest fallback like\n  \"Logged a session. Save a few more to unlock specific coaching.\")\n- Use the existing `sanitize()` blocklist defensively when injecting `summary.goal`.\n\nACCEPTANCE\n- New WorkoutRecapBuilderTests cover: clean session, faded set, partial completion,\n  free-analysis save, zero-rep hold-only set.\n- WorkoutSummaryView preview shows a real recap with no placeholder text.\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:14:17.401Z",
+      "role": "assistant",
+      "text": "I’ll inspect the project shape first and trace the summary flow before touching anything. I’ll keep the camera and pose pipeline out of scope unless the repo forces our hand.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll inspect the project shape first and trace the summary flow before touching anything. I’ll keep the camera and pose pipeline out of scope unless the repo forces our hand."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:14:30.570Z",
+      "role": "assistant",
+      "text": "The repo is a compact Swift/Xcode app with services, models, UI, camera, coaching, and an existing XCTest target. I’ve found the summary/insight area and I’m reading those files now so the new recap fits the app’s current data contracts instead of inventing a parallel path.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The repo is a compact Swift/Xcode app with services, models, UI, camera, coaching, and an existing XCTest target. I’ve found the summary/insight area and I’m reading those files now so the new recap fits the app’s current data contracts instead of inventing a parallel path."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:14:55.983Z",
+      "role": "assistant",
+      "text": "I see user/work-in-progress changes already in `WorkoutSummaryView` and `PlannedWorkoutSessionView` around insight engagement. I’ll build on those rather than wiping them, and keep the recap as a separate deterministic layer below the existing saved-session path.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I see user/work-in-progress changes already in `WorkoutSummaryView` and `PlannedWorkoutSessionView` around insight engagement. I’ll build on those rather than wiping them, and keep the recap as a separate deterministic layer below the existing saved-session path."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:17:48.017Z",
+      "role": "assistant",
+      "text": "The Xcode project is using file-system-synchronized groups, so new Swift files under `VirtualTrainer/` and `VirtualTrainerTests/` should be picked up without hand-editing the project file. The cleanest path is a small service builder plus a view wiring change; no camera, pose, rep counting, or live pipeline code needs to move.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The Xcode project is using file-system-synchronized groups, so new Swift files under `VirtualTrainer/` and `VirtualTrainerTests/` should be picked up without hand-editing the project file. The cleanest path is a small service builder plus a view wiring change; no camera, pose, rep counting, or live pipeline code needs to move."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:19:17.429Z",
+      "role": "assistant",
+      "text": "I’m going to add the recap as a pure service with no persistence side effects. It will use only the saved session summary evidence, keep the existing AI insight machinery intact, and share the same unsupported-claim sanitizer so goal text cannot sneak blocked claims into recap copy.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m going to add the recap as a pure service with no persistence side effects. It will use only the saved session summary evidence, keep the existing AI insight machinery intact, and share the same unsupported-claim sanitizer so goal text cannot sneak blocked claims into recap copy."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:21:59.754Z",
+      "role": "assistant",
+      "text": "The planned-session summary now always receives a recap built from the same `WorkoutSessionSummary` that gets saved to history. The optional AI insight still records impressions/engagement, but it renders as a second section below the deterministic recap instead of replacing it.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The planned-session summary now always receives a recap built from the same `WorkoutSessionSummary` that gets saved to history. The optional AI insight still records impressions/engagement, but it renders as a second section below the deterministic recap instead of replacing it."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:23:17.805Z",
+      "role": "assistant",
+      "text": "The test coverage is in place now, including the requested free-analysis save path and hold-only path. I’m going to build next; if the simulator matrix is finicky, I’ll first ask Xcode what destinations are available and pick the cleanest one.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The test coverage is in place now, including the requested free-analysis save path and hold-only path. I’m going to build next; if the simulator matrix is finicky, I’ll first ask Xcode what destinations are available and pick the cleanest one."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:23:38.784Z",
+      "role": "assistant",
+      "text": "Xcode sees an iPhone 17 simulator on iOS 26.2, so I’m using that for the test run. This should exercise both compilation and the new XCTest target coverage.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Xcode sees an iPhone 17 simulator on iOS 26.2, so I’m using that for the test run. This should exercise both compilation and the new XCTest target coverage."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:24:10.372Z",
+      "role": "assistant",
+      "text": "The first test run reached compile, but the project cannot currently see `MediaPipeTasksVision` in the simulator build products. I’m checking whether this is a CocoaPods/setup issue in the workspace, then I’ll rerun using the right workspace or report it cleanly if the dependency is genuinely missing.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The first test run reached compile, but the project cannot currently see `MediaPipeTasksVision` in the simulator build products. I’m checking whether this is a CocoaPods/setup issue in the workspace, then I’ll rerun using the right workspace or report it cleanly if the dependency is genuinely missing."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:24:17.851Z",
+      "role": "assistant",
+      "text": "The dependency is present in `Pods/`, and this repo has a `VirtualTrainer.xcworkspace`; the failed command used the bare `.xcodeproj`, so the CocoaPods XCFramework preparation phase never ran. I’m rerunning through the workspace now.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The dependency is present in `Pods/`, and this repo has a `VirtualTrainer.xcworkspace`; the failed command used the bare `.xcodeproj`, so the CocoaPods XCFramework preparation phase never ran. I’m rerunning through the workspace now."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:25:15.719Z",
+      "role": "assistant",
+      "text": "The workspace build got past the MediaPipe import and finished app/test bundle compilation; it’s currently in the simulator test execution phase. I’m letting it run rather than interrupting, since the first launch after building pods can be slow.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The workspace build got past the MediaPipe import and finished app/test bundle compilation; it’s currently in the simulator test execution phase. I’m letting it run rather than interrupting, since the first launch after building pods can be slow."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:25:33.702Z",
+      "role": "assistant",
+      "text": "The full suite compiled and ran; only my two new string expectation tests failed, so the implementation is intact and the issue is in the exact expected wording/rounding I wrote. I’m rerunning just the recap tests to get the assertion detail and tighten them.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The full suite compiled and ran; only my two new string expectation tests failed, so the implementation is intact and the issue is in the exact expected wording/rounding I wrote. I’m rerunning just the recap tests to get the assertion detail and tighten them."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:27:27.396Z",
+      "role": "assistant",
+      "text": "The codebase’s exercise display names are already user-facing and often plural (`Squats`, `Push-Ups`). I’m adjusting the headline phrasing to avoid the awkward “Squats day” construction instead of forcing a singularization table that would be brittle across the exercise library.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The codebase’s exercise display names are already user-facing and often plural (`Squats`, `Push-Ups`). I’m adjusting the headline phrasing to avoid the awkward “Squats day” construction instead of forcing a singularization table that would be brittle across the exercise library."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:29:58.965Z",
+      "role": "assistant",
+      "text": "The focused recap suite now passes. I’m doing one full workspace test pass again so the final result isn’t based on a narrowed run.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused recap suite now passes. I’m doing one full workspace test pass again so the final result isn’t based on a narrowed run."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:31:07.368Z",
+      "role": "assistant",
+      "text": "The post-build review found two cheap, useful hardening points: the new service should prove the `restExtended` nudge path, and it should prove dominance is aggregated across sets instead of accidentally picking a single large set. I’m adding those tests now; no production rewrite needed.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The post-build review found two cheap, useful hardening points: the new service should prove the `restExtended` nudge path, and it should prove dominance is aggregated across sets instead of accidentally picking a single large set. I’m adding those tests now; no production rewrite needed."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:32:16.792Z",
+      "role": "assistant",
+      "text": "The extra hardening tests pass. Since those were test-only additions after the full run, I’m running one last full suite so the final verification reflects the exact tree as it stands.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The extra hardening tests pass. Since those were test-only additions after the full run, I’m running one last full suite so the final verification reflects the exact tree as it stands."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-07T06:34:04.419Z",
+      "role": "assistant",
+      "text": "Implemented. The placeholder is gone from the summary fallback path.\n\nChanged files:\n- [WorkoutRecapBuilder.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/WorkoutRecapBuilder.swift): new deterministic recap builder plus shared sanitizer.\n- [WorkoutSummaryView.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/UI/WorkoutSummaryView.swift): recap always renders; optional AI insight now appears below it.\n- [PlannedWorkoutSessionView.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/UI/PlannedWorkoutSessionView.swift): passes recap built from `WorkoutSessionSummary`.\n- [WorkoutSummaryBuilder.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/WorkoutSummaryBuilder.swift): removed the placeholder `coachInsight` field/fallback.\n- [InsightNarrativeBuilder.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/InsightNarrativeBuilder.swift): now reuses the shared sanitizer blocklist.\n- [WorkoutRecapBuilderTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/WorkoutRecapBuilderTests.swift): added coverage for clean, faded, partial completion, free-analysis save, hold-only, rest extension, dominance aggregation, and blocked goal text.\n\nKey decisions:\n- Dominant exercise is aggregated across all sets by `achievedReps + achievedHoldSeconds`, not chosen from a single set. That better matches real sessions.\n- Headlines use the app’s existing display names without forcing “day”, because names like `Squats` made “Squats day” awkward.\n- No camera/media pipeline code was touched.\n\nVerification:\n- `git diff --check`: passed.\n- Placeholder search: no `Coach insight will use...` / `placeholderInsight` references remain.\n- `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2'`: passed, 216 tests.\n\nManual test plan:\n1. Complete a planned workout and verify the coach card always shows a specific recap with headline, evidence body, stat/next step.\n2. Generate or seed an AI insight and verify it appears below the recap, not instead of it.\n3. Save a free-analysis session, open saved detail, and verify existing free-analysis flow still works.\n4. Run a hold-only exercise like plank and confirm recap uses hold evidence honestly.\n5. Test a faded-form session and verify the next step nudges early cue focus.\n\nFollow-ups worth doing next:\n- Add recap to the free-analysis summary sheet itself, not just saved detail/builder coverage.\n- Let recap evidence rows tap through to the relevant saved set in `WorkoutDetailSheetView`.\n- Promote `nextStep` into a typed action so plan target edits/rest suggestions can reuse it safely.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Implemented. The placeholder is gone from the summary fallback path.\n\nChanged files:\n- [WorkoutRecapBuilder.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/WorkoutRecapBuilder.swift): new deterministic recap builder plus shared sanitizer.\n- [WorkoutSummaryView.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/UI/WorkoutSummaryView.swift): recap always renders; optional AI insight now appears below it.\n- [PlannedWorkoutSessionView.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/UI/PlannedWorkoutSessionView.swift): passes recap built from `WorkoutSessionSummary`.\n- [WorkoutSummaryBuilder.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/WorkoutSummaryBuilder.swift): removed the placeholder `coachInsight` field/fallback.\n- [InsightNarrativeBuilder.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/InsightNarrativeBuilder.swift): now reuses the shared sanitizer blocklist.\n- [WorkoutRecapBuilderTests.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainerTests/WorkoutRecapBuilderTests.swift): added coverage for clean, faded, partial completion, free-analysis save, hold-only, rest extension, dominance aggregation, and blocked goal text.\n\nKey decisions:\n- Dominant exercise is aggregated across all sets by `achievedReps + achievedHoldSeconds`, not chosen from a single set. That better matches real sessions.\n- Headlines use the app’s existing display names without forcing “day”, because names like `Squats` made “Squats day” awkward.\n- No camera/media pipeline code was touched.\n\nVerification:\n- `git diff --check`: passed.\n- Placeholder search: no `Coach insight will use...` / `placeholderInsight` references remain.\n- `xcodebuild test -workspace VirtualTrainer.xcworkspace -scheme VirtualTrainer -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2'`: passed, 216 tests.\n\nManual test plan:\n1. Complete a planned workout and verify the coach card always shows a specific recap with headline, evidence body, stat/next step.\n2. Generate or seed an AI insight and verify it appears below the recap, not instead of it.\n3. Save a free-analysis session, open saved detail, and verify existing free-analysis flow still works.\n4. Run a hold-only exercise like plank and confirm recap uses hold evidence honestly.\n5. Test a faded-form session and verify the next step nudges early cue focus.\n\nFollow-ups worth doing next:\n- Add recap to the free-analysis summary sheet itself, not just saved detail/builder coverage.\n- Let recap evidence rows tap through to the relevant saved set in `WorkoutDetailSheetView`.\n- Promote `nextStep` into a typed action so plan target edits/rest suggestions can reuse it safely."
+        }
+      ]
+    }
+  ]
+}

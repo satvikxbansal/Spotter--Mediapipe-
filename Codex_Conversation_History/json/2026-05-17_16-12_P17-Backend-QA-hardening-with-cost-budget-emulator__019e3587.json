@@ -1,0 +1,372 @@
+{
+  "id": "019e3587-c662-7541-9030-9b96f63b7623",
+  "title": "P17: Backend QA hardening (with cost budget + emulator)",
+  "createdAtLocal": "2026-05-17 16:12:31",
+  "updatedAtLocal": "2026-05-17 16:53:55",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/17/rollout-2026-05-17T16-12-31-019e3587-c662-7541-9030-9b96f63b7623.jsonl",
+  "gitBranch": "main",
+  "gitSha": "9bcfb578e8c3d37f0c913f4c1633b5b6f93de2c7",
+  "firstUserMessage": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Inspect the current tree end-to-end. Read README.md, DEBUG_LOG.md, every file in\n   Documentation/, the relevant Swift files in VirtualTrainer/, and the most recent\n   git history (git log --oneline -20).\n2. Treat this prompt as guidance, not a blind spec. If the current code reveals a\n   safer approach, take it and explain why in the summary.\n3. Do NOT rewrite the live camera pipeline:\n   - CameraManager\n   - PoseEstimator\n   - UniversalRepCounter\n   - FormFeedbackEngine\n   - HandGestureDetector\n   - ExertionAnalyzer\n   - WorkoutReadyCoordinator\n   - FaceLandmarkerService\n   - FramePositionAnalyzer\n4. Preserve both training flows: Free Analysis from the Camera tab AND Planned\n   Workouts from the Dashboard. They share the live analysis stack.\n5. Preserve deterministic local planning, trophies, stats, trends, recaps, weekly\n   recaps, heatmaps, and AI insights. The local pipeline must keep working with\n   no Firebase config.\n6. Keep BackendMode.local fully functional. The app MUST build and run with\n   GoogleService-Info.plist absent.\n7. Privacy: do NOT store or upload raw video, camera frames, face images, raw\n   pose streams, raw pose timelines, raw biometric face data, raw face blendshape\n   streams, or any third-party secret.\n8. Do NOT print plist contents, Firebase API keys, App Check debug tokens, or\n   any secret-like value to stdout, logs, or test fixtures.\n9. Maintain backwards-compatible Codable decoding for existing local JSON files.\n10. Toolchain: use the bundled Xcode toolchain (XcodeDefault.xctoolchain). Verify\n    with:\n        xcrun --find clang\n        xcrun --find swiftc\n    Both must resolve under\n    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain.\n    See DEBUG_LOG.md entry DL-045 for why this matters.\n11. Builds: always use VirtualTrainer.xcworkspace, never the bare xcodeproj.\n12. Do NOT run multiple xcodebuild test commands against the same DerivedData\n    path in parallel.\n13. Keep the app compiling after every phase.\n14. After the phase, run:\n        xcodebuild build  -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n        xcodebuild test   -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n    and summarize PASS/FAIL counts.\n15. If the phase changed behavior, append a DEBUG_LOG.md entry following the\n    existing format (use the next DL-### number, real ISO date, error,\n    root cause, fix applied, verification, prevention rule, pattern tags).\n16. Summarize in the PR description: changed files, key decisions, Firebase\n    console/manual steps required of the developer, migration behavior, and\n    known follow-ups.\n17. Git pre-flight: confirm git status is clean before starting. Confirm the\n    branch you intend to target. After commits, run git diff --check to catch\n    whitespace errors.\n18. Secret pre-flight: run any available secret scan (the repo ships\n    .gitleaks.toml). Fail the phase if real secrets would be committed. \n19. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n20. Share an indepth end to end manual testing plan of the changes done - be practical and ensure all aspects are tested well before we proceed.\n\nPhase 17 goal: stress-test the backend integration for internal beta.\n\nTasks:\n\n1. Documentation/BackendQAChecklist.md  (manual + automated)\n   Cover at least:\n   - Fresh install in local mode with no Firebase config present.\n   - Fresh install in firebase mode, anonymous sign-in.\n   - Offline onboarding; later online; profile syncs without duplicates.\n   - Free Analysis save → sync.\n   - Planned Workout save (multi-set) → sync → load on another simulator.\n   - Workout delete locally → tombstone propagates → other device hides.\n   - Trophy event sync; cross-device earliest-earnedAt wins.\n   - Insight delivery/engagement sync; ranker stays consistent.\n   - Data export in firebase mode includes remote-labeled docs.\n   - Account deletion in firebase mode succeeds end-to-end.\n   - Bad rules (mutate rules to deny once) → app stays in conflict state, no\n     data loss.\n   - App force-killed mid-sync → on relaunch, journal replays pending\n     writes; no duplicates.\n   - Active live workout: sync defers heavy work; live FPS unaffected.\n   - Simulator SpringBoard crash differentiation (link to DL-035, DL-045).\n\n2. Firebase Local Emulator Suite.\n   - Add Documentation/FirebaseEmulatorSetup.md describing how to run the\n     auth + Firestore emulators locally:\n         firebase init emulators\n         firebase emulators:start --only auth,firestore\n   - Add a `--firebase-emulator` launch arg that points\n     FirebaseBootstrap at the emulator hosts (localhost:9099 + localhost:8080).\n   - Add `BackendIntegrationTests` (separate test target if needed) that:\n     - Spin up the emulator before tests via a script invocation guard.\n     - Anonymous sign-in.\n     - Save profile → load profile → assert match.\n     - Save workout (multi-set) → loadRecent → assert order.\n     - Try a forbidden write → asserts denial.\n     - Tombstone propagation.\n\n3. Cost budget assertion.\n   Add a soft budget for a typical user week:\n   - 5 planned workouts × (1 profile read, 1 workout write, ~4 set writes,\n     1 trophy event, ~2 insight writes, ~4 delivery merges, ~2 engagement\n     merges) ≈ 80 writes/week × 4 weeks = ~320 writes/month per active user.\n   - Add a debug-only \"Cost Snapshot\" toggle in the Backend section that\n     logs cumulative Firestore reads/writes for the current session.\n   - Document the cost budget in Documentation/FirebaseCostBudget.md.\n\n4. Sync diagnostics screen (DEBUG only).\n   - backendMode, activeAccountId (redacted), lastSyncedAt, pendingUpload\n     count, conflict count, listenersAttached, lastError (sanitized),\n     firebaseBootstrapState, write journal entry count, latest 10 write\n     journal entries (kind + age).\n\n5. Listener backpressure.\n   - Debounce all remote update streams.\n   - Never run heavy sync while WorkoutSessionContext.isLive.\n   - Queue large writes until workout ends.\n\n6. Data volume tests.\n   - 100 workouts: profile + history loads stay snappy.\n   - 500 workouts: heatmap and history view stay responsive.\n   - Largest workout (32 set docs): detail view loads in < 1.5s.\n\n7. Privacy tests.\n   - Repository writes never contain forbidden keys (already in 16C/16H,\n     extend to cover the FULL sync path).\n   - Analytics never contains PII.\n   - Export only contains expected data.\n\nAcceptance:\n- Internal beta sync checklist documented.\n- High-risk sync bugs are tested or tracked.\n- Cost budget articulated.\n- Firebase mode is safe for ~10 internal testers.",
+  "preview": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Inspect the current tree end-to-end. Read README.md, DEBUG_LOG.md, every file in\n   Documentation/, the relevant Swift files in VirtualTrainer/, and the most recent\n   git history (git log --oneline -20).\n2. Treat this prompt as guidance, not a blind spec. If the current code reveals a\n   safer approach, take it and explain why in the summary.\n3. Do NOT rewrite the live camera pipeline:\n   - CameraManager\n   - PoseEstimator\n   - UniversalRepCounter\n   - FormFeedbackEngine\n   - HandGestureDetector\n   - ExertionAnalyzer\n   - WorkoutReadyCoordinator\n   - FaceLandmarkerService\n   - FramePositionAnalyzer\n4. Preserve both training flows: Free Analysis from the Camera tab AND Planned\n   Workouts from the Dashboard. They share the live analysis stack.\n5. Preserve deterministic local planning, trophies, stats, trends, recaps, weekly\n   recaps, heatmaps, and AI insights. The local pipeline must keep working with\n   no Firebase config.\n6. Keep BackendMode.local fully functional. The app MUST build and run with\n   GoogleService-Info.plist absent.\n7. Privacy: do NOT store or upload raw video, camera frames, face images, raw\n   pose streams, raw pose timelines, raw biometric face data, raw face blendshape\n   streams, or any third-party secret.\n8. Do NOT print plist contents, Firebase API keys, App Check debug tokens, or\n   any secret-like value to stdout, logs, or test fixtures.\n9. Maintain backwards-compatible Codable decoding for existing local JSON files.\n10. Toolchain: use the bundled Xcode toolchain (XcodeDefault.xctoolchain). Verify\n    with:\n        xcrun --find clang\n        xcrun --find swiftc\n    Both must resolve under\n    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain.\n    See DEBUG_LOG.md entry DL-045 for why this matters.\n11. Builds: always use VirtualTrainer.xcworkspace, never the bare xcodeproj.\n12. Do NOT run multiple xcodebuild test commands against the same DerivedData\n    path in parallel.\n13. Keep the app compiling after every phase.\n14. After the phase, run:\n        xcodebuild build  -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n        xcodebuild test   -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n    and summarize PASS/FAIL counts.\n15. If the phase changed behavior, append a DEBUG_LOG.md entry following the\n    existing format (use the next DL-### number, real ISO date, error,\n    root cause, fix applied, verification, prevention rule, pattern tags).\n16. Summarize in the PR description: changed files, key decisions, Firebase\n    console/manual steps required of the developer, migration behavior, and\n    known follow-ups.\n17. Git pre-flight: confirm git status is clean before starting. Confirm the\n    branch you intend to target. After commits, run git diff --check to catch\n    whitespace errors.\n18. Secret pre-flight: run any available secret scan (the repo ships\n    .gitleaks.toml). Fail the phase if real secrets would be committed. \n19. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n20. Share an indepth end to end manual testing plan of the changes done - be practical and ensure all aspects are tested well before we proceed.\n\nPhase 17 goal: stress-test the backend integration for internal beta.\n\nTasks:\n\n1. Documentation/BackendQAChecklist.md  (manual + automated)\n   Cover at least:\n   - Fresh install in local mode with no Firebase config present.\n   - Fresh install in firebase mode, anonymous sign-in.\n   - Offline onboarding; later online; profile syncs without duplicates.\n   - Free Analysis save → sync.\n   - Planned Workout save (multi-set) → sync → load on another simulator.\n   - Workout delete locally → tombstone propagates → other device hides.\n   - Trophy event sync; cross-device earliest-earnedAt wins.\n   - Insight delivery/engagement sync; ranker stays consistent.\n   - Data export in firebase mode includes remote-labeled docs.\n   - Account deletion in firebase mode succeeds end-to-end.\n   - Bad rules (mutate rules to deny once) → app stays in conflict state, no\n     data loss.\n   - App force-killed mid-sync → on relaunch, journal replays pending\n     writes; no duplicates.\n   - Active live workout: sync defers heavy work; live FPS unaffected.\n   - Simulator SpringBoard crash differentiation (link to DL-035, DL-045).\n\n2. Firebase Local Emulator Suite.\n   - Add Documentation/FirebaseEmulatorSetup.md describing how to run the\n     auth + Firestore emulators locally:\n         firebase init emulators\n         firebase emulators:start --only auth,firestore\n   - Add a `--firebase-emulator` launch arg that points\n     FirebaseBootstrap at the emulator hosts (localhost:9099 + localhost:8080).\n   - Add `BackendIntegrationTests` (separate test target if needed) that:\n     - Spin up the emulator before tests via a script invocation guard.\n     - Anonymous sign-in.\n     - Save profile → load profile → assert match.\n     - Save workout (multi-set) → loadRecent → assert order.\n     - Try a forbidden write → asserts denial.\n     - Tombstone propagation.\n\n3. Cost budget assertion.\n   Add a soft budget for a typical user week:\n   - 5 planned workouts × (1 profile read, 1 workout write, ~4 set writes,\n     1 trophy event, ~2 insight writes, ~4 delivery merges, ~2 engagement\n     merges) ≈ 80 writes/week × 4 weeks = ~320 writes/month per active user.\n   - Add a debug-only \"Cost Snapshot\" toggle in the Backend section that\n     logs cumulative Firestore reads/writes for the current session.\n   - Document the cost budget in Documentation/FirebaseCostBudget.md.\n\n4. Sync diagnostics screen (DEBUG only).\n   - backendMode, activeAccountId (redacted), lastSyncedAt, pendingUpload\n     count, conflict count, listenersAttached, lastError (sanitized),\n     firebaseBootstrapState, write journal entry count, latest 10 write\n     journal entries (kind + age).\n\n5. Listener backpressure.\n   - Debounce all remote update streams.\n   - Never run heavy sync while WorkoutSessionContext.isLive.\n   - Queue large writes until workout ends.\n\n6. Data volume tests.\n   - 100 workouts: profile + history loads stay snappy.\n   - 500 workouts: heatmap and history view stay responsive.\n   - Largest workout (32 set docs): detail view loads in < 1.5s.\n\n7. Privacy tests.\n   - Repository writes never contain forbidden keys (already in 16C/16H,\n     extend to cover the FULL sync path).\n   - Analytics never contains PII.\n   - Export only contains expected data.\n\nAcceptance:\n- Internal beta sync checklist documented.\n- High-risk sync bugs are tested or tracked.\n- Cost budget articulated.\n- Firebase mode is safe for ~10 internal testers.",
+  "rawLineCount": 1148,
+  "parseErrors": 0,
+  "visibleMessageCount": 32,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-17T10:43:04.750Z",
+      "role": "user",
+      "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Inspect the current tree end-to-end. Read README.md, DEBUG_LOG.md, every file in\n   Documentation/, the relevant Swift files in VirtualTrainer/, and the most recent\n   git history (git log --oneline -20).\n2. Treat this prompt as guidance, not a blind spec. If the current code reveals a\n   safer approach, take it and explain why in the summary.\n3. Do NOT rewrite the live camera pipeline:\n   - CameraManager\n   - PoseEstimator\n   - UniversalRepCounter\n   - FormFeedbackEngine\n   - HandGestureDetector\n   - ExertionAnalyzer\n   - WorkoutReadyCoordinator\n   - FaceLandmarkerService\n   - FramePositionAnalyzer\n4. Preserve both training flows: Free Analysis from the Camera tab AND Planned\n   Workouts from the Dashboard. They share the live analysis stack.\n5. Preserve deterministic local planning, trophies, stats, trends, recaps, weekly\n   recaps, heatmaps, and AI insights. The local pipeline must keep working with\n   no Firebase config.\n6. Keep BackendMode.local fully functional. The app MUST build and run with\n   GoogleService-Info.plist absent.\n7. Privacy: do NOT store or upload raw video, camera frames, face images, raw\n   pose streams, raw pose timelines, raw biometric face data, raw face blendshape\n   streams, or any third-party secret.\n8. Do NOT print plist contents, Firebase API keys, App Check debug tokens, or\n   any secret-like value to stdout, logs, or test fixtures.\n9. Maintain backwards-compatible Codable decoding for existing local JSON files.\n10. Toolchain: use the bundled Xcode toolchain (XcodeDefault.xctoolchain). Verify\n    with:\n        xcrun --find clang\n        xcrun --find swiftc\n    Both must resolve under\n    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain.\n    See DEBUG_LOG.md entry DL-045 for why this matters.\n11. Builds: always use VirtualTrainer.xcworkspace, never the bare xcodeproj.\n12. Do NOT run multiple xcodebuild test commands against the same DerivedData\n    path in parallel.\n13. Keep the app compiling after every phase.\n14. After the phase, run:\n        xcodebuild build  -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n        xcodebuild test   -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n    and summarize PASS/FAIL counts.\n15. If the phase changed behavior, append a DEBUG_LOG.md entry following the\n    existing format (use the next DL-### number, real ISO date, error,\n    root cause, fix applied, verification, prevention rule, pattern tags).\n16. Summarize in the PR description: changed files, key decisions, Firebase\n    console/manual steps required of the developer, migration behavior, and\n    known follow-ups.\n17. Git pre-flight: confirm git status is clean before starting. Confirm the\n    branch you intend to target. After commits, run git diff --check to catch\n    whitespace errors.\n18. Secret pre-flight: run any available secret scan (the repo ships\n    .gitleaks.toml). Fail the phase if real secrets would be committed. \n19. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n20. Share an indepth end to end manual testing plan of the changes done - be practical and ensure all aspects are tested well before we proceed.\n\nPhase 17 goal: stress-test the backend integration for internal beta.\n\nTasks:\n\n1. Documentation/BackendQAChecklist.md  (manual + automated)\n   Cover at least:\n   - Fresh install in local mode with no Firebase config present.\n   - Fresh install in firebase mode, anonymous sign-in.\n   - Offline onboarding; later online; profile syncs without duplicates.\n   - Free Analysis save → sync.\n   - Planned Workout save (multi-set) → sync → load on another simulator.\n   - Workout delete locally → tombstone propagates → other device hides.\n   - Trophy event sync; cross-device earliest-earnedAt wins.\n   - Insight delivery/engagement sync; ranker stays consistent.\n   - Data export in firebase mode includes remote-labeled docs.\n   - Account deletion in firebase mode succeeds end-to-end.\n   - Bad rules (mutate rules to deny once) → app stays in conflict state, no\n     data loss.\n   - App force-killed mid-sync → on relaunch, journal replays pending\n     writes; no duplicates.\n   - Active live workout: sync defers heavy work; live FPS unaffected.\n   - Simulator SpringBoard crash differentiation (link to DL-035, DL-045).\n\n2. Firebase Local Emulator Suite.\n   - Add Documentation/FirebaseEmulatorSetup.md describing how to run the\n     auth + Firestore emulators locally:\n         firebase init emulators\n         firebase emulators:start --only auth,firestore\n   - Add a `--firebase-emulator` launch arg that points\n     FirebaseBootstrap at the emulator hosts (localhost:9099 + localhost:8080).\n   - Add `BackendIntegrationTests` (separate test target if needed) that:\n     - Spin up the emulator before tests via a script invocation guard.\n     - Anonymous sign-in.\n     - Save profile → load profile → assert match.\n     - Save workout (multi-set) → loadRecent → assert order.\n     - Try a forbidden write → asserts denial.\n     - Tombstone propagation.\n\n3. Cost budget assertion.\n   Add a soft budget for a typical user week:\n   - 5 planned workouts × (1 profile read, 1 workout write, ~4 set writes,\n     1 trophy event, ~2 insight writes, ~4 delivery merges, ~2 engagement\n     merges) ≈ 80 writes/week × 4 weeks = ~320 writes/month per active user.\n   - Add a debug-only \"Cost Snapshot\" toggle in the Backend section that\n     logs cumulative Firestore reads/writes for the current session.\n   - Document the cost budget in Documentation/FirebaseCostBudget.md.\n\n4. Sync diagnostics screen (DEBUG only).\n   - backendMode, activeAccountId (redacted), lastSyncedAt, pendingUpload\n     count, conflict count, listenersAttached, lastError (sanitized),\n     firebaseBootstrapState, write journal entry count, latest 10 write\n     journal entries (kind + age).\n\n5. Listener backpressure.\n   - Debounce all remote update streams.\n   - Never run heavy sync while WorkoutSessionContext.isLive.\n   - Queue large writes until workout ends.\n\n6. Data volume tests.\n   - 100 workouts: profile + history loads stay snappy.\n   - 500 workouts: heatmap and history view stay responsive.\n   - Largest workout (32 set docs): detail view loads in < 1.5s.\n\n7. Privacy tests.\n   - Repository writes never contain forbidden keys (already in 16C/16H,\n     extend to cover the FULL sync path).\n   - Analytics never contains PII.\n   - Export only contains expected data.\n\nAcceptance:\n- Internal beta sync checklist documented.\n- High-risk sync bugs are tested or tracked.\n- Cost budget articulated.\n- Firebase mode is safe for ~10 internal testers.\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Inspect the current tree end-to-end. Read README.md, DEBUG_LOG.md, every file in\n   Documentation/, the relevant Swift files in VirtualTrainer/, and the most recent\n   git history (git log --oneline -20).\n2. Treat this prompt as guidance, not a blind spec. If the current code reveals a\n   safer approach, take it and explain why in the summary.\n3. Do NOT rewrite the live camera pipeline:\n   - CameraManager\n   - PoseEstimator\n   - UniversalRepCounter\n   - FormFeedbackEngine\n   - HandGestureDetector\n   - ExertionAnalyzer\n   - WorkoutReadyCoordinator\n   - FaceLandmarkerService\n   - FramePositionAnalyzer\n4. Preserve both training flows: Free Analysis from the Camera tab AND Planned\n   Workouts from the Dashboard. They share the live analysis stack.\n5. Preserve deterministic local planning, trophies, stats, trends, recaps, weekly\n   recaps, heatmaps, and AI insights. The local pipeline must keep working with\n   no Firebase config.\n6. Keep BackendMode.local fully functional. The app MUST build and run with\n   GoogleService-Info.plist absent.\n7. Privacy: do NOT store or upload raw video, camera frames, face images, raw\n   pose streams, raw pose timelines, raw biometric face data, raw face blendshape\n   streams, or any third-party secret.\n8. Do NOT print plist contents, Firebase API keys, App Check debug tokens, or\n   any secret-like value to stdout, logs, or test fixtures.\n9. Maintain backwards-compatible Codable decoding for existing local JSON files.\n10. Toolchain: use the bundled Xcode toolchain (XcodeDefault.xctoolchain). Verify\n    with:\n        xcrun --find clang\n        xcrun --find swiftc\n    Both must resolve under\n    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain.\n    See DEBUG_LOG.md entry DL-045 for why this matters.\n11. Builds: always use VirtualTrainer.xcworkspace, never the bare xcodeproj.\n12. Do NOT run multiple xcodebuild test commands against the same DerivedData\n    path in parallel.\n13. Keep the app compiling after every phase.\n14. After the phase, run:\n        xcodebuild build  -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n        xcodebuild test   -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n    and summarize PASS/FAIL counts.\n15. If the phase changed behavior, append a DEBUG_LOG.md entry following the\n    existing format (use the next DL-### number, real ISO date, error,\n    root cause, fix applied, verification, prevention rule, pattern tags).\n16. Summarize in the PR description: changed files, key decisions, Firebase\n    console/manual steps required of the developer, migration behavior, and\n    known follow-ups.\n17. Git pre-flight: confirm git status is clean before starting. Confirm the\n    branch you intend to target. After commits, run git diff --check to catch\n    whitespace errors.\n18. Secret pre-flight: run any available secret scan (the repo ships\n    .gitleaks.toml). Fail the phase if real secrets would be committed. \n19. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n20. Share an indepth end to end manual testing plan of the changes done - be practical and ensure all aspects are tested well before we proceed.\n\nPhase 17 goal: stress-test the backend integration for internal beta.\n\nTasks:\n\n1. Documentation/BackendQAChecklist.md  (manual + automated)\n   Cover at least:\n   - Fresh install in local mode with no Firebase config present.\n   - Fresh install in firebase mode, anonymous sign-in.\n   - Offline onboarding; later online; profile syncs without duplicates.\n   - Free Analysis save → sync.\n   - Planned Workout save (multi-set) → sync → load on another simulator.\n   - Workout delete locally → tombstone propagates → other device hides.\n   - Trophy event sync; cross-device earliest-earnedAt wins.\n   - Insight delivery/engagement sync; ranker stays consistent.\n   - Data export in firebase mode includes remote-labeled docs.\n   - Account deletion in firebase mode succeeds end-to-end.\n   - Bad rules (mutate rules to deny once) → app stays in conflict state, no\n     data loss.\n   - App force-killed mid-sync → on relaunch, journal replays pending\n     writes; no duplicates.\n   - Active live workout: sync defers heavy work; live FPS unaffected.\n   - Simulator SpringBoard crash differentiation (link to DL-035, DL-045).\n\n2. Firebase Local Emulator Suite.\n   - Add Documentation/FirebaseEmulatorSetup.md describing how to run the\n     auth + Firestore emulators locally:\n         firebase init emulators\n         firebase emulators:start --only auth,firestore\n   - Add a `--firebase-emulator` launch arg that points\n     FirebaseBootstrap at the emulator hosts (localhost:9099 + localhost:8080).\n   - Add `BackendIntegrationTests` (separate test target if needed) that:\n     - Spin up the emulator before tests via a script invocation guard.\n     - Anonymous sign-in.\n     - Save profile → load profile → assert match.\n     - Save workout (multi-set) → loadRecent → assert order.\n     - Try a forbidden write → asserts denial.\n     - Tombstone propagation.\n\n3. Cost budget assertion.\n   Add a soft budget for a typical user week:\n   - 5 planned workouts × (1 profile read, 1 workout write, ~4 set writes,\n     1 trophy event, ~2 insight writes, ~4 delivery merges, ~2 engagement\n     merges) ≈ 80 writes/week × 4 weeks = ~320 writes/month per active user.\n   - Add a debug-only \"Cost Snapshot\" toggle in the Backend section that\n     logs cumulative Firestore reads/writes for the current session.\n   - Document the cost budget in Documentation/FirebaseCostBudget.md.\n\n4. Sync diagnostics screen (DEBUG only).\n   - backendMode, activeAccountId (redacted), lastSyncedAt, pendingUpload\n     count, conflict count, listenersAttached, lastError (sanitized),\n     firebaseBootstrapState, write journal entry count, latest 10 write\n     journal entries (kind + age).\n\n5. Listener backpressure.\n   - Debounce all remote update streams.\n   - Never run heavy sync while WorkoutSessionContext.isLive.\n   - Queue large writes until workout ends.\n\n6. Data volume tests.\n   - 100 workouts: profile + history loads stay snappy.\n   - 500 workouts: heatmap and history view stay responsive.\n   - Largest workout (32 set docs): detail view loads in < 1.5s.\n\n7. Privacy tests.\n   - Repository writes never contain forbidden keys (already in 16C/16H,\n     extend to cover the FULL sync path).\n   - Analytics never contains PII.\n   - Export only contains expected data.\n\nAcceptance:\n- Internal beta sync checklist documented.\n- High-risk sync bugs are tested or tracked.\n- Cost budget articulated.\n- Firebase mode is safe for ~10 internal testers.\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T10:43:15.963Z",
+      "role": "assistant",
+      "text": "I’ll start with the requested pre-flight: branch/status, toolchain paths, recent history, and the documentation/code map. Then I’ll make the smallest backend-facing changes that fit the existing architecture rather than reshaping the live analysis stack.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll start with the requested pre-flight: branch/status, toolchain paths, recent history, and the documentation/code map. Then I’ll make the smallest backend-facing changes that fit the existing architecture rather than reshaping the live analysis stack."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T10:43:26.880Z",
+      "role": "assistant",
+      "text": "Pre-flight is clean so far: branch is `main`, there are no local changes, and both `clang` and `swiftc` resolve to XcodeDefault.xctoolchain. I’m reading the repo docs next, including the DEBUG_LOG references the prompt calls out.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Pre-flight is clean so far: branch is `main`, there are no local changes, and both `clang` and `swiftc` resolve to XcodeDefault.xctoolchain. I’m reading the repo docs next, including the DEBUG_LOG references the prompt calls out."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T10:44:04.699Z",
+      "role": "assistant",
+      "text": "The docs confirm the current boundary: local mode is the default and must remain no-plist safe; Firebase is already partial and guarded by Remote Config; the next debug-log entry would be `DL-065`. I’m moving into the backend/sync Swift now, especially repository protocols, Firebase adapters, sync orchestration, stores, and the Profile debug UI.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The docs confirm the current boundary: local mode is the default and must remain no-plist safe; Firebase is already partial and guarded by Remote Config; the next debug-log entry would be `DL-065`. I’m moving into the backend/sync Swift now, especially repository protocols, Firebase adapters, sync orchestration, stores, and the Profile debug UI."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T10:45:45.398Z",
+      "role": "assistant",
+      "text": "A practical shape is emerging: the app already has most sync surfaces, so the phase should harden and expose them rather than invent a new backend layer. I’ll add emulator plumbing, cost/diagnostic instrumentation, docs/checklists, and focused tests around the existing repositories and guards.",
+      "content": [
+        {
+          "type": "text",
+          "text": "A practical shape is emerging: the app already has most sync surfaces, so the phase should harden and expose them rather than invent a new backend layer. I’ll add emulator plumbing, cost/diagnostic instrumentation, docs/checklists, and focused tests around the existing repositories and guards."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T10:49:19.680Z",
+      "role": "assistant",
+      "text": "I’ve finished the repo sweep and preflight checks. The tree is clean on `main`, the Xcode toolchain resolves to `XcodeDefault.xctoolchain`, and I’ve mapped the backend stack so the changes can stay around it instead of disturbing the live camera path.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve finished the repo sweep and preflight checks. The tree is clean on `main`, the Xcode toolchain resolves to `XcodeDefault.xctoolchain`, and I’ve mapped the backend stack so the changes can stay around it instead of disturbing the live camera path."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T10:49:28.048Z",
+      "role": "assistant",
+      "text": "I found the backend is already structured around small repository protocols and an orchestrator, which is useful here: I can add emulator/cost/diagnostics hooks at the Firebase boundary and debug settings surface without touching the camera-analysis classes. The only behavioral spot that needs care is workout history: it can currently try a remote write as soon as a summary is saved, so I’m going to gate that during live sessions and let the existing journal replay it afterward.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I found the backend is already structured around small repository protocols and an orchestrator, which is useful here: I can add emulator/cost/diagnostics hooks at the Firebase boundary and debug settings surface without touching the camera-analysis classes. The only behavioral spot that needs care is workout history: it can currently try a remote write as soon as a summary is saved, so I’m going to gate that during live sessions and let the existing journal replay it afterward."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T10:50:33.412Z",
+      "role": "assistant",
+      "text": "I’m about to make the first scoped edits: Firebase bootstrap gets an emulator launch-arg hook, Firestore gets a DEBUG cost counter at the SDK adapter boundary, and workout history will leave remote saves pending while a live workout is active. After that I’ll add the docs/tests around those behaviors.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m about to make the first scoped edits: Firebase bootstrap gets an emulator launch-arg hook, Firestore gets a DEBUG cost counter at the SDK adapter boundary, and workout history will leave remote saves pending while a live workout is active. After that I’ll add the docs/tests around those behaviors."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T10:52:33.076Z",
+      "role": "assistant",
+      "text": "The core code hooks are in place now. I’m shifting to the safety net: docs, emulator script, and targeted tests that keep normal local runs deterministic while making emulator-backed integration runnable on demand.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The core code hooks are in place now. I’m shifting to the safety net: docs, emulator script, and targeted tests that keep normal local runs deterministic while making emulator-backed integration runnable on demand."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:00:28.388Z",
+      "role": "assistant",
+      "text": "The documentation and tests are now drafted. I’ve also corrected the README’s backend-readiness wording because the code already has workout Firestore repositories, so saying workouts were still local-only would mislead the beta QA path. Next I’m doing a compile-oriented pass before the required full build/test.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The documentation and tests are now drafted. I’ve also corrected the README’s backend-readiness wording because the code already has workout Firestore repositories, so saying workouts were still local-only would mislead the beta QA path. Next I’m doing a compile-oriented pass before the required full build/test."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:00:38.037Z",
+      "role": "assistant",
+      "text": "I’ve hit the point where the code review pass won’t tell us more than the compiler will. I’m starting the required workspace build on the requested simulator and DerivedData path now.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve hit the point where the code review pass won’t tell us more than the compiler will. I’m starting the required workspace build on the requested simulator and DerivedData path now."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:01:16.567Z",
+      "role": "assistant",
+      "text": "Build passed on the requested workspace/simulator path. I’m starting the required full test run now, using the same DerivedData path and no parallel test invocation.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Build passed on the requested workspace/simulator path. I’m starting the required full test run now, using the same DerivedData path and no parallel test invocation."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:03:03.858Z",
+      "role": "assistant",
+      "text": "The full suite compiled and ran, but one new documentation assertion was too literal about heading capitalization, not behavior. I’m tightening that test to match the actual checklist text, then I’ll rerun the required test command.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The full suite compiled and ran, but one new documentation assertion was too literal about heading capitalization, not behavior. I’m tightening that test to match the actual checklist text, then I’ll rerun the required test command."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:04:48.421Z",
+      "role": "assistant",
+      "text": "The rerun is clean: 423 passed, 0 failed, 4 skipped, with the four skips being the opt-in emulator integration tests. Toolchain paths still point at `XcodeDefault.xctoolchain`, and `git diff --check` is clean. I’m doing the secret-scan preflight now; if `gitleaks` is still unavailable I’ll run the repo’s fallback pattern scan over changed/untracked files.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The rerun is clean: 423 passed, 0 failed, 4 skipped, with the four skips being the opt-in emulator integration tests. Toolchain paths still point at `XcodeDefault.xctoolchain`, and `git diff --check` is clean. I’m doing the secret-scan preflight now; if `gitleaks` is still unavailable I’ll run the repo’s fallback pattern scan over changed/untracked files."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:06:39.832Z",
+      "role": "assistant",
+      "text": "One extra sanity check is worth doing here because local/no-plist mode is a hard constraint. I’m temporarily moving only the local Firebase client plist out of the workspace, running a build on a separate DerivedData path, and restoring it with a shell trap.",
+      "content": [
+        {
+          "type": "text",
+          "text": "One extra sanity check is worth doing here because local/no-plist mode is a hard constraint. I’m temporarily moving only the local Firebase client plist out of the workspace, running a build on a separate DerivedData path, and restoring it with a shell trap."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:08:09.953Z",
+      "role": "assistant",
+      "text": "Implemented Phase 17 backend beta hardening on `main` after clean preflight. I kept the live camera pipeline untouched.\n\nKey changes:\n- Added emulator bootstrap via `--firebase-emulator` in [FirebaseBootstrap.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/FirebaseBootstrap.swift:21).\n- Added DEBUG Firestore cost tracking in [FirestoreCostTracker.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Repositories/Firebase/FirestoreCostTracker.swift:1) and SDK adapter read/write counting.\n- Added DEBUG sync diagnostics plus Cost Snapshot in [ProfileView.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/UI/ProfileView.swift:2279).\n- Queued workout remote save/delete while a live workout is active in [WorkoutHistoryStore.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/WorkoutHistoryStore.swift:448).\n- Added beta QA, emulator, and cost docs:\n  [BackendQAChecklist.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/BackendQAChecklist.md),\n  [FirebaseEmulatorSetup.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/FirebaseEmulatorSetup.md),\n  [FirebaseCostBudget.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/FirebaseCostBudget.md).\n- Added opt-in emulator/data volume/privacy tests and updated DEBUG_LOG with `DL-065`.\n\nBefore/after in practice:\n- Before: an internal tester saving a workout while a live session was still active could trigger remote write work right on the workout path.\n- After: that write stays pending during the live workout and replays after the session ends, so live FPS/form feedback gets priority.\n- Before: Firebase beta QA was scattered.\n- After: a tester can run the emulator, sign in anonymously, save multi-set workouts, verify tombstones, inspect journal state, and watch read/write counts from the debug backend panel.\n\nVerification:\n- Toolchain: `clang` and `swiftc` both resolved under `XcodeDefault.xctoolchain`.\n- Required build: PASS.\n- Required test: PASS, `423 passed / 0 failed / 4 skipped` (`BackendIntegrationTests` are emulator opt-in).\n- No-plist local build: PASS.\n- `git diff --check`: PASS.\n- `gitleaks` unavailable locally; fallback changed-file secret scan found no candidate secrets.\n\nFirebase/manual steps:\n- Run `firebase init emulators`, then `firebase emulators:start --only auth,firestore`.\n- Add `--firebase-emulator` for emulator launches.\n- Keep Anonymous Auth enabled and Firestore rules deployed for Firebase beta.\n- Do not enforce App Check until physical-device App Attest validation is complete.\n\nMigration behavior:\n- No local JSON migration required.\n- Codable compatibility paths were preserved.\n- Existing pending write journal semantics stay intact; live-session workout writes now remain pending longer by design.\n\nManual testing plan:\n1. Fresh install with no plist: complete onboarding, Free Analysis, Planned Workout, trophies, heatmap, recaps, export.\n2. Firebase fresh install: anonymous sign-in, profile save/load, remote pull on second simulator.\n3. Offline onboarding: go online later, sync profile once, verify no duplicate profile docs.\n4. Free Analysis save: push, inspect compact workout doc and no forbidden raw payloads.\n5. Planned multi-set save: sync, load detail on another simulator, verify set order.\n6. Delete workout on one simulator: push tombstone, pull on another, verify hidden history.\n7. Trophy duplicate event: verify earliest `earnedAt` wins.\n8. Insight delivery/engagement: merge impressions/helpful across devices.\n9. Bad rules once: deny a write, confirm conflict/pending state and no data loss.\n10. Force-kill mid-sync: relaunch, replay journal, confirm no duplicates.\n11. Active workout sync traffic: verify live session remains smooth and writes drain afterward.\n12. Firebase export and account deletion: verify remote-labeled docs and local wipe.\n\nKnown follow-ups:\n- Run the opt-in emulator integration tests in CI or locally with Firebase CLI installed.\n- Manually execute bad-rules and force-kill scenarios before inviting testers.\n- Finish production recursive account cleanup via Cloud Functions.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Implemented Phase 17 backend beta hardening on `main` after clean preflight. I kept the live camera pipeline untouched.\n\nKey changes:\n- Added emulator bootstrap via `--firebase-emulator` in [FirebaseBootstrap.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/FirebaseBootstrap.swift:21).\n- Added DEBUG Firestore cost tracking in [FirestoreCostTracker.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Repositories/Firebase/FirestoreCostTracker.swift:1) and SDK adapter read/write counting.\n- Added DEBUG sync diagnostics plus Cost Snapshot in [ProfileView.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/UI/ProfileView.swift:2279).\n- Queued workout remote save/delete while a live workout is active in [WorkoutHistoryStore.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Models/WorkoutHistoryStore.swift:448).\n- Added beta QA, emulator, and cost docs:\n  [BackendQAChecklist.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/BackendQAChecklist.md),\n  [FirebaseEmulatorSetup.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/FirebaseEmulatorSetup.md),\n  [FirebaseCostBudget.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Documentation/FirebaseCostBudget.md).\n- Added opt-in emulator/data volume/privacy tests and updated DEBUG_LOG with `DL-065`.\n\nBefore/after in practice:\n- Before: an internal tester saving a workout while a live session was still active could trigger remote write work right on the workout path.\n- After: that write stays pending during the live workout and replays after the session ends, so live FPS/form feedback gets priority.\n- Before: Firebase beta QA was scattered.\n- After: a tester can run the emulator, sign in anonymously, save multi-set workouts, verify tombstones, inspect journal state, and watch read/write counts from the debug backend panel.\n\nVerification:\n- Toolchain: `clang` and `swiftc` both resolved under `XcodeDefault.xctoolchain`.\n- Required build: PASS.\n- Required test: PASS, `423 passed / 0 failed / 4 skipped` (`BackendIntegrationTests` are emulator opt-in).\n- No-plist local build: PASS.\n- `git diff --check`: PASS.\n- `gitleaks` unavailable locally; fallback changed-file secret scan found no candidate secrets.\n\nFirebase/manual steps:\n- Run `firebase init emulators`, then `firebase emulators:start --only auth,firestore`.\n- Add `--firebase-emulator` for emulator launches.\n- Keep Anonymous Auth enabled and Firestore rules deployed for Firebase beta.\n- Do not enforce App Check until physical-device App Attest validation is complete.\n\nMigration behavior:\n- No local JSON migration required.\n- Codable compatibility paths were preserved.\n- Existing pending write journal semantics stay intact; live-session workout writes now remain pending longer by design.\n\nManual testing plan:\n1. Fresh install with no plist: complete onboarding, Free Analysis, Planned Workout, trophies, heatmap, recaps, export.\n2. Firebase fresh install: anonymous sign-in, profile save/load, remote pull on second simulator.\n3. Offline onboarding: go online later, sync profile once, verify no duplicate profile docs.\n4. Free Analysis save: push, inspect compact workout doc and no forbidden raw payloads.\n5. Planned multi-set save: sync, load detail on another simulator, verify set order.\n6. Delete workout on one simulator: push tombstone, pull on another, verify hidden history.\n7. Trophy duplicate event: verify earliest `earnedAt` wins.\n8. Insight delivery/engagement: merge impressions/helpful across devices.\n9. Bad rules once: deny a write, confirm conflict/pending state and no data loss.\n10. Force-kill mid-sync: relaunch, replay journal, confirm no duplicates.\n11. Active workout sync traffic: verify live session remains smooth and writes drain afterward.\n12. Firebase export and account deletion: verify remote-labeled docs and local wipe.\n\nKnown follow-ups:\n- Run the opt-in emulator integration tests in CI or locally with Firebase CLI installed.\n- Manually execute bad-rules and force-kill scenarios before inviting testers.\n- Finish production recursive account cleanup via Cloud Functions."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:08:10.153Z",
+      "role": "user",
+      "text": "Lot of changes done above which included a context compaction in the middle and lost stream too. 1500+ lines of code were written - that's a lot. Can you go through the original prompt, code changes done in extreme detail, audit them, ensure all the required changes were done and done correctly with no downstream impact. the code before this works fine with it. all the services that needed to be changed have been changed and nothing is left or missed. be very thorough in your analysis and evaluation. use highest level of reasoning available. Log the rca in the debug log and explain why the misses were missed. use highest level of thinking possible and think deeply. Evaluate and understand very deeply. Be very thorough and detailed. Have high attention to detail\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "Lot of changes done above which included a context compaction in the middle and lost stream too. 1500+ lines of code were written - that's a lot. Can you go through the original prompt, code changes done in extreme detail, audit them, ensure all the required changes were done and done correctly with no downstream impact. the code before this works fine with it. all the services that needed to be changed have been changed and nothing is left or missed. be very thorough in your analysis and evaluation. use highest level of reasoning available. Log the rca in the debug log and explain why the misses were missed. use highest level of thinking possible and think deeply. Evaluate and understand very deeply. Be very thorough and detailed. Have high attention to detail\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:08:41.382Z",
+      "role": "assistant",
+      "text": "I’ll treat this as a post-compaction safety audit, not a rubber stamp. I’m going to re-read the Phase 17 prompt against the actual diff, inspect each changed/new file, look for missed requirements and downstream risks, then patch only what the audit proves is necessary and log the RCA in `DEBUG_LOG.md`.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll treat this as a post-compaction safety audit, not a rubber stamp. I’m going to re-read the Phase 17 prompt against the actual diff, inspect each changed/new file, look for missed requirements and downstream risks, then patch only what the audit proves is necessary and log the RCA in `DEBUG_LOG.md`."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:09:31.052Z",
+      "role": "assistant",
+      "text": "The first pass already found two audit-level gaps worth fixing, not just explaining: the README now contradicts itself about workout history sync, and emulator integration can be made more reliable by supporting an environment opt-in plus a script that actually starts emulators before running the test target. I’m continuing the deep inspection before editing so the patch is comprehensive.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The first pass already found two audit-level gaps worth fixing, not just explaining: the README now contradicts itself about workout history sync, and emulator integration can be made more reliable by supporting an environment opt-in plus a script that actually starts emulators before running the test target. I’m continuing the deep inspection before editing so the patch is comprehensive."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:11:06.172Z",
+      "role": "assistant",
+      "text": "I’m going to treat this like a real post-incident audit: first verify the actual diff against the Phase 17 requirements, then patch anything that is substantively incomplete, then rerun the required build/test path. I already have the prior context summary, so I’m continuing from the existing dirty tree rather than restarting blindly.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m going to treat this like a real post-incident audit: first verify the actual diff against the Phase 17 requirements, then patch anything that is substantively incomplete, then rerun the required build/test path. I already have the prior context summary, so I’m continuing from the existing dirty tree rather than restarting blindly."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:11:25.636Z",
+      "role": "assistant",
+      "text": "The first pass confirms the protected camera/live-analysis files are still outside the diff, and the remote observer streams look debounced. I did find a few audit-worthy gaps already: one README contradiction, emulator test startup being more documented than executable, and the “DEBUG-only” cost counter existing in release code paths.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The first pass confirms the protected camera/live-analysis files are still outside the diff, and the remote observer streams look debounced. I did find a few audit-worthy gaps already: one README contradiction, emulator test startup being more documented than executable, and the “DEBUG-only” cost counter existing in release code paths."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:13:30.612Z",
+      "role": "assistant",
+      "text": "I’m going to make a small corrective patch now. The aim is not to expand Phase 17; it’s to tighten the parts where the implementation was fuzzier than the prompt: executable emulator test setup, sharper denial assertions, DEBUG-only cost accounting, and the README wording that contradicted the new workout sync path.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m going to make a small corrective patch now. The aim is not to expand Phase 17; it’s to tighten the parts where the implementation was fuzzier than the prompt: executable emulator test setup, sharper denial assertions, DEBUG-only cost accounting, and the README wording that contradicted the new workout sync path."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:15:12.438Z",
+      "role": "assistant",
+      "text": "The corrective patch is in. I also tightened transaction cost accounting so it records the logical operations after a transaction succeeds instead of firing detached counter updates from inside the Firestore transaction closure. Next I’m compiling; if Swift’s concurrency checker dislikes that shape, I’ll adjust before moving on.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The corrective patch is in. I also tightened transaction cost accounting so it records the logical operations after a transaction succeeds instead of firing detached counter updates from inside the Firestore transaction closure. Next I’m compiling; if Swift’s concurrency checker dislikes that shape, I’ll adjust before moving on."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:15:41.993Z",
+      "role": "assistant",
+      "text": "Build passed cleanly with the required workspace, simulator, DerivedData path, and XcodeDefault toolchain. I’m running the full required test suite now; I’ll parse the `.xcresult` after it finishes so the pass/fail/skip counts are concrete rather than eyeballed.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Build passed cleanly with the required workspace, simulator, DerivedData path, and XcodeDefault toolchain. I’m running the full required test suite now; I’ll parse the `.xcresult` after it finishes so the pass/fail/skip counts are concrete rather than eyeballed."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:16:51.768Z",
+      "role": "assistant",
+      "text": "The full suite is still running. So far the compile phase has completed and the simulator test process is underway; no failure output yet.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The full suite is still running. So far the compile phase has completed and the simulator test process is underway; no failure output yet."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:17:26.101Z",
+      "role": "assistant",
+      "text": "The full suite found one documentation-test assertion problem, not a product failure: the test looked for the literal string `Scripts/start_firebase_emulators.sh`, while the runner correctly calls it through `$SCRIPT_DIR/start_firebase_emulators.sh`. I’m tightening that assertion and then I’ll rerun.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The full suite found one documentation-test assertion problem, not a product failure: the test looked for the literal string `Scripts/start_firebase_emulators.sh`, while the runner correctly calls it through `$SCRIPT_DIR/start_firebase_emulators.sh`. I’m tightening that assertion and then I’ll rerun."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:18:55.556Z",
+      "role": "assistant",
+      "text": "The focused Phase 17 hardening tests now pass. I’m rerunning the full required suite once more so the final verification reflects the corrected tree, not the earlier one-failure run.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused Phase 17 hardening tests now pass. I’m rerunning the full required suite once more so the final verification reflects the corrected tree, not the earlier one-failure run."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:20:02.937Z",
+      "role": "assistant",
+      "text": "Full suite rerun is still in progress. No new failure output has appeared; the simulator is in the test execution phase now.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Full suite rerun is still in progress. No new failure output has appeared; the simulator is in the test execution phase now."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:20:38.716Z",
+      "role": "assistant",
+      "text": "The corrected full suite passed: the `.xcresult` reports 428 total tests, 4 skipped emulator-gated tests, so 424 passed and 0 failed. I’m now rechecking the no-plist local-mode build because that is the easy place for Firebase work to accidentally bite later.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The corrected full suite passed: the `.xcresult` reports 428 total tests, 4 skipped emulator-gated tests, so 424 passed and 0 failed. I’m now rechecking the no-plist local-mode build because that is the easy place for Firebase work to accidentally bite later."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:21:29.525Z",
+      "role": "assistant",
+      "text": "Whitespace check passed, and the protected live camera pipeline diff is empty. `gitleaks` itself is not installed in this environment, so I’m doing the same conservative fallback scan over changed and untracked files with filename-only output to avoid exposing any secret-like contents.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Whitespace check passed, and the protected live camera pipeline diff is empty. `gitleaks` itself is not installed in this environment, so I’m doing the same conservative fallback scan over changed and untracked files with filename-only output to avoid exposing any secret-like contents."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:21:59.498Z",
+      "role": "assistant",
+      "text": "The no-plist build passed and printed the expected local-only warning, and the Firebase client plist was restored afterward. I’m appending the RCA entry now with the specific misses: README contradiction, emulator runner gap, weak denial assertion, DEBUG-only cost accounting leakage, and the brittle audit test assertion that the rerun caught.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The no-plist build passed and printed the expected local-only warning, and the Firebase client plist was restored afterward. I’m appending the RCA entry now with the specific misses: README contradiction, emulator runner gap, weak denial assertion, DEBUG-only cost accounting leakage, and the brittle audit test assertion that the rerun caught."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-17T11:23:55.702Z",
+      "role": "assistant",
+      "text": "I did the deep audit and corrected the real misses I found. The tree is still on `main` with Phase 17 changes unstaged/uncommitted; protected live camera pipeline files remain untouched.\n\n**Audit Result**\nFound and fixed 5 concrete gaps:\n\n- README contradicted the new compact workout sync path. Fixed wording so it now says workouts sync, while heatmaps/recaps/live analysis remain local/client-side.\n- Emulator integration had docs and a startup script, but no single executable runner that starts emulators and opts tests in. Added [Scripts/run_backend_integration_tests.sh](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Scripts/run_backend_integration_tests.sh:1).\n- `--firebase-emulator` worked, but command-line XCTest needed a safer env opt-in. Added `SPOTTER_FIREBASE_EMULATOR=1` support in [FirebaseBootstrap.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/FirebaseBootstrap.swift:96).\n- Forbidden-write integration test accepted any error. It now asserts Firestore `permissionDenied`.\n- Cost Snapshot was DEBUG UI/logging, but counters still mutated in release. Fixed in [FirestoreCostTracker.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Repositories/Firebase/FirestoreCostTracker.swift:20), and tightened transaction counting in [FirestoreDocumentDatabase.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Repositories/Firebase/FirestoreDocumentDatabase.swift:182).\n\nI also logged the RCA in [DEBUG_LOG.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/DEBUG_LOG.md:2161). The miss pattern was: after compaction, the first pass treated “covered by docs/tests/build” as enough, instead of re-running each original bullet through the exact operator workflow.\n\n**Verification**\n- Toolchain: `clang` and `swiftc` both resolve under `XcodeDefault.xctoolchain`.\n- Required build: PASS.\n- Required full test suite: PASS.\n  - Passed: 424\n  - Failed: 0\n  - Skipped: 4, all `BackendIntegrationTests` gated behind emulator opt-in.\n- No-plist local build: PASS, printed expected local-only warning, plist restored.\n- `git diff --check`: PASS.\n- `gitleaks`: unavailable locally; fallback changed-file secret scan passed.\n- Protected camera/live analysis diff: empty for all listed protected files.\n\n**App Behavior Before/After**\nBefore: Firebase mode had partial sync, but beta operators still had to piece together emulator startup and test opt-ins. A rules-denial test could pass for the wrong reason, and README wording implied workouts were still local-only.\n\nAfter: a developer can run one backend integration command, compact workout history can sync across simulators, live workouts defer heavy sync, and the debug Backend section can show sync state plus a DEBUG-only read/write cost snapshot. Real example: a planned 4-set workout saved on simulator A can sync and load on simulator B, while the live rep counter/FPS path remains undisturbed.\n\n**Manual Test Plan**\n1. Fresh local install with no `GoogleService-Info.plist`: onboarding, Free Analysis save, Planned Workout save, trophies, stats, heatmap, recaps, insights.\n2. Firebase emulator install: run `firebase init emulators`, then `Scripts/run_backend_integration_tests.sh`.\n3. Offline onboarding, then online anonymous sign-in: confirm one profile doc, no duplicates.\n4. Free Analysis save -> push -> pull on second simulator.\n5. Planned multi-set workout -> sync -> detail loads sorted sets on second simulator.\n6. Delete workout on simulator B -> push tombstone -> simulator A hides it.\n7. Trophy duplicate earn on two devices -> earliest `earnedAt` wins.\n8. Insight delivery/helpful engagement on separate devices -> merge remains stable.\n9. Export in Firebase mode -> confirm `*.remote.json` files and no raw sensor/face/secret data.\n10. Account deletion -> listeners stop, local wipe succeeds, auth deletion path completes or returns documented cloud-cleanup notice.\n11. Bad rules once -> app shows sanitized error/conflict, local data remains pending, retry after restore creates no duplicates.\n12. Force-kill mid-sync -> relaunch, journal replays pending operation IDs once.\n13. Active workout -> trigger remote traffic/save while live; heavy sync stays deferred until workout ends.\n14. Volume checks: 100 workouts history/profile, 500 heatmap/history, 32-set detail under target.\n15. Simulator crash triage: classify SpringBoard/toolchain issues against DL-035/DL-045, not as app regressions.\n\nKnown follow-up: Firebase CLI is not installed in this environment, so I could not execute the emulator runner end-to-end here; the normal suite correctly skips those 4 tests until `SPOTTER_RUN_BACKEND_INTEGRATION_TESTS=1` and emulator opt-in are supplied.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I did the deep audit and corrected the real misses I found. The tree is still on `main` with Phase 17 changes unstaged/uncommitted; protected live camera pipeline files remain untouched.\n\n**Audit Result**\nFound and fixed 5 concrete gaps:\n\n- README contradicted the new compact workout sync path. Fixed wording so it now says workouts sync, while heatmaps/recaps/live analysis remain local/client-side.\n- Emulator integration had docs and a startup script, but no single executable runner that starts emulators and opts tests in. Added [Scripts/run_backend_integration_tests.sh](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/Scripts/run_backend_integration_tests.sh:1).\n- `--firebase-emulator` worked, but command-line XCTest needed a safer env opt-in. Added `SPOTTER_FIREBASE_EMULATOR=1` support in [FirebaseBootstrap.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Services/FirebaseBootstrap.swift:96).\n- Forbidden-write integration test accepted any error. It now asserts Firestore `permissionDenied`.\n- Cost Snapshot was DEBUG UI/logging, but counters still mutated in release. Fixed in [FirestoreCostTracker.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Repositories/Firebase/FirestoreCostTracker.swift:20), and tightened transaction counting in [FirestoreDocumentDatabase.swift](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Repositories/Firebase/FirestoreDocumentDatabase.swift:182).\n\nI also logged the RCA in [DEBUG_LOG.md](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/DEBUG_LOG.md:2161). The miss pattern was: after compaction, the first pass treated “covered by docs/tests/build” as enough, instead of re-running each original bullet through the exact operator workflow.\n\n**Verification**\n- Toolchain: `clang` and `swiftc` both resolve under `XcodeDefault.xctoolchain`.\n- Required build: PASS.\n- Required full test suite: PASS.\n  - Passed: 424\n  - Failed: 0\n  - Skipped: 4, all `BackendIntegrationTests` gated behind emulator opt-in.\n- No-plist local build: PASS, printed expected local-only warning, plist restored.\n- `git diff --check`: PASS.\n- `gitleaks`: unavailable locally; fallback changed-file secret scan passed.\n- Protected camera/live analysis diff: empty for all listed protected files.\n\n**App Behavior Before/After**\nBefore: Firebase mode had partial sync, but beta operators still had to piece together emulator startup and test opt-ins. A rules-denial test could pass for the wrong reason, and README wording implied workouts were still local-only.\n\nAfter: a developer can run one backend integration command, compact workout history can sync across simulators, live workouts defer heavy sync, and the debug Backend section can show sync state plus a DEBUG-only read/write cost snapshot. Real example: a planned 4-set workout saved on simulator A can sync and load on simulator B, while the live rep counter/FPS path remains undisturbed.\n\n**Manual Test Plan**\n1. Fresh local install with no `GoogleService-Info.plist`: onboarding, Free Analysis save, Planned Workout save, trophies, stats, heatmap, recaps, insights.\n2. Firebase emulator install: run `firebase init emulators`, then `Scripts/run_backend_integration_tests.sh`.\n3. Offline onboarding, then online anonymous sign-in: confirm one profile doc, no duplicates.\n4. Free Analysis save -> push -> pull on second simulator.\n5. Planned multi-set workout -> sync -> detail loads sorted sets on second simulator.\n6. Delete workout on simulator B -> push tombstone -> simulator A hides it.\n7. Trophy duplicate earn on two devices -> earliest `earnedAt` wins.\n8. Insight delivery/helpful engagement on separate devices -> merge remains stable.\n9. Export in Firebase mode -> confirm `*.remote.json` files and no raw sensor/face/secret data.\n10. Account deletion -> listeners stop, local wipe succeeds, auth deletion path completes or returns documented cloud-cleanup notice.\n11. Bad rules once -> app shows sanitized error/conflict, local data remains pending, retry after restore creates no duplicates.\n12. Force-kill mid-sync -> relaunch, journal replays pending operation IDs once.\n13. Active workout -> trigger remote traffic/save while live; heavy sync stays deferred until workout ends.\n14. Volume checks: 100 workouts history/profile, 500 heatmap/history, 32-set detail under target.\n15. Simulator crash triage: classify SpringBoard/toolchain issues against DL-035/DL-045, not as app regressions.\n\nKnown follow-up: Firebase CLI is not installed in this environment, so I could not execute the emulator runner end-to-end here; the normal suite correctly skips those 4 tests until `SPOTTER_RUN_BACKEND_INTEGRATION_TESTS=1` and emulator opt-in are supplied."
+        }
+      ]
+    }
+  ]
+}

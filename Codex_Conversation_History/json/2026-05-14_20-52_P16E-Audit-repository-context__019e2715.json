@@ -1,0 +1,295 @@
+{
+  "id": "019e2715-408e-7c72-bf9d-90b5e13083ab",
+  "title": "P16E: Audit repository context",
+  "createdAtLocal": "2026-05-14 20:52:44",
+  "updatedAtLocal": "2026-05-14 21:20:17",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/14/rollout-2026-05-14T20-52-44-019e2715-408e-7c72-bf9d-90b5e13083ab.jsonl",
+  "gitBranch": "main",
+  "gitSha": "4451d3960deed209acf88f22e2610e2de51f8894",
+  "firstUserMessage": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Inspect the current tree end-to-end. Read README.md, DEBUG_LOG.md, every file in\n   Documentation/, the relevant Swift files in VirtualTrainer/, and the most recent\n   git history (git log --oneline -20).\n2. Treat this prompt as guidance, not a blind spec. If the current code reveals a\n   safer approach, take it and explain why in the summary.\n3. Do NOT rewrite the live camera pipeline:\n   - CameraManager\n   - PoseEstimator\n   - UniversalRepCounter\n   - FormFeedbackEngine\n   - HandGestureDetector\n   - ExertionAnalyzer\n   - WorkoutReadyCoordinator\n   - FaceLandmarkerService\n   - FramePositionAnalyzer\n4. Preserve both training flows: Free Analysis from the Camera tab AND Planned\n   Workouts from the Dashboard. They share the live analysis stack.\n5. Preserve deterministic local planning, trophies, stats, trends, recaps, weekly\n   recaps, heatmaps, and AI insights. The local pipeline must keep working with\n   no Firebase config.\n6. Keep BackendMode.local fully functional. The app MUST build and run with\n   GoogleService-Info.plist absent.\n7. Privacy: do NOT store or upload raw video, camera frames, face images, raw\n   pose streams, raw pose timelines, raw biometric face data, raw face blendshape\n   streams, or any third-party secret.\n8. Do NOT print plist contents, Firebase API keys, App Check debug tokens, or\n   any secret-like value to stdout, logs, or test fixtures.\n9. Maintain backwards-compatible Codable decoding for existing local JSON files.\n10. Toolchain: use the bundled Xcode toolchain (XcodeDefault.xctoolchain). Verify\n    with:\n        xcrun --find clang\n        xcrun --find swiftc\n    Both must resolve under\n    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain.\n    See DEBUG_LOG.md entry DL-045 for why this matters.\n11. Builds: always use VirtualTrainer.xcworkspace, never the bare xcodeproj.\n12. Do NOT run multiple xcodebuild test commands against the same DerivedData\n    path in parallel.\n13. Keep the app compiling after every phase.\n14. After the phase, run:\n        xcodebuild build  -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n        xcodebuild test   -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n    and summarize PASS/FAIL counts.\n15. If the phase changed behavior, append a DEBUG_LOG.md entry following the\n    existing format (use the next DL-### number, real ISO date, error,\n    root cause, fix applied, verification, prevention rule, pattern tags).\n16. Summarize in the PR description: changed files, key decisions, Firebase\n    console/manual steps required of the developer, migration behavior, and\n    known follow-ups.\n17. Git pre-flight: confirm git status is clean before starting. Confirm the\n    branch you intend to target. After commits, run git diff --check to catch\n    whitespace errors.\n18. Secret pre-flight: run any available secret scan (the repo ships\n    .gitleaks.toml). Fail the phase if real secrets would be committed. \n19. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n\n\nPhase 16E goal: implement FirestoreWorkoutRepository using the measured\nOption B shape from Documentation/FirestoreShape.md.\n\nPaths (re-stated):\n- users/{uid}/workouts/{workoutId}                    compact workout doc\n- users/{uid}/workouts/{workoutId}/sets/{setId}       per-set evidence\n\nTasks:\n\n1. Save behavior.\n   Require summary.accountId == uid; else throw .accountMissing.\n   Run FirestorePrivacyValidator on every encoded payload.\n   Use a Firestore WriteBatch:\n   - One write for the compact workout doc, including:\n       schemaVersion, accountId, mode, planId, planTitle, title, goal, coach,\n       startedAt, endedAt, serverEndedAt (FieldValue.serverTimestamp() if nil),\n       durationSeconds, totalReps, totalHoldSeconds, averageFormScore,\n       completionPercent, topCueSummary, effortSummary,\n       structuredEffortSummary, workoutOutcome, totalGoodFormReps,\n       totalExcellentFormReps, totalHighSeverityCues, setCount,\n       repQualityEventCount, cueEventCount, createdAt, deletedAt,\n       operationId, syncMetadata.\n   - One write per ExerciseSetSummary into the sets subcollection, keyed by a\n     deterministic setId derived from (exerciseType.rawValue, setIndex ?? 0).\n   The batch commits as a single logical save. Idempotency: each set doc's\n   operationId equals the parent workout's operationId so reruns of the same\n   save do not create duplicates.\n\n2. Delete behavior.\n   Soft-delete only. Set deletedAt = serverTimestamp() on the workout doc.\n   Set docs inherit by inference (workout doc's deletedAt). Default reads\n   filter `deletedAt == null`. A separate scheduled tombstone vacuum function\n   (Cloud Function plan in 16I) hard-deletes after 30 days.\n\n3. Load behavior.\n   loadRecentWorkouts(accountId:limit:since:):\n     - Query users/{uid}/workouts where deletedAt == null,\n       order by serverEndedAt desc (fall back to endedAt if serverEndedAt\n       missing), limit `limit`.\n     - For each compact doc, instantiate a WorkoutSessionSummary with empty\n       exerciseSummaries. Caller fetches sets on demand via loadWorkout.\n   loadWorkout(accountId:id:):\n     - getDocument workout, then collection.getDocuments on sets, ordered by\n       setIndex.\n     - Map both to a full WorkoutSessionSummary.\n\n4. Observe behavior.\n   observeRecentWorkouts(accountId:limit:):\n     - Snapshot listener on the workouts query, debounce 250ms.\n     - On each emission, do NOT eagerly fetch sets. Surfaces that need detail\n       call loadWorkout.\n     - Listener handle is removed on AsyncStream termination.\n\n5. SyncOrchestrator integration (push-only for now).\n   Extend SyncOrchestrator with a Debug-only `pushPendingWorkouts()` method:\n   - Find local summaries with syncState == .pendingUpload.\n   - Call repository.saveWorkoutSummary in serial.\n   - Update local syncState to .synced on ack.\n\n6. WorkoutHistoryStore wiring in firebase mode.\n   - On account claim, subscribe to repo.observeRecentWorkouts(limit: 80) and\n     populate `summaries` from the merged result of local + remote. Local\n     items not yet on the server stay; remote items not yet in local cache\n     are added.\n   - Save path: in firebase mode call repo.saveWorkoutSummary AFTER the local\n     persist completes. If remote save fails, leave syncState =\n     .pendingUpload; next orchestrator push retries.\n   - Delete path: same.\n\n7. Privacy + size tests.\n   - Synthetic 8-exercise × 4-set × 25-repEvent workout encodes to a compact\n     doc whose Firestore-estimated bytes match\n     compactWorkoutDocumentEstimatedFirestoreBytes from FirestoreShape.md\n     within 5%.\n   - Largest set doc stays under 64 KB.\n   - Privacy validator rejects an attempt to write `cameraFrame: Data(...)`\n     or any forbidden key inside a set doc.\n\n8. Idempotency + tombstone tests.\n   - Saving the same summary twice with the same operationId produces the\n     same Firestore state (no duplicate set docs).\n   - Deleting a workout sets workout.deletedAt; subsequent loadRecentWorkouts\n     omits it; subsequent loadWorkout returns nil for the deleted id.\n\nAcceptance:\n- Planned and Free Analysis summaries sync to Firestore as one compact doc\n  plus N set docs.\n- Soft delete is honored.\n- Listener-driven WorkoutHistoryStore stays in sync across two simulators.\n- No raw camera / pose / face / video data ever serialized.\n- BackendMode.local unaffected.",
+  "preview": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Inspect the current tree end-to-end. Read README.md, DEBUG_LOG.md, every file in\n   Documentation/, the relevant Swift files in VirtualTrainer/, and the most recent\n   git history (git log --oneline -20).\n2. Treat this prompt as guidance, not a blind spec. If the current code reveals a\n   safer approach, take it and explain why in the summary.\n3. Do NOT rewrite the live camera pipeline:\n   - CameraManager\n   - PoseEstimator\n   - UniversalRepCounter\n   - FormFeedbackEngine\n   - HandGestureDetector\n   - ExertionAnalyzer\n   - WorkoutReadyCoordinator\n   - FaceLandmarkerService\n   - FramePositionAnalyzer\n4. Preserve both training flows: Free Analysis from the Camera tab AND Planned\n   Workouts from the Dashboard. They share the live analysis stack.\n5. Preserve deterministic local planning, trophies, stats, trends, recaps, weekly\n   recaps, heatmaps, and AI insights. The local pipeline must keep working with\n   no Firebase config.\n6. Keep BackendMode.local fully functional. The app MUST build and run with\n   GoogleService-Info.plist absent.\n7. Privacy: do NOT store or upload raw video, camera frames, face images, raw\n   pose streams, raw pose timelines, raw biometric face data, raw face blendshape\n   streams, or any third-party secret.\n8. Do NOT print plist contents, Firebase API keys, App Check debug tokens, or\n   any secret-like value to stdout, logs, or test fixtures.\n9. Maintain backwards-compatible Codable decoding for existing local JSON files.\n10. Toolchain: use the bundled Xcode toolchain (XcodeDefault.xctoolchain). Verify\n    with:\n        xcrun --find clang\n        xcrun --find swiftc\n    Both must resolve under\n    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain.\n    See DEBUG_LOG.md entry DL-045 for why this matters.\n11. Builds: always use VirtualTrainer.xcworkspace, never the bare xcodeproj.\n12. Do NOT run multiple xcodebuild test commands against the same DerivedData\n    path in parallel.\n13. Keep the app compiling after every phase.\n14. After the phase, run:\n        xcodebuild build  -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n        xcodebuild test   -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n    and summarize PASS/FAIL counts.\n15. If the phase changed behavior, append a DEBUG_LOG.md entry following the\n    existing format (use the next DL-### number, real ISO date, error,\n    root cause, fix applied, verification, prevention rule, pattern tags).\n16. Summarize in the PR description: changed files, key decisions, Firebase\n    console/manual steps required of the developer, migration behavior, and\n    known follow-ups.\n17. Git pre-flight: confirm git status is clean before starting. Confirm the\n    branch you intend to target. After commits, run git diff --check to catch\n    whitespace errors.\n18. Secret pre-flight: run any available secret scan (the repo ships\n    .gitleaks.toml). Fail the phase if real secrets would be committed. \n19. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n\n\nPhase 16E goal: implement FirestoreWorkoutRepository using the measured\nOption B shape from Documentation/FirestoreShape.md.\n\nPaths (re-stated):\n- users/{uid}/workouts/{workoutId}                    compact workout doc\n- users/{uid}/workouts/{workoutId}/sets/{setId}       per-set evidence\n\nTasks:\n\n1. Save behavior.\n   Require summary.accountId == uid; else throw .accountMissing.\n   Run FirestorePrivacyValidator on every encoded payload.\n   Use a Firestore WriteBatch:\n   - One write for the compact workout doc, including:\n       schemaVersion, accountId, mode, planId, planTitle, title, goal, coach,\n       startedAt, endedAt, serverEndedAt (FieldValue.serverTimestamp() if nil),\n       durationSeconds, totalReps, totalHoldSeconds, averageFormScore,\n       completionPercent, topCueSummary, effortSummary,\n       structuredEffortSummary, workoutOutcome, totalGoodFormReps,\n       totalExcellentFormReps, totalHighSeverityCues, setCount,\n       repQualityEventCount, cueEventCount, createdAt, deletedAt,\n       operationId, syncMetadata.\n   - One write per ExerciseSetSummary into the sets subcollection, keyed by a\n     deterministic setId derived from (exerciseType.rawValue, setIndex ?? 0).\n   The batch commits as a single logical save. Idempotency: each set doc's\n   operationId equals the parent workout's operationId so reruns of the same\n   save do not create duplicates.\n\n2. Delete behavior.\n   Soft-delete only. Set deletedAt = serverTimestamp() on the workout doc.\n   Set docs inherit by inference (workout doc's deletedAt). Default reads\n   filter `deletedAt == null`. A separate scheduled tombstone vacuum function\n   (Cloud Function plan in 16I) hard-deletes after 30 days.\n\n3. Load behavior.\n   loadRecentWorkouts(accountId:limit:since:):\n     - Query users/{uid}/workouts where deletedAt == null,\n       order by serverEndedAt desc (fall back to endedAt if serverEndedAt\n       missing), limit `limit`.\n     - For each compact doc, instantiate a WorkoutSessionSummary with empty\n       exerciseSummaries. Caller fetches sets on demand via loadWorkout.\n   loadWorkout(accountId:id:):\n     - getDocument workout, then collection.getDocuments on sets, ordered by\n       setIndex.\n     - Map both to a full WorkoutSessionSummary.\n\n4. Observe behavior.\n   observeRecentWorkouts(accountId:limit:):\n     - Snapshot listener on the workouts query, debounce 250ms.\n     - On each emission, do NOT eagerly fetch sets. Surfaces that need detail\n       call loadWorkout.\n     - Listener handle is removed on AsyncStream termination.\n\n5. SyncOrchestrator integration (push-only for now).\n   Extend SyncOrchestrator with a Debug-only `pushPendingWorkouts()` method:\n   - Find local summaries with syncState == .pendingUpload.\n   - Call repository.saveWorkoutSummary in serial.\n   - Update local syncState to .synced on ack.\n\n6. WorkoutHistoryStore wiring in firebase mode.\n   - On account claim, subscribe to repo.observeRecentWorkouts(limit: 80) and\n     populate `summaries` from the merged result of local + remote. Local\n     items not yet on the server stay; remote items not yet in local cache\n     are added.\n   - Save path: in firebase mode call repo.saveWorkoutSummary AFTER the local\n     persist completes. If remote save fails, leave syncState =\n     .pendingUpload; next orchestrator push retries.\n   - Delete path: same.\n\n7. Privacy + size tests.\n   - Synthetic 8-exercise × 4-set × 25-repEvent workout encodes to a compact\n     doc whose Firestore-estimated bytes match\n     compactWorkoutDocumentEstimatedFirestoreBytes from FirestoreShape.md\n     within 5%.\n   - Largest set doc stays under 64 KB.\n   - Privacy validator rejects an attempt to write `cameraFrame: Data(...)`\n     or any forbidden key inside a set doc.\n\n8. Idempotency + tombstone tests.\n   - Saving the same summary twice with the same operationId produces the\n     same Firestore state (no duplicate set docs).\n   - Deleting a workout sets workout.deletedAt; subsequent loadRecentWorkouts\n     omits it; subsequent loadWorkout returns nil for the deleted id.\n\nAcceptance:\n- Planned and Free Analysis summaries sync to Firestore as one compact doc\n  plus N set docs.\n- Soft delete is honored.\n- Listener-driven WorkoutHistoryStore stays in sync across two simulators.\n- No raw camera / pose / face / video data ever serialized.\n- BackendMode.local unaffected.",
+  "rawLineCount": 726,
+  "parseErrors": 0,
+  "visibleMessageCount": 25,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-14T15:23:09.863Z",
+      "role": "user",
+      "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Inspect the current tree end-to-end. Read README.md, DEBUG_LOG.md, every file in\n   Documentation/, the relevant Swift files in VirtualTrainer/, and the most recent\n   git history (git log --oneline -20).\n2. Treat this prompt as guidance, not a blind spec. If the current code reveals a\n   safer approach, take it and explain why in the summary.\n3. Do NOT rewrite the live camera pipeline:\n   - CameraManager\n   - PoseEstimator\n   - UniversalRepCounter\n   - FormFeedbackEngine\n   - HandGestureDetector\n   - ExertionAnalyzer\n   - WorkoutReadyCoordinator\n   - FaceLandmarkerService\n   - FramePositionAnalyzer\n4. Preserve both training flows: Free Analysis from the Camera tab AND Planned\n   Workouts from the Dashboard. They share the live analysis stack.\n5. Preserve deterministic local planning, trophies, stats, trends, recaps, weekly\n   recaps, heatmaps, and AI insights. The local pipeline must keep working with\n   no Firebase config.\n6. Keep BackendMode.local fully functional. The app MUST build and run with\n   GoogleService-Info.plist absent.\n7. Privacy: do NOT store or upload raw video, camera frames, face images, raw\n   pose streams, raw pose timelines, raw biometric face data, raw face blendshape\n   streams, or any third-party secret.\n8. Do NOT print plist contents, Firebase API keys, App Check debug tokens, or\n   any secret-like value to stdout, logs, or test fixtures.\n9. Maintain backwards-compatible Codable decoding for existing local JSON files.\n10. Toolchain: use the bundled Xcode toolchain (XcodeDefault.xctoolchain). Verify\n    with:\n        xcrun --find clang\n        xcrun --find swiftc\n    Both must resolve under\n    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain.\n    See DEBUG_LOG.md entry DL-045 for why this matters.\n11. Builds: always use VirtualTrainer.xcworkspace, never the bare xcodeproj.\n12. Do NOT run multiple xcodebuild test commands against the same DerivedData\n    path in parallel.\n13. Keep the app compiling after every phase.\n14. After the phase, run:\n        xcodebuild build  -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n        xcodebuild test   -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n    and summarize PASS/FAIL counts.\n15. If the phase changed behavior, append a DEBUG_LOG.md entry following the\n    existing format (use the next DL-### number, real ISO date, error,\n    root cause, fix applied, verification, prevention rule, pattern tags).\n16. Summarize in the PR description: changed files, key decisions, Firebase\n    console/manual steps required of the developer, migration behavior, and\n    known follow-ups.\n17. Git pre-flight: confirm git status is clean before starting. Confirm the\n    branch you intend to target. After commits, run git diff --check to catch\n    whitespace errors.\n18. Secret pre-flight: run any available secret scan (the repo ships\n    .gitleaks.toml). Fail the phase if real secrets would be committed. \n19. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n\n\nPhase 16E goal: implement FirestoreWorkoutRepository using the measured\nOption B shape from Documentation/FirestoreShape.md.\n\nPaths (re-stated):\n- users/{uid}/workouts/{workoutId}                    compact workout doc\n- users/{uid}/workouts/{workoutId}/sets/{setId}       per-set evidence\n\nTasks:\n\n1. Save behavior.\n   Require summary.accountId == uid; else throw .accountMissing.\n   Run FirestorePrivacyValidator on every encoded payload.\n   Use a Firestore WriteBatch:\n   - One write for the compact workout doc, including:\n       schemaVersion, accountId, mode, planId, planTitle, title, goal, coach,\n       startedAt, endedAt, serverEndedAt (FieldValue.serverTimestamp() if nil),\n       durationSeconds, totalReps, totalHoldSeconds, averageFormScore,\n       completionPercent, topCueSummary, effortSummary,\n       structuredEffortSummary, workoutOutcome, totalGoodFormReps,\n       totalExcellentFormReps, totalHighSeverityCues, setCount,\n       repQualityEventCount, cueEventCount, createdAt, deletedAt,\n       operationId, syncMetadata.\n   - One write per ExerciseSetSummary into the sets subcollection, keyed by a\n     deterministic setId derived from (exerciseType.rawValue, setIndex ?? 0).\n   The batch commits as a single logical save. Idempotency: each set doc's\n   operationId equals the parent workout's operationId so reruns of the same\n   save do not create duplicates.\n\n2. Delete behavior.\n   Soft-delete only. Set deletedAt = serverTimestamp() on the workout doc.\n   Set docs inherit by inference (workout doc's deletedAt). Default reads\n   filter `deletedAt == null`. A separate scheduled tombstone vacuum function\n   (Cloud Function plan in 16I) hard-deletes after 30 days.\n\n3. Load behavior.\n   loadRecentWorkouts(accountId:limit:since:):\n     - Query users/{uid}/workouts where deletedAt == null,\n       order by serverEndedAt desc (fall back to endedAt if serverEndedAt\n       missing), limit `limit`.\n     - For each compact doc, instantiate a WorkoutSessionSummary with empty\n       exerciseSummaries. Caller fetches sets on demand via loadWorkout.\n   loadWorkout(accountId:id:):\n     - getDocument workout, then collection.getDocuments on sets, ordered by\n       setIndex.\n     - Map both to a full WorkoutSessionSummary.\n\n4. Observe behavior.\n   observeRecentWorkouts(accountId:limit:):\n     - Snapshot listener on the workouts query, debounce 250ms.\n     - On each emission, do NOT eagerly fetch sets. Surfaces that need detail\n       call loadWorkout.\n     - Listener handle is removed on AsyncStream termination.\n\n5. SyncOrchestrator integration (push-only for now).\n   Extend SyncOrchestrator with a Debug-only `pushPendingWorkouts()` method:\n   - Find local summaries with syncState == .pendingUpload.\n   - Call repository.saveWorkoutSummary in serial.\n   - Update local syncState to .synced on ack.\n\n6. WorkoutHistoryStore wiring in firebase mode.\n   - On account claim, subscribe to repo.observeRecentWorkouts(limit: 80) and\n     populate `summaries` from the merged result of local + remote. Local\n     items not yet on the server stay; remote items not yet in local cache\n     are added.\n   - Save path: in firebase mode call repo.saveWorkoutSummary AFTER the local\n     persist completes. If remote save fails, leave syncState =\n     .pendingUpload; next orchestrator push retries.\n   - Delete path: same.\n\n7. Privacy + size tests.\n   - Synthetic 8-exercise × 4-set × 25-repEvent workout encodes to a compact\n     doc whose Firestore-estimated bytes match\n     compactWorkoutDocumentEstimatedFirestoreBytes from FirestoreShape.md\n     within 5%.\n   - Largest set doc stays under 64 KB.\n   - Privacy validator rejects an attempt to write `cameraFrame: Data(...)`\n     or any forbidden key inside a set doc.\n\n8. Idempotency + tombstone tests.\n   - Saving the same summary twice with the same operationId produces the\n     same Firestore state (no duplicate set docs).\n   - Deleting a workout sets workout.deletedAt; subsequent loadRecentWorkouts\n     omits it; subsequent loadWorkout returns nil for the deleted id.\n\nAcceptance:\n- Planned and Free Analysis summaries sync to Firestore as one compact doc\n  plus N set docs.\n- Soft delete is honored.\n- Listener-driven WorkoutHistoryStore stays in sync across two simulators.\n- No raw camera / pose / face / video data ever serialized.\n- BackendMode.local unaffected.\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Inspect the current tree end-to-end. Read README.md, DEBUG_LOG.md, every file in\n   Documentation/, the relevant Swift files in VirtualTrainer/, and the most recent\n   git history (git log --oneline -20).\n2. Treat this prompt as guidance, not a blind spec. If the current code reveals a\n   safer approach, take it and explain why in the summary.\n3. Do NOT rewrite the live camera pipeline:\n   - CameraManager\n   - PoseEstimator\n   - UniversalRepCounter\n   - FormFeedbackEngine\n   - HandGestureDetector\n   - ExertionAnalyzer\n   - WorkoutReadyCoordinator\n   - FaceLandmarkerService\n   - FramePositionAnalyzer\n4. Preserve both training flows: Free Analysis from the Camera tab AND Planned\n   Workouts from the Dashboard. They share the live analysis stack.\n5. Preserve deterministic local planning, trophies, stats, trends, recaps, weekly\n   recaps, heatmaps, and AI insights. The local pipeline must keep working with\n   no Firebase config.\n6. Keep BackendMode.local fully functional. The app MUST build and run with\n   GoogleService-Info.plist absent.\n7. Privacy: do NOT store or upload raw video, camera frames, face images, raw\n   pose streams, raw pose timelines, raw biometric face data, raw face blendshape\n   streams, or any third-party secret.\n8. Do NOT print plist contents, Firebase API keys, App Check debug tokens, or\n   any secret-like value to stdout, logs, or test fixtures.\n9. Maintain backwards-compatible Codable decoding for existing local JSON files.\n10. Toolchain: use the bundled Xcode toolchain (XcodeDefault.xctoolchain). Verify\n    with:\n        xcrun --find clang\n        xcrun --find swiftc\n    Both must resolve under\n    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain.\n    See DEBUG_LOG.md entry DL-045 for why this matters.\n11. Builds: always use VirtualTrainer.xcworkspace, never the bare xcodeproj.\n12. Do NOT run multiple xcodebuild test commands against the same DerivedData\n    path in parallel.\n13. Keep the app compiling after every phase.\n14. After the phase, run:\n        xcodebuild build  -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n        xcodebuild test   -workspace VirtualTrainer.xcworkspace \\\n            -scheme VirtualTrainer \\\n            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \\\n            -derivedDataPath /tmp/VirtualTrainerDerivedData\n    and summarize PASS/FAIL counts.\n15. If the phase changed behavior, append a DEBUG_LOG.md entry following the\n    existing format (use the next DL-### number, real ISO date, error,\n    root cause, fix applied, verification, prevention rule, pattern tags).\n16. Summarize in the PR description: changed files, key decisions, Firebase\n    console/manual steps required of the developer, migration behavior, and\n    known follow-ups.\n17. Git pre-flight: confirm git status is clean before starting. Confirm the\n    branch you intend to target. After commits, run git diff --check to catch\n    whitespace errors.\n18. Secret pre-flight: run any available secret scan (the repo ships\n    .gitleaks.toml). Fail the phase if real secrets would be committed. \n19. Mention the change the code brings to the application - the before and after with real life practical examples if possible. \n\n\nPhase 16E goal: implement FirestoreWorkoutRepository using the measured\nOption B shape from Documentation/FirestoreShape.md.\n\nPaths (re-stated):\n- users/{uid}/workouts/{workoutId}                    compact workout doc\n- users/{uid}/workouts/{workoutId}/sets/{setId}       per-set evidence\n\nTasks:\n\n1. Save behavior.\n   Require summary.accountId == uid; else throw .accountMissing.\n   Run FirestorePrivacyValidator on every encoded payload.\n   Use a Firestore WriteBatch:\n   - One write for the compact workout doc, including:\n       schemaVersion, accountId, mode, planId, planTitle, title, goal, coach,\n       startedAt, endedAt, serverEndedAt (FieldValue.serverTimestamp() if nil),\n       durationSeconds, totalReps, totalHoldSeconds, averageFormScore,\n       completionPercent, topCueSummary, effortSummary,\n       structuredEffortSummary, workoutOutcome, totalGoodFormReps,\n       totalExcellentFormReps, totalHighSeverityCues, setCount,\n       repQualityEventCount, cueEventCount, createdAt, deletedAt,\n       operationId, syncMetadata.\n   - One write per ExerciseSetSummary into the sets subcollection, keyed by a\n     deterministic setId derived from (exerciseType.rawValue, setIndex ?? 0).\n   The batch commits as a single logical save. Idempotency: each set doc's\n   operationId equals the parent workout's operationId so reruns of the same\n   save do not create duplicates.\n\n2. Delete behavior.\n   Soft-delete only. Set deletedAt = serverTimestamp() on the workout doc.\n   Set docs inherit by inference (workout doc's deletedAt). Default reads\n   filter `deletedAt == null`. A separate scheduled tombstone vacuum function\n   (Cloud Function plan in 16I) hard-deletes after 30 days.\n\n3. Load behavior.\n   loadRecentWorkouts(accountId:limit:since:):\n     - Query users/{uid}/workouts where deletedAt == null,\n       order by serverEndedAt desc (fall back to endedAt if serverEndedAt\n       missing), limit `limit`.\n     - For each compact doc, instantiate a WorkoutSessionSummary with empty\n       exerciseSummaries. Caller fetches sets on demand via loadWorkout.\n   loadWorkout(accountId:id:):\n     - getDocument workout, then collection.getDocuments on sets, ordered by\n       setIndex.\n     - Map both to a full WorkoutSessionSummary.\n\n4. Observe behavior.\n   observeRecentWorkouts(accountId:limit:):\n     - Snapshot listener on the workouts query, debounce 250ms.\n     - On each emission, do NOT eagerly fetch sets. Surfaces that need detail\n       call loadWorkout.\n     - Listener handle is removed on AsyncStream termination.\n\n5. SyncOrchestrator integration (push-only for now).\n   Extend SyncOrchestrator with a Debug-only `pushPendingWorkouts()` method:\n   - Find local summaries with syncState == .pendingUpload.\n   - Call repository.saveWorkoutSummary in serial.\n   - Update local syncState to .synced on ack.\n\n6. WorkoutHistoryStore wiring in firebase mode.\n   - On account claim, subscribe to repo.observeRecentWorkouts(limit: 80) and\n     populate `summaries` from the merged result of local + remote. Local\n     items not yet on the server stay; remote items not yet in local cache\n     are added.\n   - Save path: in firebase mode call repo.saveWorkoutSummary AFTER the local\n     persist completes. If remote save fails, leave syncState =\n     .pendingUpload; next orchestrator push retries.\n   - Delete path: same.\n\n7. Privacy + size tests.\n   - Synthetic 8-exercise × 4-set × 25-repEvent workout encodes to a compact\n     doc whose Firestore-estimated bytes match\n     compactWorkoutDocumentEstimatedFirestoreBytes from FirestoreShape.md\n     within 5%.\n   - Largest set doc stays under 64 KB.\n   - Privacy validator rejects an attempt to write `cameraFrame: Data(...)`\n     or any forbidden key inside a set doc.\n\n8. Idempotency + tombstone tests.\n   - Saving the same summary twice with the same operationId produces the\n     same Firestore state (no duplicate set docs).\n   - Deleting a workout sets workout.deletedAt; subsequent loadRecentWorkouts\n     omits it; subsequent loadWorkout returns nil for the deleted id.\n\nAcceptance:\n- Planned and Free Analysis summaries sync to Firestore as one compact doc\n  plus N set docs.\n- Soft delete is honored.\n- Listener-driven WorkoutHistoryStore stays in sync across two simulators.\n- No raw camera / pose / face / video data ever serialized.\n- BackendMode.local unaffected.\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:23:17.154Z",
+      "role": "assistant",
+      "text": "I’ll start by doing the required pre-flight and repo survey: status/branch, recent history, docs, and the Swift areas that touch history, sync, Firebase, and workout summaries. I’ll keep the live analysis stack read-only unless it becomes necessary to understand contracts.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll start by doing the required pre-flight and repo survey: status/branch, recent history, docs, and the Swift areas that touch history, sync, Firebase, and workout summaries. I’ll keep the live analysis stack read-only unless it becomes necessary to understand contracts."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:23:30.271Z",
+      "role": "assistant",
+      "text": "Pre-flight is clean on `main`, and the toolchain resolves to the required `XcodeDefault.xctoolchain`. I’m going to branch before edits, then read the docs/source surface around the Firestore DTOs, history store, and sync path so the implementation follows the existing shape rather than inventing a parallel one.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Pre-flight is clean on `main`, and the toolchain resolves to the required `XcodeDefault.xctoolchain`. I’m going to branch before edits, then read the docs/source surface around the Firestore DTOs, history store, and sync path so the implementation follows the existing shape rather than inventing a parallel one."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:23:52.965Z",
+      "role": "assistant",
+      "text": "The branch is now `codex/phase-16e-firestore-workouts`. I also found the repo’s `.gitleaks.toml`; the `gitleaks` binary itself is not installed, so I’ll use the config-aware scan if I can get a local binary later and otherwise run a conservative fallback scan over the diff without exposing matched values.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The branch is now `codex/phase-16e-firestore-workouts`. I also found the repo’s `.gitleaks.toml`; the `gitleaks` binary itself is not installed, so I’ll use the config-aware scan if I can get a local binary later and otherwise run a conservative fallback scan over the diff without exposing matched values."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:24:14.363Z",
+      "role": "assistant",
+      "text": "The docs confirm the key constraint: Firestore must use the Option B shape, with compact list documents and set evidence loaded only for detail. I’m now tracing the local model and repository seams so the cloud path remains a cache/sync layer on top of the existing local-first product behavior.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The docs confirm the key constraint: Firestore must use the Option B shape, with compact list documents and set evidence loaded only for detail. I’m now tracing the local model and repository seams so the cloud path remains a cache/sync layer on top of the existing local-first product behavior."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:28:32.929Z",
+      "role": "assistant",
+      "text": "I’ve got the implementation surface now. The main shape is clean: add a Firestore workout repository, extend the small Firestore adapter with batch/query-listener support, then wire `WorkoutHistoryStore` so Firebase mode saves locally first and treats remote sync as a retryable follow-up.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve got the implementation surface now. The main shape is clean: add a Firestore workout repository, extend the small Firestore adapter with batch/query-listener support, then wire `WorkoutHistoryStore` so Firebase mode saves locally first and treats remote sync as a retryable follow-up."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:28:38.432Z",
+      "role": "assistant",
+      "text": "I’m going to edit the repository plumbing first: batch writes and collection listeners in the Firestore adapter, path helpers for workout collections, and the workout repository itself. After that I’ll wire the store and tests around those APIs.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m going to edit the repository plumbing first: batch writes and collection listeners in the Firestore adapter, path helpers for workout collections, and the workout repository itself. After that I’ll wire the store and tests around those APIs."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:36:18.237Z",
+      "role": "assistant",
+      "text": "The first implementation pass is in place, including store wiring and focused tests. I’m going to compile now before layering more changes; this is the useful checkpoint where Swift’s type system tells us what got missed.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The first implementation pass is in place, including store wiring and focused tests. I’m going to compile now before layering more changes; this is the useful checkpoint where Swift’s type system tells us what got missed."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:37:06.053Z",
+      "role": "assistant",
+      "text": "The build is still running through the Firebase/SPM graph. So far it has only surfaced pre-existing debounce warnings in the older repositories; I’m waiting for the final compile/link result before touching anything else.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The build is still running through the Firebase/SPM graph. So far it has only surfaced pre-existing debounce warnings in the older repositories; I’m waiting for the final compile/link result before touching anything else."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:37:15.292Z",
+      "role": "assistant",
+      "text": "The app build passed. I’m moving to the test suite now; this will exercise the new fake Firestore batch/listener paths, the size/privacy checks, and the local-first history-store retry behavior.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The app build passed. I’m moving to the test suite now; this will exercise the new fake Firestore batch/listener paths, the size/privacy checks, and the local-first history-store retry behavior."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:37:40.624Z",
+      "role": "assistant",
+      "text": "The app target still compiles, but the test target failed to compile on three async assertions in the new Firestore repository tests. I’m narrowing those down and will patch the tests, not the app path.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The app target still compiles, but the test target failed to compile on three async assertions in the new Firestore repository tests. I’m narrowing those down and will patch the tests, not the app path."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:39:30.186Z",
+      "role": "assistant",
+      "text": "The focused Firestore repository test target compiled and is now running. It has gone quiet during execution, so I’m letting it finish rather than starting another test process on the same DerivedData path.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The focused Firestore repository test target compiled and is now running. It has gone quiet during execution, so I’m letting it finish rather than starting another test process on the same DerivedData path."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:41:18.265Z",
+      "role": "assistant",
+      "text": "I’ve got the Phase 16E implementation mostly in place and the app build plus focused Firestore repository tests are already green after one compile fix. I’m going to run the size/privacy audit next, then the full required build/test sweep and the repo hygiene checks.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve got the Phase 16E implementation mostly in place and the app build plus focused Firestore repository tests are already green after one compile fix. I’m going to run the size/privacy audit next, then the full required build/test sweep and the repo hygiene checks."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:42:19.555Z",
+      "role": "assistant",
+      "text": "The size/privacy audit is still building through the iOS test harness, so I’m letting that finish before touching anything else. One thing I’m watching here is whether the measured compact-document byte count still matches the documented Option B numbers closely enough.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The size/privacy audit is still building through the iOS test harness, so I’m letting that finish before touching anything else. One thing I’m watching here is whether the measured compact-document byte count still matches the documented Option B numbers closely enough."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:42:34.204Z",
+      "role": "assistant",
+      "text": "The Firestore shape audit is green, including the 5% compact-doc estimate, max set under 64 KB, and forbidden raw camera payload rejection. Next I’m doing the exact required workspace build, then the exact full test command on the same DerivedData path sequentially.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The Firestore shape audit is green, including the 5% compact-doc estimate, max set under 64 KB, and forbidden raw camera payload rejection. Next I’m doing the exact required workspace build, then the exact full test command on the same DerivedData path sequentially."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:42:58.518Z",
+      "role": "assistant",
+      "text": "The exact workspace build passed. I’m starting the full required test run now, still sequential on `/tmp/VirtualTrainerDerivedData` so we keep the simulator state boring in the best way.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The exact workspace build passed. I’m starting the full required test run now, still sequential on `/tmp/VirtualTrainerDerivedData` so we keep the simulator state boring in the best way."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:43:52.860Z",
+      "role": "assistant",
+      "text": "The full suite is through build/signing and is now in the simulator test phase. No new failures have surfaced yet; I’m waiting for XCTest to print the case-level results.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The full suite is through build/signing and is now in the simulator test phase. No new failures have surfaced yet; I’m waiting for XCTest to print the case-level results."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:44:28.672Z",
+      "role": "assistant",
+      "text": "Full tests passed. I’m going to pull the xcresult summary for exact pass/fail counts, then I’ll update the debug log and run the hygiene scans.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Full tests passed. I’m going to pull the xcresult summary for exact pass/fail counts, then I’ll update the debug log and run the hygiene scans."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:44:58.537Z",
+      "role": "assistant",
+      "text": "The xcresult reports 373 successful tests, with no failures or skips. I’m doing a quick diff review now before logging the phase, mostly checking that the Firestore write shape and local-first sync behavior read cleanly after the tests.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The xcresult reports 373 successful tests, with no failures or skips. I’m doing a quick diff review now before logging the phase, mostly checking that the Firestore write shape and local-first sync behavior read cleanly after the tests."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:46:28.646Z",
+      "role": "assistant",
+      "text": "One extra verification is worth doing because this phase wires real Firestore workout code: I’m temporarily moving the ignored local Firebase plist aside and running a local-mode build, then restoring it immediately. This won’t print the plist contents.",
+      "content": [
+        {
+          "type": "text",
+          "text": "One extra verification is worth doing because this phase wires real Firestore workout code: I’m temporarily moving the ignored local Firebase plist aside and running a local-mode build, then restoring it immediately. This won’t print the plist contents."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:47:06.439Z",
+      "role": "assistant",
+      "text": "The no-plist build is doing a clean package build in a fresh DerivedData directory, so it is noisier than the incremental pass. The Firebase config file is still tucked away by the trap and will be restored when the command exits.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The no-plist build is doing a clean package build in a fresh DerivedData directory, so it is noisier than the incremental pass. The Firebase config file is still tucked away by the trap and will be restored when the command exits."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:48:10.536Z",
+      "role": "assistant",
+      "text": "The local-only no-plist build passed too, and the ignored plist was restored. I’m adding the Phase 16E debug-log entry now, then I’ll run the repo’s secret-scan fallback and whitespace check.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The local-only no-plist build passed too, and the ignored plist was restored. I’m adding the Phase 16E debug-log entry now, then I’ll run the repo’s secret-scan fallback and whitespace check."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:48:53.097Z",
+      "role": "assistant",
+      "text": "`gitleaks` itself is not installed here, so I’m running a fallback scanner using the repo’s custom `.gitleaks.toml` patterns over changed and new non-ignored files. It reports only rule names and locations, not matched values.",
+      "content": [
+        {
+          "type": "text",
+          "text": "`gitleaks` itself is not installed here, so I’m running a fallback scanner using the repo’s custom `.gitleaks.toml` patterns over changed and new non-ignored files. It reports only rule names and locations, not matched values."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:49:37.882Z",
+      "role": "assistant",
+      "text": "The fallback secret scan found zero findings, and `git diff --check` was clean before the log wording update. I touched only the log wording after that, so I’m re-running the hygiene checks once more for the actual final diff.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The fallback secret scan found zero findings, and `git diff --check` was clean before the log wording update. I touched only the log wording after that, so I’m re-running the hygiene checks once more for the actual final diff."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-14T15:50:17.099Z",
+      "role": "assistant",
+      "text": "Implemented Phase 16E on `codex/phase-16e-firestore-workouts`, targeting `main`. Pre-flight started clean; current worktree has the intended unstaged changes.\n\n**PR Description**\nSummary:\n- Added [FirestoreWorkoutRepository](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Repositories/Firebase/FirestoreWorkoutRepository.swift) using Option B: one compact workout doc plus deterministic per-set docs.\n- Wired Firebase-mode `WorkoutHistoryStore` to local-first save/delete, remote observe/merge, and lazy detail loading.\n- Added DEBUG `SyncOrchestrator.pushPendingWorkouts()` for serial push-only retries.\n- Added batch/listener support to the Firestore adapter and expanded mapper/path/DTO support.\n- Added tests for privacy, size, idempotent saves, soft delete, compact listeners, and Firebase-mode local-first behavior.\n- Appended `DEBUG_LOG.md` entry `DL-052`.\n\nBefore/after:\n- Before: finishing a planned workout or Free Analysis session only persisted the summary locally in Firebase mode.\n- After: finishing, for example, a 4-set planned squat workout writes `users/{uid}/workouts/{workoutId}` with totals and 4 deterministic `sets/{setId}` docs. A second simulator can see the compact history entry quickly; tapping it loads set evidence on demand.\n- Delete now soft-tombstones the workout doc so recent reads omit it without hard-deleting set evidence yet.\n\nFirebase/manual steps:\n- Add/confirm Firestore rules so users can access only `users/{uid}/...`.\n- Create the Firestore index if prompted for `workouts`: `deletedAt == null` plus `serverEndedAt desc`.\n- Phase 16I still needs the scheduled tombstone vacuum function for hard deletes after 30 days.\n\nMigration behavior:\n- Existing local JSON remains backwards-compatible.\n- `BackendMode.local` is unchanged and works with `GoogleService-Info.plist` absent.\n- Remote compact workouts are merged into local cache; local pending uploads stay local until acknowledged.\n\nKnown follow-ups:\n- Manual two-simulator Firebase smoke once rules/indexes are live.\n- Existing Swift 6 debounce-capture warnings remain in Firestore observers and should be cleaned up before Swift 6 mode hardens them.\n\nVerification:\n- Toolchain resolved under `XcodeDefault.xctoolchain` for both `clang` and `swiftc`.\n- Required build: PASS.\n- Required tests: PASS, `373` passed, `0` failed, `0` skipped.\n- No-plist local-only build: PASS.\n- `git diff --check`: PASS.\n- `gitleaks` was not installed; fallback `.gitleaks.toml` scan passed with `0` findings across changed/new files.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Implemented Phase 16E on `codex/phase-16e-firestore-workouts`, targeting `main`. Pre-flight started clean; current worktree has the intended unstaged changes.\n\n**PR Description**\nSummary:\n- Added [FirestoreWorkoutRepository](/Users/satvik.bansal/Desktop/VirtualTrainer%20-%20mediapipe/VirtualTrainer/Repositories/Firebase/FirestoreWorkoutRepository.swift) using Option B: one compact workout doc plus deterministic per-set docs.\n- Wired Firebase-mode `WorkoutHistoryStore` to local-first save/delete, remote observe/merge, and lazy detail loading.\n- Added DEBUG `SyncOrchestrator.pushPendingWorkouts()` for serial push-only retries.\n- Added batch/listener support to the Firestore adapter and expanded mapper/path/DTO support.\n- Added tests for privacy, size, idempotent saves, soft delete, compact listeners, and Firebase-mode local-first behavior.\n- Appended `DEBUG_LOG.md` entry `DL-052`.\n\nBefore/after:\n- Before: finishing a planned workout or Free Analysis session only persisted the summary locally in Firebase mode.\n- After: finishing, for example, a 4-set planned squat workout writes `users/{uid}/workouts/{workoutId}` with totals and 4 deterministic `sets/{setId}` docs. A second simulator can see the compact history entry quickly; tapping it loads set evidence on demand.\n- Delete now soft-tombstones the workout doc so recent reads omit it without hard-deleting set evidence yet.\n\nFirebase/manual steps:\n- Add/confirm Firestore rules so users can access only `users/{uid}/...`.\n- Create the Firestore index if prompted for `workouts`: `deletedAt == null` plus `serverEndedAt desc`.\n- Phase 16I still needs the scheduled tombstone vacuum function for hard deletes after 30 days.\n\nMigration behavior:\n- Existing local JSON remains backwards-compatible.\n- `BackendMode.local` is unchanged and works with `GoogleService-Info.plist` absent.\n- Remote compact workouts are merged into local cache; local pending uploads stay local until acknowledged.\n\nKnown follow-ups:\n- Manual two-simulator Firebase smoke once rules/indexes are live.\n- Existing Swift 6 debounce-capture warnings remain in Firestore observers and should be cleaned up before Swift 6 mode hardens them.\n\nVerification:\n- Toolchain resolved under `XcodeDefault.xctoolchain` for both `clang` and `swiftc`.\n- Required build: PASS.\n- Required tests: PASS, `373` passed, `0` failed, `0` skipped.\n- No-plist local-only build: PASS.\n- `git diff --check`: PASS.\n- `gitleaks` was not installed; fallback `.gitleaks.toml` scan passed with `0` findings across changed/new files."
+        }
+      ]
+    }
+  ]
+}
