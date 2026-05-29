@@ -1,0 +1,284 @@
+{
+  "id": "019dfb8b-71a5-7c03-9e90-e52672070c4b",
+  "title": "10.5A: Upgrade workout history",
+  "createdAtLocal": "2026-05-06 09:58:33",
+  "updatedAtLocal": "2026-05-06 10:29:01",
+  "timeZone": "Asia/Kolkata",
+  "archived": false,
+  "cwd": "/Users/satvik.bansal/Desktop/VirtualTrainer - mediapipe",
+  "sourceRolloutPath": "/Users/satvik.bansal/.codex/sessions/2026/05/06/rollout-2026-05-06T09-58-33-019dfb8b-71a5-7c03-9e90-e52672070c4b.jsonl",
+  "gitBranch": "main",
+  "gitSha": "4d69fe4586e5a6ce7d270c28e42222a78dc9f608",
+  "firstUserMessage": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Audit all the changes in extreme detail, fix discrepancies and Share a manual end to end testing plan in the end. \n\nUse the common Spotter Codex preflight block.\n\nBridge 10.5A2 goal:\nUpgrade the current Phase 10 workout-history implementation into a richer evidence layer for trophies, stats, trends, and AI insights.\n\nImportant current files to inspect:\n- VirtualTrainer/Models/WorkoutHistoryStore.swift\n- VirtualTrainer/Models/WorkoutSessionSummary.swift\n- VirtualTrainer/Models/WorkoutSummaryBuilder.swift\n- VirtualTrainer/Models/WorkoutSessionContext.swift\n- VirtualTrainer/Models/LiveSessionContext.swift\n- VirtualTrainer/UI/TrainerSessionView.swift\n- VirtualTrainer/UI/PlannedWorkoutSessionView.swift\n- VirtualTrainer/UI/CameraTabView.swift\n- VirtualTrainer/UI/HomeDashboardView.swift\n- VirtualTrainer/Models/DashboardData.swift\n- VirtualTrainerTests/WorkoutHistoryStoreTests.swift\n- VirtualTrainerTests/PlannedWorkoutCoordinatorTests.swift\n- VirtualTrainerTests/DashboardContentTests.swift\n\nDo not rebuild WorkoutHistoryStore from scratch. It already exists. Upgrade it.\n\nTasks:\n\n1. Add richer evidence models.\n\nCreate:\n- RepQualityEvent\n  - id: UUID\n  - exerciseType: ExerciseType\n  - setIndex: Int?\n  - repIndex: Int\n  - timestamp: Date\n  - secondsIntoSet: TimeInterval\n  - formScore: Int?\n  - formGrade: String?\n  - phase: String?\n  - cueMessageNearRep: String?\n  - cueSeverityNearRep: CoachCue.Severity?\n  - effortAtRep: Double?\n\n- SetQualitySummary\n  - totalScoredReps: Int\n  - goodFormReps: Int\n  - excellentFormReps: Int\n  - minFormScore: Double?\n  - maxFormScore: Double?\n  - averageFormScore: Double?\n  - firstHalfAverageFormScore: Double?\n  - secondHalfAverageFormScore: Double?\n  - breakdownRepIndex: Int?\n  - improvementRepIndex: Int?\n  - highSeverityCueCount: Int\n  - mostRepeatedCue: String?\n  - qualityTrend: SetQualityTrend\n\n- SetQualityTrend\n  - improved\n  - faded\n  - stable\n  - unknown\n\n- StructuredEffortSummary\n  - averageEffort: Double?\n  - peakEffort: Double?\n  - trend: EffortTrend\n  - source: EffortSource\n\n- EffortTrend\n  - rising\n  - steady\n  - falling\n  - unavailable\n\n- EffortSource\n  - faceBlendshapeProxy\n  - unavailable\n\n2. Upgrade CueEvent without breaking old local JSON.\n\nCurrent CueEvent is too shallow. Extend it with optional/default fields:\n- id: UUID\n- setIndex: Int?\n- repIndex: Int?\n- secondsIntoSet: TimeInterval?\n- formScoreAtEvent: Int?\n- metricKey: String?\n- metricValue: Double?\n\nKeep backward compatibility. Existing saved JSON should still decode.\n\n3. Upgrade ExerciseSetSummary.\n\nAdd optional/default fields:\n- qualitySummary: SetQualitySummary?\n- repQualityEvents: [RepQualityEvent]\n- completionSource: PlannedSetCompletionSource?\n- completedAt: Date?\n- durationSeconds: Int?\n- peakEffort: Double?\n- bestCue: String?\n- worstCue: String?\n\nKeep existing fields so current UI still works.\n\n4. Upgrade WorkoutSessionSummary.\n\nAdd optional/default fields:\n- summarySchemaVersion: Int\n- appBuildVersion: String?\n- planTitle: String?\n- workoutOutcome: WorkoutOutcome\n- structuredEffortSummary: StructuredEffortSummary?\n- totalGoodFormReps: Int\n- totalExcellentFormReps: Int\n- totalHighSeverityCues: Int\n\nCreate:\n- WorkoutOutcome\n  - completed\n  - partial\n  - cancelled\n  - freeAnalysisSaved\n\nKeep existing stored summaries decodable.\n\n5. Capture rep-level evidence in TrainerSessionView.\n\nWhen repCount increases:\n- append a RepQualityEvent\n- use current rep index\n- use current elapsed seconds\n- include latest form score if available\n- include nearest/active cue if available\n- include current effort score if available\n\nDo not store raw pose, raw landmarks, frames, face images, or video.\n\n6. Capture richer set summaries.\n\nWhen completing a planned set:\n- include repQualityEvents for that set\n- compute SetQualitySummary\n- include completionSource\n- include peakEffort\n- include best/worst cue\n- include cue events with setIndex/repIndex where possible\n\nWhen saving free analysis:\n- include repQualityEvents\n- include quality summary for the open session\n- mode remains freeAnalysis\n\n7. Upgrade WorkoutHistoryStats.\n\nAdd:\n- currentStreak\n- longestStreak\n- workoutsThisWeek\n- plannedWorkoutCount\n- freeAnalysisCount\n- totalGoodFormReps\n- totalExcellentFormReps\n- totalHighSeverityCues\n- averageCompletionPercent\n- mostTrainedExerciseType\n- mostImprovedExerciseType optional if practical\n\nUse device calendar/timezone for streak calculations.\n\n8. Fix Dashboard history integration.\n\nHomeDashboardView should inject real history into DashboardContentFactory:\n- use WorkoutHistoryStore.recentWorkoutHistoryItems()\n- use real current streak\n- show real recent workout\n- keep empty-state fallback\n\nPlanService / DashboardContentFactory should pass recent workout history into PlanGenerator where available.\n\n9. Tests.\n\nAdd/update tests:\n- old WorkoutSessionSummary JSON decodes with defaults\n- RepQualityEvent Codable roundtrip\n- SetQualitySummary identifies improved/faded/stable\n- good-form reps count correctly\n- planned workout summary includes rep evidence\n- free-analysis summary includes rep evidence\n- WorkoutHistoryStats computes current and longest streak\n- HomeDashboardView/DashboardContentFactory uses recent history input\n- no duplicate save when summary view appears multiple times\n\nAcceptance criteria:\n- Existing planned workout and free-analysis flows still work.\n- Workout history persists.\n- Dashboard uses real history.\n- Trophies and insights can use rep-level and set-level evidence.\n- No raw camera/biometric data is stored.",
+  "preview": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Audit all the changes in extreme detail, fix discrepancies and Share a manual end to end testing plan in the end. \n\nUse the common Spotter Codex preflight block.\n\nBridge 10.5A2 goal:\nUpgrade the current Phase 10 workout-history implementation into a richer evidence layer for trophies, stats, trends, and AI insights.\n\nImportant current files to inspect:\n- VirtualTrainer/Models/WorkoutHistoryStore.swift\n- VirtualTrainer/Models/WorkoutSessionSummary.swift\n- VirtualTrainer/Models/WorkoutSummaryBuilder.swift\n- VirtualTrainer/Models/WorkoutSessionContext.swift\n- VirtualTrainer/Models/LiveSessionContext.swift\n- VirtualTrainer/UI/TrainerSessionView.swift\n- VirtualTrainer/UI/PlannedWorkoutSessionView.swift\n- VirtualTrainer/UI/CameraTabView.swift\n- VirtualTrainer/UI/HomeDashboardView.swift\n- VirtualTrainer/Models/DashboardData.swift\n- VirtualTrainerTests/WorkoutHistoryStoreTests.swift\n- VirtualTrainerTests/PlannedWorkoutCoordinatorTests.swift\n- VirtualTrainerTests/DashboardContentTests.swift\n\nDo not rebuild WorkoutHistoryStore from scratch. It already exists. Upgrade it.\n\nTasks:\n\n1. Add richer evidence models.\n\nCreate:\n- RepQualityEvent\n  - id: UUID\n  - exerciseType: ExerciseType\n  - setIndex: Int?\n  - repIndex: Int\n  - timestamp: Date\n  - secondsIntoSet: TimeInterval\n  - formScore: Int?\n  - formGrade: String?\n  - phase: String?\n  - cueMessageNearRep: String?\n  - cueSeverityNearRep: CoachCue.Severity?\n  - effortAtRep: Double?\n\n- SetQualitySummary\n  - totalScoredReps: Int\n  - goodFormReps: Int\n  - excellentFormReps: Int\n  - minFormScore: Double?\n  - maxFormScore: Double?\n  - averageFormScore: Double?\n  - firstHalfAverageFormScore: Double?\n  - secondHalfAverageFormScore: Double?\n  - breakdownRepIndex: Int?\n  - improvementRepIndex: Int?\n  - highSeverityCueCount: Int\n  - mostRepeatedCue: String?\n  - qualityTrend: SetQualityTrend\n\n- SetQualityTrend\n  - improved\n  - faded\n  - stable\n  - unknown\n\n- StructuredEffortSummary\n  - averageEffort: Double?\n  - peakEffort: Double?\n  - trend: EffortTrend\n  - source: EffortSource\n\n- EffortTrend\n  - rising\n  - steady\n  - falling\n  - unavailable\n\n- EffortSource\n  - faceBlendshapeProxy\n  - unavailable\n\n2. Upgrade CueEvent without breaking old local JSON.\n\nCurrent CueEvent is too shallow. Extend it with optional/default fields:\n- id: UUID\n- setIndex: Int?\n- repIndex: Int?\n- secondsIntoSet: TimeInterval?\n- formScoreAtEvent: Int?\n- metricKey: String?\n- metricValue: Double?\n\nKeep backward compatibility. Existing saved JSON should still decode.\n\n3. Upgrade ExerciseSetSummary.\n\nAdd optional/default fields:\n- qualitySummary: SetQualitySummary?\n- repQualityEvents: [RepQualityEvent]\n- completionSource: PlannedSetCompletionSource?\n- completedAt: Date?\n- durationSeconds: Int?\n- peakEffort: Double?\n- bestCue: String?\n- worstCue: String?\n\nKeep existing fields so current UI still works.\n\n4. Upgrade WorkoutSessionSummary.\n\nAdd optional/default fields:\n- summarySchemaVersion: Int\n- appBuildVersion: String?\n- planTitle: String?\n- workoutOutcome: WorkoutOutcome\n- structuredEffortSummary: StructuredEffortSummary?\n- totalGoodFormReps: Int\n- totalExcellentFormReps: Int\n- totalHighSeverityCues: Int\n\nCreate:\n- WorkoutOutcome\n  - completed\n  - partial\n  - cancelled\n  - freeAnalysisSaved\n\nKeep existing stored summaries decodable.\n\n5. Capture rep-level evidence in TrainerSessionView.\n\nWhen repCount increases:\n- append a RepQualityEvent\n- use current rep index\n- use current elapsed seconds\n- include latest form score if available\n- include nearest/active cue if available\n- include current effort score if available\n\nDo not store raw pose, raw landmarks, frames, face images, or video.\n\n6. Capture richer set summaries.\n\nWhen completing a planned set:\n- include repQualityEvents for that set\n- compute SetQualitySummary\n- include completionSource\n- include peakEffort\n- include best/worst cue\n- include cue events with setIndex/repIndex where possible\n\nWhen saving free analysis:\n- include repQualityEvents\n- include quality summary for the open session\n- mode remains freeAnalysis\n\n7. Upgrade WorkoutHistoryStats.\n\nAdd:\n- currentStreak\n- longestStreak\n- workoutsThisWeek\n- plannedWorkoutCount\n- freeAnalysisCount\n- totalGoodFormReps\n- totalExcellentFormReps\n- totalHighSeverityCues\n- averageCompletionPercent\n- mostTrainedExerciseType\n- mostImprovedExerciseType optional if practical\n\nUse device calendar/timezone for streak calculations.\n\n8. Fix Dashboard history integration.\n\nHomeDashboardView should inject real history into DashboardContentFactory:\n- use WorkoutHistoryStore.recentWorkoutHistoryItems()\n- use real current streak\n- show real recent workout\n- keep empty-state fallback\n\nPlanService / DashboardContentFactory should pass recent workout history into PlanGenerator where available.\n\n9. Tests.\n\nAdd/update tests:\n- old WorkoutSessionSummary JSON decodes with defaults\n- RepQualityEvent Codable roundtrip\n- SetQualitySummary identifies improved/faded/stable\n- good-form reps count correctly\n- planned workout summary includes rep evidence\n- free-analysis summary includes rep evidence\n- WorkoutHistoryStats computes current and longest streak\n- HomeDashboardView/DashboardContentFactory uses recent history input\n- no duplicate save when summary view appears multiple times\n\nAcceptance criteria:\n- Existing planned workout and free-analysis flows still work.\n- Workout history persists.\n- Dashboard uses real history.\n- Trophies and insights can use rep-level and set-level evidence.\n- No raw camera/biometric data is stored.",
+  "rawLineCount": 714,
+  "parseErrors": 0,
+  "visibleMessageCount": 24,
+  "extractedImageCount": 0,
+  "messages": [
+    {
+      "timestamp": "2026-05-06T04:29:36.035Z",
+      "role": "user",
+      "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Audit all the changes in extreme detail, fix discrepancies and Share a manual end to end testing plan in the end. \n\nUse the common Spotter Codex preflight block.\n\nBridge 10.5A2 goal:\nUpgrade the current Phase 10 workout-history implementation into a richer evidence layer for trophies, stats, trends, and AI insights.\n\nImportant current files to inspect:\n- VirtualTrainer/Models/WorkoutHistoryStore.swift\n- VirtualTrainer/Models/WorkoutSessionSummary.swift\n- VirtualTrainer/Models/WorkoutSummaryBuilder.swift\n- VirtualTrainer/Models/WorkoutSessionContext.swift\n- VirtualTrainer/Models/LiveSessionContext.swift\n- VirtualTrainer/UI/TrainerSessionView.swift\n- VirtualTrainer/UI/PlannedWorkoutSessionView.swift\n- VirtualTrainer/UI/CameraTabView.swift\n- VirtualTrainer/UI/HomeDashboardView.swift\n- VirtualTrainer/Models/DashboardData.swift\n- VirtualTrainerTests/WorkoutHistoryStoreTests.swift\n- VirtualTrainerTests/PlannedWorkoutCoordinatorTests.swift\n- VirtualTrainerTests/DashboardContentTests.swift\n\nDo not rebuild WorkoutHistoryStore from scratch. It already exists. Upgrade it.\n\nTasks:\n\n1. Add richer evidence models.\n\nCreate:\n- RepQualityEvent\n  - id: UUID\n  - exerciseType: ExerciseType\n  - setIndex: Int?\n  - repIndex: Int\n  - timestamp: Date\n  - secondsIntoSet: TimeInterval\n  - formScore: Int?\n  - formGrade: String?\n  - phase: String?\n  - cueMessageNearRep: String?\n  - cueSeverityNearRep: CoachCue.Severity?\n  - effortAtRep: Double?\n\n- SetQualitySummary\n  - totalScoredReps: Int\n  - goodFormReps: Int\n  - excellentFormReps: Int\n  - minFormScore: Double?\n  - maxFormScore: Double?\n  - averageFormScore: Double?\n  - firstHalfAverageFormScore: Double?\n  - secondHalfAverageFormScore: Double?\n  - breakdownRepIndex: Int?\n  - improvementRepIndex: Int?\n  - highSeverityCueCount: Int\n  - mostRepeatedCue: String?\n  - qualityTrend: SetQualityTrend\n\n- SetQualityTrend\n  - improved\n  - faded\n  - stable\n  - unknown\n\n- StructuredEffortSummary\n  - averageEffort: Double?\n  - peakEffort: Double?\n  - trend: EffortTrend\n  - source: EffortSource\n\n- EffortTrend\n  - rising\n  - steady\n  - falling\n  - unavailable\n\n- EffortSource\n  - faceBlendshapeProxy\n  - unavailable\n\n2. Upgrade CueEvent without breaking old local JSON.\n\nCurrent CueEvent is too shallow. Extend it with optional/default fields:\n- id: UUID\n- setIndex: Int?\n- repIndex: Int?\n- secondsIntoSet: TimeInterval?\n- formScoreAtEvent: Int?\n- metricKey: String?\n- metricValue: Double?\n\nKeep backward compatibility. Existing saved JSON should still decode.\n\n3. Upgrade ExerciseSetSummary.\n\nAdd optional/default fields:\n- qualitySummary: SetQualitySummary?\n- repQualityEvents: [RepQualityEvent]\n- completionSource: PlannedSetCompletionSource?\n- completedAt: Date?\n- durationSeconds: Int?\n- peakEffort: Double?\n- bestCue: String?\n- worstCue: String?\n\nKeep existing fields so current UI still works.\n\n4. Upgrade WorkoutSessionSummary.\n\nAdd optional/default fields:\n- summarySchemaVersion: Int\n- appBuildVersion: String?\n- planTitle: String?\n- workoutOutcome: WorkoutOutcome\n- structuredEffortSummary: StructuredEffortSummary?\n- totalGoodFormReps: Int\n- totalExcellentFormReps: Int\n- totalHighSeverityCues: Int\n\nCreate:\n- WorkoutOutcome\n  - completed\n  - partial\n  - cancelled\n  - freeAnalysisSaved\n\nKeep existing stored summaries decodable.\n\n5. Capture rep-level evidence in TrainerSessionView.\n\nWhen repCount increases:\n- append a RepQualityEvent\n- use current rep index\n- use current elapsed seconds\n- include latest form score if available\n- include nearest/active cue if available\n- include current effort score if available\n\nDo not store raw pose, raw landmarks, frames, face images, or video.\n\n6. Capture richer set summaries.\n\nWhen completing a planned set:\n- include repQualityEvents for that set\n- compute SetQualitySummary\n- include completionSource\n- include peakEffort\n- include best/worst cue\n- include cue events with setIndex/repIndex where possible\n\nWhen saving free analysis:\n- include repQualityEvents\n- include quality summary for the open session\n- mode remains freeAnalysis\n\n7. Upgrade WorkoutHistoryStats.\n\nAdd:\n- currentStreak\n- longestStreak\n- workoutsThisWeek\n- plannedWorkoutCount\n- freeAnalysisCount\n- totalGoodFormReps\n- totalExcellentFormReps\n- totalHighSeverityCues\n- averageCompletionPercent\n- mostTrainedExerciseType\n- mostImprovedExerciseType optional if practical\n\nUse device calendar/timezone for streak calculations.\n\n8. Fix Dashboard history integration.\n\nHomeDashboardView should inject real history into DashboardContentFactory:\n- use WorkoutHistoryStore.recentWorkoutHistoryItems()\n- use real current streak\n- show real recent workout\n- keep empty-state fallback\n\nPlanService / DashboardContentFactory should pass recent workout history into PlanGenerator where available.\n\n9. Tests.\n\nAdd/update tests:\n- old WorkoutSessionSummary JSON decodes with defaults\n- RepQualityEvent Codable roundtrip\n- SetQualitySummary identifies improved/faded/stable\n- good-form reps count correctly\n- planned workout summary includes rep evidence\n- free-analysis summary includes rep evidence\n- WorkoutHistoryStats computes current and longest streak\n- HomeDashboardView/DashboardContentFactory uses recent history input\n- no duplicate save when summary view appears multiple times\n\nAcceptance criteria:\n- Existing planned workout and free-analysis flows still work.\n- Workout history persists.\n- Dashboard uses real history.\n- Trophies and insights can use rep-level and set-level evidence.\n- No raw camera/biometric data is stored.\n\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "You are working in the Spotter iOS Swift repository.\n\nBefore changing code:\n1. Deeply inspect the current repo structure.\n2. Read the relevant files before editing.\n3. Treat this prompt as the implementation reference, not a blind spec. If the codebase reveals a better engineering decision, make it and explain why.\n4. Do not rewrite MediaPipe, CameraManager, PoseEstimator, UniversalRepCounter, FormFeedbackEngine, HandGestureDetector, ExertionAnalyzer, or the core live camera pipeline unless absolutely necessary.\n5. Preserve both live flows:\n   - Camera tab free analysis\n   - Planned workout sessions\n6. Keep UI functional and simple for now. Do not do the final visual design-system revamp unless explicitly requested.\n7. Keep business logic out of SwiftUI views wherever practical.\n8. Keep existing local-first behavior.\n9. Do not store or upload raw camera frames, raw video, face images, raw pose streams, or raw biometric face data.\n10. Do not print or expose secret values.\n11. Keep the app compiling after the phase.\n12. Run available tests/build commands and summarize results.\n13. Summarize changed files, key decisions, and known follow-up items.\n14. Audit all the changes in extreme detail, fix discrepancies and Share a manual end to end testing plan in the end. \n\nUse the common Spotter Codex preflight block.\n\nBridge 10.5A2 goal:\nUpgrade the current Phase 10 workout-history implementation into a richer evidence layer for trophies, stats, trends, and AI insights.\n\nImportant current files to inspect:\n- VirtualTrainer/Models/WorkoutHistoryStore.swift\n- VirtualTrainer/Models/WorkoutSessionSummary.swift\n- VirtualTrainer/Models/WorkoutSummaryBuilder.swift\n- VirtualTrainer/Models/WorkoutSessionContext.swift\n- VirtualTrainer/Models/LiveSessionContext.swift\n- VirtualTrainer/UI/TrainerSessionView.swift\n- VirtualTrainer/UI/PlannedWorkoutSessionView.swift\n- VirtualTrainer/UI/CameraTabView.swift\n- VirtualTrainer/UI/HomeDashboardView.swift\n- VirtualTrainer/Models/DashboardData.swift\n- VirtualTrainerTests/WorkoutHistoryStoreTests.swift\n- VirtualTrainerTests/PlannedWorkoutCoordinatorTests.swift\n- VirtualTrainerTests/DashboardContentTests.swift\n\nDo not rebuild WorkoutHistoryStore from scratch. It already exists. Upgrade it.\n\nTasks:\n\n1. Add richer evidence models.\n\nCreate:\n- RepQualityEvent\n  - id: UUID\n  - exerciseType: ExerciseType\n  - setIndex: Int?\n  - repIndex: Int\n  - timestamp: Date\n  - secondsIntoSet: TimeInterval\n  - formScore: Int?\n  - formGrade: String?\n  - phase: String?\n  - cueMessageNearRep: String?\n  - cueSeverityNearRep: CoachCue.Severity?\n  - effortAtRep: Double?\n\n- SetQualitySummary\n  - totalScoredReps: Int\n  - goodFormReps: Int\n  - excellentFormReps: Int\n  - minFormScore: Double?\n  - maxFormScore: Double?\n  - averageFormScore: Double?\n  - firstHalfAverageFormScore: Double?\n  - secondHalfAverageFormScore: Double?\n  - breakdownRepIndex: Int?\n  - improvementRepIndex: Int?\n  - highSeverityCueCount: Int\n  - mostRepeatedCue: String?\n  - qualityTrend: SetQualityTrend\n\n- SetQualityTrend\n  - improved\n  - faded\n  - stable\n  - unknown\n\n- StructuredEffortSummary\n  - averageEffort: Double?\n  - peakEffort: Double?\n  - trend: EffortTrend\n  - source: EffortSource\n\n- EffortTrend\n  - rising\n  - steady\n  - falling\n  - unavailable\n\n- EffortSource\n  - faceBlendshapeProxy\n  - unavailable\n\n2. Upgrade CueEvent without breaking old local JSON.\n\nCurrent CueEvent is too shallow. Extend it with optional/default fields:\n- id: UUID\n- setIndex: Int?\n- repIndex: Int?\n- secondsIntoSet: TimeInterval?\n- formScoreAtEvent: Int?\n- metricKey: String?\n- metricValue: Double?\n\nKeep backward compatibility. Existing saved JSON should still decode.\n\n3. Upgrade ExerciseSetSummary.\n\nAdd optional/default fields:\n- qualitySummary: SetQualitySummary?\n- repQualityEvents: [RepQualityEvent]\n- completionSource: PlannedSetCompletionSource?\n- completedAt: Date?\n- durationSeconds: Int?\n- peakEffort: Double?\n- bestCue: String?\n- worstCue: String?\n\nKeep existing fields so current UI still works.\n\n4. Upgrade WorkoutSessionSummary.\n\nAdd optional/default fields:\n- summarySchemaVersion: Int\n- appBuildVersion: String?\n- planTitle: String?\n- workoutOutcome: WorkoutOutcome\n- structuredEffortSummary: StructuredEffortSummary?\n- totalGoodFormReps: Int\n- totalExcellentFormReps: Int\n- totalHighSeverityCues: Int\n\nCreate:\n- WorkoutOutcome\n  - completed\n  - partial\n  - cancelled\n  - freeAnalysisSaved\n\nKeep existing stored summaries decodable.\n\n5. Capture rep-level evidence in TrainerSessionView.\n\nWhen repCount increases:\n- append a RepQualityEvent\n- use current rep index\n- use current elapsed seconds\n- include latest form score if available\n- include nearest/active cue if available\n- include current effort score if available\n\nDo not store raw pose, raw landmarks, frames, face images, or video.\n\n6. Capture richer set summaries.\n\nWhen completing a planned set:\n- include repQualityEvents for that set\n- compute SetQualitySummary\n- include completionSource\n- include peakEffort\n- include best/worst cue\n- include cue events with setIndex/repIndex where possible\n\nWhen saving free analysis:\n- include repQualityEvents\n- include quality summary for the open session\n- mode remains freeAnalysis\n\n7. Upgrade WorkoutHistoryStats.\n\nAdd:\n- currentStreak\n- longestStreak\n- workoutsThisWeek\n- plannedWorkoutCount\n- freeAnalysisCount\n- totalGoodFormReps\n- totalExcellentFormReps\n- totalHighSeverityCues\n- averageCompletionPercent\n- mostTrainedExerciseType\n- mostImprovedExerciseType optional if practical\n\nUse device calendar/timezone for streak calculations.\n\n8. Fix Dashboard history integration.\n\nHomeDashboardView should inject real history into DashboardContentFactory:\n- use WorkoutHistoryStore.recentWorkoutHistoryItems()\n- use real current streak\n- show real recent workout\n- keep empty-state fallback\n\nPlanService / DashboardContentFactory should pass recent workout history into PlanGenerator where available.\n\n9. Tests.\n\nAdd/update tests:\n- old WorkoutSessionSummary JSON decodes with defaults\n- RepQualityEvent Codable roundtrip\n- SetQualitySummary identifies improved/faded/stable\n- good-form reps count correctly\n- planned workout summary includes rep evidence\n- free-analysis summary includes rep evidence\n- WorkoutHistoryStats computes current and longest streak\n- HomeDashboardView/DashboardContentFactory uses recent history input\n- no duplicate save when summary view appears multiple times\n\nAcceptance criteria:\n- Existing planned workout and free-analysis flows still work.\n- Workout history persists.\n- Dashboard uses real history.\n- Trophies and insights can use rep-level and set-level evidence.\n- No raw camera/biometric data is stored.\n\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:29:44.196Z",
+      "role": "assistant",
+      "text": "I’ll start with the Spotter preflight: repo shape, git state, and the named history/session/dashboard files first, then I’ll make the smallest set of upgrades that preserves both live flows. After I understand the current model boundaries, I’ll share the implementation path before editing.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll start with the Spotter preflight: repo shape, git state, and the named history/session/dashboard files first, then I’ll make the smallest set of upgrades that preserves both live flows. After I understand the current model boundaries, I’ll share the implementation path before editing."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:29:56.281Z",
+      "role": "assistant",
+      "text": "Preflight found the expected iOS project on `main` with a clean working tree, plus a small older FitCount reference tree that I’ll leave alone. I’m now reading the Phase 10 model, session, dashboard, and test files to map how summaries are built and persisted before touching anything.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Preflight found the expected iOS project on `main` with a clean working tree, plus a small older FitCount reference tree that I’ll leave alone. I’m now reading the Phase 10 model, session, dashboard, and test files to map how summaries are built and persisted before touching anything."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:30:51.284Z",
+      "role": "assistant",
+      "text": "The existing history layer is already nicely isolated: summaries are Codable model types, `WorkoutHistoryStore` owns persistence and aggregate stats, and the live UI hands compact summaries upward. The main upgrade should be additive: richer summary structs plus helper computation in models, while `TrainerSessionView` only captures event facts at rep/set boundaries.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The existing history layer is already nicely isolated: summaries are Codable model types, `WorkoutHistoryStore` owns persistence and aggregate stats, and the live UI hands compact summaries upward. The main upgrade should be additive: richer summary structs plus helper computation in models, while `TrainerSessionView` only captures event facts at rep/set boundaries."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:33:04.357Z",
+      "role": "assistant",
+      "text": "I’m going to add the evidence types as model-layer helpers rather than view logic. That keeps SwiftUI responsible for capturing the facts it already has, while trend, quality, effort, and aggregate calculations stay testable and reusable for trophies/insights later.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’m going to add the evidence types as model-layer helpers rather than view logic. That keeps SwiftUI responsible for capturing the facts it already has, while trend, quality, effort, and aggregate calculations stay testable and reusable for trophies/insights later."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:36:02.148Z",
+      "role": "assistant",
+      "text": "The summary models are now being made schema-versioned and backward-compatible. I’m also giving planned workouts a stable history-summary id through the coordinator so repeated appearances of the summary screen cannot create a second saved session.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The summary models are now being made schema-versioned and backward-compatible. I’m also giving planned workouts a stable history-summary id through the coordinator so repeated appearances of the summary screen cannot create a second saved session."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:36:45.218Z",
+      "role": "assistant",
+      "text": "Now I’m wiring the evidence capture at the existing live boundaries: when a rep is counted, when a cue is first recorded, and when a set/free-analysis session ends. This avoids touching MediaPipe, camera, pose estimation, rep counting, or the main frame pipeline internals.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Now I’m wiring the evidence capture at the existing live boundaries: when a rep is counted, when a cue is first recorded, and when a set/free-analysis session ends. This avoids touching MediaPipe, camera, pose estimation, rep counting, or the main frame pipeline internals."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:41:31.356Z",
+      "role": "assistant",
+      "text": "The dashboard path already had the seed of real history integration, but the plan generation calls were still history-blind. I’ve threaded recent history into `PlanService` from the dashboard factory and added a store-computed streak override so the dashboard can use the same calendar logic as history stats.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The dashboard path already had the seed of real history integration, but the plan generation calls were still history-blind. I’ve threaded recent history into `PlanService` from the dashboard factory and added a store-computed streak override so the dashboard can use the same calendar logic as history stats."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:41:44.873Z",
+      "role": "assistant",
+      "text": "I’ve added the requested regression coverage around legacy JSON, rep event roundtrips, set trends, evidence totals, planned/free evidence, dashboard history input, and duplicate planned saves. Now I’m running the Xcode test suite on an available iOS simulator and will use the failures as a detailed audit pass.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ve added the requested regression coverage around legacy JSON, rep event roundtrips, set trends, evidence totals, planned/free evidence, dashboard history input, and duplicate planned saves. Now I’m running the Xcode test suite on an available iOS simulator and will use the failures as a detailed audit pass."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:42:05.354Z",
+      "role": "assistant",
+      "text": "The test run reached compilation and then stopped on an environment dependency: `FaceLandmarkerService.swift` cannot import `MediaPipeTasksVision`. That looks like a local Pods/XCFramework availability issue rather than a code failure, so I’m checking whether the repo’s CocoaPods install is present before deciding if a dependency refresh is available.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The test run reached compilation and then stopped on an environment dependency: `FaceLandmarkerService.swift` cannot import `MediaPipeTasksVision`. That looks like a local Pods/XCFramework availability issue rather than a code failure, so I’m checking whether the repo’s CocoaPods install is present before deciding if a dependency refresh is available."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:42:08.906Z",
+      "role": "assistant",
+      "text": "Pods are present; the failed command was using the `.xcodeproj`, which bypasses the CocoaPods workspace integration. I’m rerunning through `VirtualTrainer.xcworkspace`, which is the right build entrypoint for this repo.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Pods are present; the failed command was using the `.xcodeproj`, which bypasses the CocoaPods workspace integration. I’m rerunning through `VirtualTrainer.xcworkspace`, which is the right build entrypoint for this repo."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:42:28.125Z",
+      "role": "assistant",
+      "text": "Found the actual CocoaPods workspace at `VirtualTrainer.xcworkspace`; the previous retry used Xcode’s internal project workspace. One more run through the real workspace should give the meaningful compile/test signal.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Found the actual CocoaPods workspace at `VirtualTrainer.xcworkspace`; the previous retry used Xcode’s internal project workspace. One more run through the real workspace should give the meaningful compile/test signal."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:43:09.696Z",
+      "role": "assistant",
+      "text": "The real workspace build got past the MediaPipe import and is now running the test bundle on the simulator. Quiet terminal here is usually good news: the simulator is launching and XCTest is working through the suite.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The real workspace build got past the MediaPipe import and is now running the test bundle on the simulator. Quiet terminal here is usually good news: the simulator is launching and XCTest is working through the suite."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:43:58.089Z",
+      "role": "assistant",
+      "text": "Still waiting on XCTest after a successful app build. If this hangs much longer I’ll inspect the `.xcresult` and simulator state, but I’m giving it a little more room because first simulator launches after a clean Pods build can be slow.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Still waiting on XCTest after a successful app build. If this hangs much longer I’ll inspect the `.xcresult` and simulator state, but I’m giving it a little more room because first simulator launches after a clean Pods build can be slow."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:45:15.882Z",
+      "role": "assistant",
+      "text": "Xcode has finished building and appears to be collecting simulator diagnostics (`simctl diagnose`) rather than emitting test results yet. I’m going to let that complete briefly; if it stalls, I’ll stop the command and report the build succeeded but simulator test execution did not return cleanly.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Xcode has finished building and appears to be collecting simulator diagnostics (`simctl diagnose`) rather than emitting test results yet. I’m going to let that complete briefly; if it stalls, I’ll stop the command and report the build succeeded but simulator test execution did not return cleanly."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:46:08.432Z",
+      "role": "assistant",
+      "text": "The one failing test was my expectation, not the implementation: with the test calendar’s week boundaries, the older workout is outside the current week, so `workoutsThisWeek` should be 3 while longest/current streak remain 3. I’ve corrected that and am rerunning the suite through the real workspace.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The one failing test was my expectation, not the implementation: with the test calendar’s week boundaries, the older workout is outside the current week, so `workoutsThisWeek` should be 3 while longest/current streak remain 3. I’ve corrected that and am rerunning the suite through the real workspace."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:47:05.138Z",
+      "role": "assistant",
+      "text": "The rerun rebuilt only the changed test file and has entered the simulator test phase again. The suite itself is quick once XCTest starts; the slow bit is simulator orchestration on this machine.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The rerun rebuilt only the changed test file and has entered the simulator test phase again. The suite itself is quick once XCTest starts; the slow bit is simulator orchestration on this machine."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:54:39.037Z",
+      "role": "assistant",
+      "text": "Still waiting on simulator test completion; this matches the prior run’s roughly three-minute XCTest window. I’m staying with it so we get a clean pass/fail instead of leaving a half-open build.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Still waiting on simulator test completion; this matches the prior run’s roughly three-minute XCTest window. I’m staying with it so we get a clean pass/fail instead of leaving a half-open build."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:54:54.373Z",
+      "role": "assistant",
+      "text": "The full suite passes through `VirtualTrainer.xcworkspace` now. I’m doing the promised audit pass next: whitespace, changed-file diff review, and a quick scan for privacy-sensitive storage so the summary is accurate rather than just cheerful.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The full suite passes through `VirtualTrainer.xcworkspace` now. I’m doing the promised audit pass next: whitespace, changed-file diff review, and a quick scan for privacy-sensitive storage so the summary is accurate rather than just cheerful."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:55:31.240Z",
+      "role": "assistant",
+      "text": "Audit found one subtle counting edge: when a high-severity cue appears both as a cue event and as “near rep” evidence, the model should not double-count the same cue message. I tightened that dedupe and am rerunning the suite once more because this is exactly the sort of small logic tweak tests are for.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Audit found one subtle counting edge: when a high-severity cue appears both as a cue event and as “near rep” evidence, the model should not double-count the same cue message. I tightened that dedupe and am rerunning the suite once more because this is exactly the sort of small logic tweak tests are for."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:56:18.482Z",
+      "role": "assistant",
+      "text": "The rerun surfaced Swift 6 isolation warnings from my custom `Codable` decoders. They do not fail today, but they’re real future-compatibility noise, so after this run returns I’ll mark those decoder extensions nonisolated and do one final verification.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The rerun surfaced Swift 6 isolation warnings from my custom `Codable` decoders. They do not fail today, but they’re real future-compatibility noise, so after this run returns I’ll mark those decoder extensions nonisolated and do one final verification."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:56:33.324Z",
+      "role": "assistant",
+      "text": "I cleaned up those isolation warnings by making the custom decoder extensions explicitly nonisolated, matching the model types. One final workspace test run now; after that I’ll stop touching code and write the close-out with the manual E2E plan.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I cleaned up those isolation warnings by making the custom decoder extensions explicitly nonisolated, matching the model types. One final workspace test run now; after that I’ll stop touching code and write the close-out with the manual E2E plan."
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:58:25.782Z",
+      "role": "user",
+      "text": "Good. Do another in-depth deep audit of the entire codebase and check if there are any unwired code or dependencies or app crashes [ app crashes prevention are important] or bugs - evaluate and resolve them. ALso look for possible incomplete codes, logics, and ways to improve / strengthen existing - evaluate them deeply and only implement the highest confidence and priority ones. review the recent code changes and the older code deeply and check for errors, crashes or new bugs. \n\nPost the above, share an end to end manual testing plan for the features in this chat. think deeply and use highest level of reasoning. be very detailed and in depth and evaluate the code with the highest possible technical lens for bugs, etc - code quality can be skipped, we will improve that later. looking for funtiomnal bugs, crashes, suspicious screens - for parts that are sus and might require a round of manual review - call them out and mention in the end to end testing plan so i can verify those too. Post this we will proceed to phase 11.\n",
+      "content": [
+        {
+          "type": "text",
+          "text": "Good. Do another in-depth deep audit of the entire codebase and check if there are any unwired code or dependencies or app crashes [ app crashes prevention are important] or bugs - evaluate and resolve them. ALso look for possible incomplete codes, logics, and ways to improve / strengthen existing - evaluate them deeply and only implement the highest confidence and priority ones. review the recent code changes and the older code deeply and check for errors, crashes or new bugs. \n\nPost the above, share an end to end manual testing plan for the features in this chat. think deeply and use highest level of reasoning. be very detailed and in depth and evaluate the code with the highest possible technical lens for bugs, etc - code quality can be skipped, we will improve that later. looking for funtiomnal bugs, crashes, suspicious screens - for parts that are sus and might require a round of manual review - call them out and mention in the end to end testing plan so i can verify those too. Post this we will proceed to phase 11.\n"
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-05-06T04:58:44.155Z",
+      "role": "assistant",
+      "text": "I’ll do a second pass with a bug-hunter lens: crash vectors first (`!`, `try!`, environment objects, navigation/sheet lifecycle), then unwired/dead paths, persistence/decoding, and the recent evidence/history changes. I’ll only patch things that are high-confidence functional risks, and I’ll call out anything that needs manual review rather than guessing.",
+      "content": [
+        {
+          "type": "text",
+          "text": "I’ll do a second pass with a bug-hunter lens: crash vectors first (`!`, `try!`, environment objects, navigation/sheet lifecycle), then unwired/dead paths, persistence/decoding, and the recent evidence/history changes. I’ll only patch things that are high-confidence functional risks, and I’ll call out anything that needs manual review rather than guessing."
+        }
+      ]
+    }
+  ]
+}
